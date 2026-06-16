@@ -58,3 +58,22 @@ Adjusted after review:
 - Let the dashboard content use the available page width instead of staying constrained to a narrow centered container.
 - Reworked Fleet Activity into a weekly movement lane chart while keeping the dark Fleet Pulse summary panel.
 - Reworked Asset Distribution into a location-based bar and trend chart showing asset counts and movement trend by region/place.
+
+## 2026-06-16 - Live Map Screen
+
+Implemented the Fleet Intelligence Platform live map screen from the provided Figma screenshot.
+
+Changes made:
+
+- Added a new `/live-map` route using the Next.js App Router.
+- Reused the existing dashboard sidebar/topbar structure with Live Map as the active navigation item.
+- Built a full-height operational map workspace with a real worldwide OpenStreetMap/Leaflet map, normal zoom/pan behavior, vehicle markers, playback/geofence/alarm actions, and status legend.
+- Added a right-side asset panel with search, filtering, vehicle cards, battery/condition/lock indicators, statuses, and pagination controls.
+- Installed `leaflet`, `react-leaflet`, and `@types/leaflet` for real map rendering.
+- Wired sidebar navigation items to real route paths instead of static placeholders.
+- Capped map zoom to prevent blank high-zoom tile states.
+
+Verification:
+
+- `npm.cmd run lint` passed.
+- `npm.cmd run build` passed.

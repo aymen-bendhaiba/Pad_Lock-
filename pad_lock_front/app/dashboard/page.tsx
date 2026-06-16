@@ -27,15 +27,15 @@ import {
 import logo from "../../public/images/logo.png";
 
 const navItems = [
-  { label: "Dashboard", icon: House, active: true },
-  { label: "Live Map", icon: Map },
-  { label: "Alarms", icon: Bell, badge: "6" },
-  { label: "Geofence", icon: CircleOff },
-  { label: "Routes", icon: Route },
-  { label: "Reports", icon: FileText },
-  { label: "Configurations", icon: Settings },
-  { label: "Maintenance", icon: CarFront },
-  { label: "Commands", icon: Command },
+  { label: "Dashboard", icon: House, href: "/dashboard", active: true },
+  { label: "Live Map", icon: Map, href: "/live-map" },
+  { label: "Alarms", icon: Bell, href: "/alarms", badge: "6" },
+  { label: "Geofence", icon: CircleOff, href: "/geofence" },
+  { label: "Routes", icon: Route, href: "/routes" },
+  { label: "Reports", icon: FileText, href: "/reports" },
+  { label: "Configurations", icon: Settings, href: "/configurations" },
+  { label: "Maintenance", icon: CarFront, href: "/maintenance" },
+  { label: "Commands", icon: Command, href: "/commands" },
 ];
 
 const metrics = [
@@ -106,7 +106,7 @@ export default function DashboardPage() {
             {navItems.map((item) => (
               <a
                 key={item.label}
-                href="#"
+                href={item.href}
                 className={`flex h-10 items-center justify-between rounded-[7px] px-4 text-[13px] font-medium transition ${
                   item.active
                     ? "bg-[#edf2f7] text-[#111827]"
