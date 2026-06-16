@@ -23,3 +23,27 @@ Notes:
 
 - No new libraries or frameworks were added for this screen.
 - `IMPLEMENTATION_NOTES.md` is intentionally local-only and ignored by Git.
+
+## 2026-06-16 - Dashboard Screen
+
+Implemented the Fleet Intelligence Platform dashboard screen from the provided Figma screenshot.
+
+Changes made:
+
+- Added a new `/dashboard` route using the Next.js App Router.
+- Built a responsive operational dashboard layout with a left sidebar, top search bar, user controls, KPI cards, chart panels, and summary sections.
+- Reused the existing administration logo from `public/images/logo.png`.
+- Applied the provided accent colors `#2A9D90` and `#34C759`.
+- Added a custom redesigned Fleet Activity visualization with layered movement flow, alert line, baseline trace, plotted pulses, and legend chips.
+- Added metric cards for assets, online/offline status, movement, idle, lock state, and alarms.
+- Added Connection Status, Top Alarms, and Asset Distribution panels.
+- Installed `lucide-react` for consistent dashboard iconography.
+
+Verification:
+
+- `npm.cmd run lint` passed.
+- `npm.cmd run build` passed.
+
+Notes:
+
+- `IMPLEMENTATION_NOTES.md` remains local-only and explains the dependency choice.
