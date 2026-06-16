@@ -77,3 +77,21 @@ Verification:
 
 - `npm.cmd run lint` passed.
 - `npm.cmd run build` passed.
+
+## 2026-06-16 - Commands Screen
+
+Implemented the Fleet Intelligence Platform commands screen from the provided multi-section screenshots.
+
+Changes made:
+
+- Added a new `/commands` route using the Next.js App Router.
+- Reused the application sidebar/topbar structure with Commands as the active navigation item.
+- Added the RFID Cards Authorization selector in the header.
+- Built tabbed command sections for Device Status, Low Battery, Sleep Mode, Password, Phone Number, and Add RFID.
+- Added responsive command tables, search fields, status metadata, action buttons, pagination, and footer legends.
+- Added expanded RFID tag management with searchable tag chips and add/save controls.
+
+Verification:
+
+- `npm.cmd run lint` passed.
+- `npm.cmd run build` passed.
