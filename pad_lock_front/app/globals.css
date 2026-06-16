@@ -16,3 +16,23 @@ body {
   color: var(--foreground);
   font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
+
+html {
+  scrollbar-width: none;
+}
+
+* {
+  scrollbar-width: none;
+}
+
+body,
+* {
+  -ms-overflow-style: none;
+}
+
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
+}

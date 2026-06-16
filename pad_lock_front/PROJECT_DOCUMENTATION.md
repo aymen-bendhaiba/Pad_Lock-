@@ -47,3 +47,14 @@ Verification:
 Notes:
 
 - `IMPLEMENTATION_NOTES.md` remains local-only and explains the dependency choice.
+
+### Dashboard Refinement Pass
+
+Adjusted after review:
+
+- Expanded the desktop sidebar for more comfortable navigation spacing.
+- Made the desktop sidebar sticky so it stays visible while the dashboard content scrolls.
+- Removed visible browser scrollbars while preserving normal scroll behavior.
+- Let the dashboard content use the available page width instead of staying constrained to a narrow centered container.
+- Reworked Fleet Activity into a weekly movement lane chart while keeping the dark Fleet Pulse summary panel.
+- Reworked Asset Distribution into a location-based bar and trend chart showing asset counts and movement trend by region/place.

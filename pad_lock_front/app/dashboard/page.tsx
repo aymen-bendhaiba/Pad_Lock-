@@ -62,14 +62,22 @@ const alarms = [
   { label: "Door Open", value: 209, width: "66%" },
 ];
 
-const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const distributionBars = [
+  { place: "Europe", assets: 142, trend: 154 },
+  { place: "N. America", assets: 74, trend: 92 },
+  { place: "Asia", assets: 126, trend: 138 },
+  { place: "Africa", assets: 54, trend: 66 },
+  { place: "MENA", assets: 86, trend: 101 },
+  { place: "S. America", assets: 36, trend: 50 },
+  { place: "Others", assets: 26, trend: 34 },
+];
 
 export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-[#f8fafc] text-[#0f172a]">
-      <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
-        <aside className="hidden border-r border-[#dfe6ee] bg-white lg:block">
-          <div className="flex h-14 items-center justify-between border-b border-[#dfe6ee] px-4">
+      <div className="grid min-h-screen lg:grid-cols-[286px_1fr]">
+        <aside className="sticky top-0 hidden h-screen border-r border-[#dfe6ee] bg-white lg:block">
+          <div className="flex h-14 items-center justify-between border-b border-[#dfe6ee] px-5">
             <div className="flex items-center gap-2">
               <Image
                 src={logo}
@@ -79,7 +87,7 @@ export default function DashboardPage() {
                 className="h-10 w-auto"
                 priority
               />
-              <p className="max-w-[150px] text-[10px] font-semibold leading-tight">
+              <p className="max-w-[172px] text-[10px] font-semibold leading-tight">
                 Royaume Du Maroc Administration
                 <br />
                 Des Douanes Et Impots Indirect
@@ -94,12 +102,12 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <nav className="space-y-1 px-3 py-3">
+          <nav className="space-y-1 px-4 py-3">
             {navItems.map((item) => (
               <a
                 key={item.label}
                 href="#"
-                className={`flex h-10 items-center justify-between rounded-[7px] px-3 text-[13px] font-medium transition ${
+                className={`flex h-10 items-center justify-between rounded-[7px] px-4 text-[13px] font-medium transition ${
                   item.active
                     ? "bg-[#edf2f7] text-[#111827]"
                     : "text-[#5b6b84] hover:bg-[#f3f7fa] hover:text-[#111827]"
@@ -165,7 +173,7 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          <div className="mx-auto max-w-[1180px] px-4 py-7 md:px-6">
+          <div className="w-full px-4 py-7 md:px-5 xl:px-6">
             <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center">
               <h1 className="text-[26px] font-bold tracking-normal text-black">
                 Dashboard
@@ -203,7 +211,7 @@ export default function DashboardPage() {
               ))}
             </section>
 
-            <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_260px]">
+            <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
               <article className="rounded-[8px] border border-[#dfe6ee] bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div>
@@ -220,103 +228,101 @@ export default function DashboardPage() {
                   </button>
                 </div>
 
-                <div className="relative h-[230px] overflow-hidden rounded-[8px] bg-[linear-gradient(180deg,#ffffff,#fbfcfd)]">
-                  <svg
-                    className="h-full w-full"
-                    viewBox="0 0 760 230"
-                    role="img"
-                    aria-label="Fleet activity chart showing command load, live movement and lock events"
-                  >
-                    <defs>
-                      <linearGradient id="movementFill" x1="0" x2="1" y1="0" y2="0">
-                        <stop offset="0%" stopColor="#2A9D90" stopOpacity="0.16" />
-                        <stop offset="55%" stopColor="#34C759" stopOpacity="0.1" />
-                        <stop offset="100%" stopColor="#2A9D90" stopOpacity="0.18" />
-                      </linearGradient>
-                      <linearGradient id="pulseStroke" x1="0" x2="1" y1="0" y2="0">
-                        <stop offset="0%" stopColor="#0C4E71" />
-                        <stop offset="48%" stopColor="#2A9D90" />
-                        <stop offset="100%" stopColor="#34C759" />
-                      </linearGradient>
-                    </defs>
-                    {[36, 78, 120, 162, 204].map((y) => (
-                      <line
-                        key={y}
-                        x1="28"
-                        x2="732"
-                        y1={y}
-                        y2={y}
-                        stroke="#e7edf3"
-                        strokeWidth="1"
-                      />
-                    ))}
-                    <path
-                      d="M28 155 C90 106 130 66 202 72 C276 78 314 121 374 119 C434 117 466 65 526 79 C586 93 616 146 732 103 L732 170 C635 199 586 174 526 153 C468 132 435 175 374 171 C310 167 275 126 204 122 C130 118 86 154 28 188 Z"
-                      fill="url(#movementFill)"
-                    />
-                    <path
-                      d="M28 155 C90 106 130 66 202 72 C276 78 314 121 374 119 C434 117 466 65 526 79 C586 93 616 146 732 103"
-                      fill="none"
-                      stroke="url(#pulseStroke)"
-                      strokeLinecap="round"
-                      strokeWidth="4"
-                    />
-                    <path
-                      d="M28 188 C96 151 146 130 205 132 C268 134 300 166 365 167 C427 168 465 135 526 148 C591 162 637 179 732 170"
-                      fill="none"
-                      stroke="#ff7a45"
-                      strokeLinecap="round"
-                      strokeWidth="3"
-                    />
-                    <path
-                      d="M28 122 C118 92 163 102 221 112 C283 123 322 97 380 87 C455 73 499 111 556 113 C622 115 664 84 732 88"
-                      fill="none"
-                      stroke="#94a3b8"
-                      strokeDasharray="5 8"
-                      strokeLinecap="round"
-                      strokeWidth="2"
-                    />
-                    {[
-                      [202, 72, "#2A9D90"],
-                      [374, 119, "#34C759"],
-                      [526, 79, "#ff7a45"],
-                      [205, 132, "#ff7a45"],
-                    ].map(([cx, cy, color]) => (
-                      <g key={`${cx}-${cy}`}>
-                        <circle cx={cx} cy={cy} r="8" fill={`${color}`} opacity="0.16" />
-                        <circle cx={cx} cy={cy} r="4" fill={`${color}`} />
-                      </g>
-                    ))}
-                    {days.map((day, index) => (
-                      <text
-                        key={day}
-                        x={35 + index * 138}
-                        y="221"
-                        fill="#718096"
-                        fontSize="11"
-                      >
-                        {day}
-                      </text>
-                    ))}
-                  </svg>
-                  <div className="absolute left-5 top-5 flex gap-2">
-                    {["Movement", "Alerts", "Baseline"].map((item, index) => (
-                      <span
-                        key={item}
-                        className="rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-medium text-[#475569] shadow-sm"
-                      >
-                        <span
-                          className={`mr-1.5 inline-block size-2 rounded-full ${
-                            index === 0
-                              ? "bg-[#2A9D90]"
-                              : index === 1
-                                ? "bg-[#ff7a45]"
-                                : "bg-[#94a3b8]"
-                          }`}
-                        />
-                        {item}
+                <div className="grid min-h-[252px] gap-4 rounded-[10px] border border-[#e6edf4] bg-[#fbfdff] p-4 lg:grid-cols-[1fr_260px]">
+                  <div className="rounded-[10px] border border-[#e6edf4] bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[12px] font-semibold text-[#111827]">
+                          Weekly movement lanes
+                        </p>
+                        <p className="mt-1 text-[11px] text-[#718096]">
+                          Moving, idle, and alert volume by day
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[#ecfdf5] px-2.5 py-1 text-[11px] font-semibold text-[#16883f]">
+                        +14% active
                       </span>
+                    </div>
+                    <div className="grid h-[158px] grid-cols-6 items-end gap-3">
+                    {[
+                      ["Mon", 62, 4, 18],
+                      ["Tue", 88, 2, 9],
+                      ["Wed", 74, 3, 14],
+                      ["Thu", 96, 1, 6],
+                      ["Fri", 52, 6, 27],
+                      ["Sat", 69, 2, 11],
+                    ].map(([day, active, locks, alerts]) => (
+                      <div
+                        key={day}
+                        className="flex min-w-[70px] flex-col justify-end"
+                      >
+                        <div className="mb-3 flex h-[118px] items-end justify-center gap-1.5 rounded-[8px] bg-[#f8fafc] px-2 pb-2">
+                          <span
+                            className="w-3.5 rounded-t-full bg-[#2A9D90]"
+                            style={{ height: `${active}%` }}
+                          />
+                          <span
+                            className="w-3.5 rounded-t-full bg-[#34C759]"
+                            style={{ height: `${Math.max(Number(active) - 16, 22)}%` }}
+                          />
+                          <span
+                            className="w-3.5 rounded-t-full bg-[#f97316]"
+                            style={{ height: `${Math.max(Number(alerts) + 18, 18)}%` }}
+                          />
+                        </div>
+                        <p className="text-center text-[11px] font-bold text-[#111827]">
+                          {day}
+                        </p>
+                        <p className="mt-1 text-center text-[10px] text-[#718096]">
+                          {locks} locks
+                        </p>
+                      </div>
                     ))}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-[#64748b]">
+                      <span className="flex items-center gap-1.5">
+                        <span className="size-2 rounded-full bg-[#2A9D90]" />
+                        Moving
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="size-2 rounded-full bg-[#34C759]" />
+                        Idle
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="size-2 rounded-full bg-[#f97316]" />
+                        Alert
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[10px] bg-[#0f172a] p-4 text-white">
+                    <p className="text-[12px] font-semibold text-[#9fb0c7]">
+                      Fleet pulse
+                    </p>
+                    <p className="mt-2 text-[34px] font-bold leading-none">742</p>
+                    <p className="mt-1 text-[12px] text-[#9fb0c7]">
+                      total movements this week
+                    </p>
+                    <div className="mt-5 space-y-3">
+                      {[
+                        ["Moving", "68%", "#34C759"],
+                        ["Idle", "21%", "#2A9D90"],
+                        ["Alert", "11%", "#f97316"],
+                      ].map(([label, value, color]) => (
+                        <div key={label}>
+                          <div className="mb-1 flex justify-between text-[11px]">
+                            <span>{label}</span>
+                            <span>{value}</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-white/12">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: value, backgroundColor: color }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </article>
@@ -415,7 +421,7 @@ export default function DashboardPage() {
                   <div>
                     <h2 className="text-[15px] font-bold">Asset Distribution</h2>
                     <p className="mt-1 text-[12px] text-[#718096]">
-                      Weekly movement summary
+                      Live distribution across all zones
                     </p>
                   </div>
                   <button
@@ -426,40 +432,125 @@ export default function DashboardPage() {
                     Global view
                   </button>
                 </div>
-                <div className="relative h-[220px] overflow-hidden rounded-[16px] bg-[#f8fafc]">
-                  <svg className="h-full w-full" viewBox="0 0 480 220" aria-hidden>
+                <div className="rounded-[10px] border border-[#e6edf4] bg-[#fbfdff] p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      {["7D", "14D", "1M", "Custom"].map((range, index) => (
+                        <span
+                          key={range}
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                            index === 0
+                              ? "bg-[#34C759] text-white"
+                              : "bg-[#eef2f6] text-[#64748b]"
+                          }`}
+                        >
+                          {range}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[10px] font-semibold">
+                      <span className="rounded-full bg-[#eefbf1] px-2.5 py-1 text-[#16883f]">
+                        Europe 142
+                      </span>
+                      <span className="rounded-full bg-[#fff1eb] px-2.5 py-1 text-[#f97316]">
+                        Asia 126
+                      </span>
+                    </div>
+                  </div>
+
+                  <svg
+                    className="h-[220px] w-full"
+                    viewBox="0 0 520 220"
+                    role="img"
+                    aria-label="Regional movement chart with activity bars and trend line"
+                  >
+                    <defs>
+                      <linearGradient id="distributionBar" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="#34C759" stopOpacity="0.95" />
+                        <stop offset="100%" stopColor="#34C759" stopOpacity="0.12" />
+                      </linearGradient>
+                    </defs>
+                    {[42, 82, 122, 162].map((y) => (
+                      <line
+                        key={y}
+                        x1="34"
+                        x2="496"
+                        y1={y}
+                        y2={y}
+                        stroke="#e8eef4"
+                      />
+                    ))}
                     <path
-                      d="M92 78 L120 92 L153 74 L185 96 L219 82 L253 103 L294 86 L330 106 L367 91"
+                      d={`M ${distributionBars
+                        .map((item, index) => `${58 + index * 70} ${190 - item.trend}`)
+                        .join(" L ")}`}
                       fill="none"
-                      stroke="#dbeafe"
-                      strokeWidth="2"
+                      stroke="#ef4444"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2.5"
                     />
-                    <circle cx="120" cy="92" r="24" fill="#eef4ff" />
-                    <circle cx="252" cy="154" r="34" fill="#f1f5f9" />
-                    <circle cx="366" cy="99" r="18" fill="#f1f5f9" />
-                    <circle cx="162" cy="76" r="7" fill="#4f7cff" />
-                    <circle cx="127" cy="132" r="7" fill="#34C759" />
-                    <circle cx="294" cy="99" r="7" fill="#ff7a45" />
-                    <circle cx="332" cy="166" r="7" fill="#ef4444" />
-                    <circle cx="162" cy="76" r="15" fill="#4f7cff" opacity=".12" />
-                    <circle cx="127" cy="132" r="15" fill="#34C759" opacity=".12" />
-                    <circle cx="294" cy="99" r="15" fill="#ff7a45" opacity=".12" />
-                    <circle cx="332" cy="166" r="15" fill="#ef4444" opacity=".12" />
+                    {distributionBars.map((item, index) => {
+                      const x = 46 + index * 70;
+                      const height = item.assets * 0.95;
+                      const y = 184 - height;
+
+                      return (
+                        <g key={item.place}>
+                          <rect
+                            x={x}
+                            y={y}
+                            width="24"
+                            height={height}
+                            rx="6"
+                            fill="url(#distributionBar)"
+                          />
+                          <circle
+                            cx={x + 12}
+                            cy={190 - item.trend}
+                            r="4"
+                            fill="#ef4444"
+                          />
+                          <text
+                            x={x + 12}
+                            y="207"
+                            fill="#718096"
+                            fontSize="10"
+                            textAnchor="middle"
+                          >
+                            {item.place}
+                          </text>
+                        </g>
+                      );
+                    })}
+                    <text x="8" y="45" fill="#94a3b8" fontSize="10">
+                      160
+                    </text>
+                    <text x="8" y="85" fill="#94a3b8" fontSize="10">
+                      120
+                    </text>
+                    <text x="8" y="125" fill="#94a3b8" fontSize="10">
+                      80
+                    </text>
+                    <text x="8" y="165" fill="#94a3b8" fontSize="10">
+                      40
+                    </text>
                   </svg>
-                </div>
-                <div className="mt-5 flex flex-wrap justify-center gap-x-8 gap-y-2 text-[11px] text-[#64748b]">
-                  <span className="flex items-center gap-1.5">
-                    <span className="size-2 rounded-full bg-[#4f7cff]" />
-                    Europe (142)
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="size-2 rounded-full bg-[#34C759]" />
-                    North America (74)
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="size-2 rounded-full bg-[#ff7a45]" />
-                    Asia (126)
-                  </span>
+
+                  <div className="mt-3 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[11px] text-[#64748b]">
+                    <span className="flex items-center gap-1.5">
+                      <span className="size-2 rounded-full bg-[#34C759]" />
+                      Assets by place
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="size-2 rounded-full bg-[#ef4444]" />
+                      Movement trend
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="size-2 rounded-full bg-[#cbd5e1]" />
+                      Others (26)
+                    </span>
+                  </div>
                 </div>
               </article>
             </section>
