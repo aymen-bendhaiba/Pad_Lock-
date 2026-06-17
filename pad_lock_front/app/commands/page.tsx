@@ -2,7 +2,6 @@ import Image from "next/image";
 import {
   Bell,
   CarFront,
-  ChevronDown,
   CircleOff,
   Command,
   FileText,
@@ -12,7 +11,7 @@ import {
   Settings,
 } from "lucide-react";
 import logo from "../../public/images/logo.png";
-import { CommandsPanel } from "./commands-panel";
+import { CommandsWorkspace } from "./commands-panel";
 
 const navItems = [
   { label: "Dashboard", icon: House, href: "/dashboard" },
@@ -81,37 +80,7 @@ export default function CommandsPage() {
           </nav>
         </aside>
 
-        <section className="min-w-0">
-          <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-[#dfe6ee] bg-white/95 px-4 backdrop-blur md:px-6">
-            <button
-              type="button"
-              className="flex h-9 items-center gap-2 rounded-[5px] bg-[#050505] px-3 text-[12px] font-semibold text-white"
-            >
-              RFID Cards Authorization
-              <ChevronDown size={14} />
-            </button>
-
-            <div className="flex items-center gap-4">
-              <span className="hidden h-7 items-center rounded-full bg-[#eaf8ef] px-3 text-[12px] font-semibold text-[#16883f] sm:flex">
-                <span className="mr-1.5 size-2 rounded-full bg-[#34C759]" />
-                98 Online
-              </span>
-              <div className="hidden h-9 border-l border-[#dfe6ee] md:block" />
-              <div className="hidden text-right md:block">
-                <p className="text-[13px] font-semibold">Amina Alaoui</p>
-                <p className="text-[12px] text-[#718096]">a.alaoui@harmony.ma</p>
-              </div>
-              <button type="button" className="flex items-center gap-2 rounded-full">
-                <span className="grid size-10 place-items-center rounded-full bg-[#111827] text-[14px] font-bold text-white">
-                  AA
-                </span>
-                <ChevronDown className="hidden text-[#718096] sm:block" size={15} />
-              </button>
-            </div>
-          </header>
-
-          <CommandsPanel />
-        </section>
+        <CommandsWorkspace />
       </div>
     </main>
   );

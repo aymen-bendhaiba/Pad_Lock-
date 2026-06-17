@@ -95,3 +95,16 @@ Verification:
 
 - `npm.cmd run lint` passed.
 - `npm.cmd run build` passed.
+
+### Commands Interaction Refinement
+
+Adjusted after prototype review:
+
+- Wired command search inputs to filter the static device rows by name/code.
+- Added inline edit behavior for Low Battery, Sleep Mode, and Password rows.
+- Added Password eye controls that toggle between masked and visible password text.
+- Added Add RFID prototype behavior for searching existing tag chips, adding a typed RFID tag, and removing tag chips.
+- Refined Add RFID dropdown rows so each device can expand/collapse independently, visible rows can be selected, and tag counts update from the static chip data.
+- Added a working Commands/RFID header selector and implemented the Device Command Center mode with selectable devices, quick commands, executable static command history, command search, status filter, and export feedback.
+- Reworked the command center selector label to `Remote card authorization` and added the three card authorization sections: On-site, Remote, and Slave. Each section keeps static prototype controls working, including device selection, synchronization feedback, RFID card inputs, add/clear actions, authorization, unbind controls, and RFID search.
+- Restored the `Commands` option as the third top-level selector mode, including the command metrics, selectable devices, quick command terminal, execute behavior, command history search/filter, and export feedback.
