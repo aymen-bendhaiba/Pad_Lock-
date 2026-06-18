@@ -17,6 +17,8 @@ import {
 } from '../geofences/geofence.entity';
 import { LockEventType } from '../lock-events/lock-event.entity';
 import { LockEventsService } from '../lock-events/lock-events.service';
+import { LockDeviceStatus } from '../locks/lock-device.entity';
+import { LocksService } from '../locks/locks.service';
 import { PositionsService } from '../positions/positions.service';
 import { buildUnlockChannelsSetCommand } from '../protocol/jt701d-commands';
 import {
@@ -70,6 +72,7 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly lockEventsService: LockEventsService,
     private readonly positionsService: PositionsService,
+    private readonly locksService: LocksService,
     @InjectRepository(Geofence)
     private readonly geofencesRepository: Repository<Geofence>,
   ) {}
@@ -231,6 +234,15 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     socket.on('close', () => {
       if (socket.terminalId) {
         this.connectedDevices.delete(socket.terminalId);
+        this.locksService
+          .update(socket.terminalId, { status: LockDeviceStatus.Offline })
+          .catch((error: unknown) => {
+            this.logger.warn(
+              `Could not mark ${socket.terminalId} offline: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
         this.logger.log(`Lock ${socket.terminalId} disconnected`);
       }
     });

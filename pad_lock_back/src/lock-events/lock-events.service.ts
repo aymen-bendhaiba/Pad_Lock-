@@ -21,8 +21,7 @@ export class LockEventsService {
     terminalId: string,
     dto: CreateLockEventDto,
   ): Promise<LockEvent> {
-    const lockDevice =
-      await this.locksService.findByTerminalIdOrFail(terminalId);
+    const lockDevice = await this.locksService.findOrCreateFromTcp(terminalId);
 
     return this.lockEventsRepository.save(
       this.lockEventsRepository.create({

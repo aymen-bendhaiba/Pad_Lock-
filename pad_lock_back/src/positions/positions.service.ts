@@ -28,8 +28,12 @@ export class PositionsService {
     terminalId: string,
     input: RecordPositionInput,
   ): Promise<LockPosition> {
-    const lockDevice =
-      await this.locksService.findByTerminalIdOrFail(terminalId);
+    const lockDevice = await this.locksService.findOrCreateFromTcp(terminalId, {
+      imei:
+        typeof input.rawPayload?.imei === 'string'
+          ? input.rawPayload.imei
+          : null,
+    });
 
     return this.positionsRepository.save(
       this.positionsRepository.create({

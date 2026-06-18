@@ -7,7 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateLockDeviceDto } from './dto/create-lock-device.dto';
 import { UpdateLockDeviceDto } from './dto/update-lock-device.dto';
-import { LockDevice } from './lock-device.entity';
+import { LockDevice, LockDeviceStatus } from './lock-device.entity';
 
 @Injectable()
 export class LocksService {
@@ -58,5 +58,36 @@ export class LocksService {
     }
 
     return lockDevice;
+  }
+
+  async findOrCreateFromTcp(
+    terminalId: string,
+    input?: { imei?: string | null },
+  ): Promise<LockDevice> {
+    const normalizedTerminalId = terminalId.toUpperCase();
+    const existing = await this.lockDevicesRepository.findOneBy({
+      terminalId: normalizedTerminalId,
+    });
+
+    if (existing) {
+      existing.status = LockDeviceStatus.Online;
+      existing.lastSeenAt = new Date();
+
+      if (input?.imei && !existing.imei) {
+        existing.imei = input.imei;
+      }
+
+      return this.lockDevicesRepository.save(existing);
+    }
+
+    return this.lockDevicesRepository.save(
+      this.lockDevicesRepository.create({
+        terminalId: normalizedTerminalId,
+        name: `Lock ${normalizedTerminalId}`,
+        imei: input?.imei ?? null,
+        status: LockDeviceStatus.Online,
+        lastSeenAt: new Date(),
+      }),
+    );
   }
 }
