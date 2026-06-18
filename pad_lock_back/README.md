@@ -1,98 +1,103 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Lock Management API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Secure NestJS API baseline for a smart lock management platform with authentication, lock records, RFID card commands, alert storage, and JT701D TCP ingestion.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Stack
 
-## Description
+- NestJS 11
+- PostgreSQL with PostGIS ready for later lock location/device data
+- TypeORM
+- JWT authentication with Passport
+- bcrypt password hashing
+- Helmet, CORS, validation pipes, and request throttling
+- JT701D TCP listener for lock messages and RFID command responses
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Local Setup
 
 ```bash
-$ npm install
+npm install
+cp .env.example .env
+docker compose up -d
+npm run start:dev
 ```
 
-## Compile and run the project
+Set `DB_SYNCHRONIZE=true` only for quick local prototyping. Keep it `false` for shared, staging, and production databases.
+
+## API
+
+All routes are prefixed with `/api`.
+
+Public routes:
+
+- `GET /api`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+
+Protected lock-management routes require `Authorization: Bearer <accessToken>`:
+
+- `GET /api/locks`
+- `POST /api/locks`
+- `GET /api/locks/:terminalId`
+- `PATCH /api/locks/:terminalId`
+- `GET /api/locks/:terminalId/rfid-cards`
+- `POST /api/locks/:terminalId/rfid-cards`
+- `DELETE /api/locks/:terminalId/rfid-cards`
+- `DELETE /api/locks/:terminalId/rfid-cards/all`
+- `GET /api/locks/:terminalId/rfid-cards/groups/:group`
+- `GET /api/alerts`
+- `GET /api/locks/:terminalId/events`
+- `POST /api/locks/:terminalId/events`
+- `GET /api/devices`
+- `GET /api/history/:terminalId`
+- `POST /api/unlock`
+- `POST /api/clearcache`
+- `POST /api/restart`
+- `POST /api/battery/threshold/set`
+- `GET /api/battery/threshold/query/:terminalId`
+- `POST /api/password/modify`
+- `GET /api/password/query/:terminalId`
+- `POST /api/deepsleep/set`
+- `GET /api/deepsleep/query/:terminalId`
+- `POST /api/vip/phone/set`
+- `GET /api/vip/phone/query/:terminalId/:index`
+- `POST /api/vip/sms/set`
+- `GET /api/vip/sms/query/:terminalId`
+- `GET /api/geofences`
+- `POST /api/geofences`
+- `DELETE /api/geofences/:id`
+- `GET /api/geofence/device/query/:terminalId`
+- `POST /api/geofence/device/set`
+
+RFID card commands follow JT701D `P41`:
+
+- Add cards: `(P41,1,1,count,cards...)`
+- Delete cards: `(P41,1,2,count,cards...)`
+- Clear cards: `(P41,1,3)`
+- Query group: `(P41,0,group)`
+
+The app also starts a TCP listener on `TCP_HOST:TCP_PORT` (`0.0.0.0:8989` by default), matching the reference prototype. RFID card routes send the P41 command to the connected lock and wait up to `TCP_COMMAND_TIMEOUT_MS` for the P41 response.
+
+Incoming JT701D TCP handling:
+
+- Binary `$` frames are buffered, parsed, ACKed with `P69`, and alarm bits are stored as lock events.
+- ASCII `P45` lock/unlock reports are parsed, ACKed with `P69`, and stored as lock events.
+- ASCII `P22` time sync requests are answered.
+- ASCII `P41`, `P43`, `P59`, `P61`, `P44`, `P03`, `P11`, `P12`, and `P15` responses resolve pending API requests.
+- GPS reports are checked against saved geofences. Active overlapping geofence rules are merged with the most restrictive permissions and sent to the lock with `P59` when channel settings change.
+
+Create a lock record before expecting events to persist:
+
+```json
+{
+  "terminalId": "8034400004",
+  "name": "Main lock"
+}
+```
+
+## Verification
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm run lint
+npm run build
+npm test
 ```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
