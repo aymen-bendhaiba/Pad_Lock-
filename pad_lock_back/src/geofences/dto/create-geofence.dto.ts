@@ -2,14 +2,20 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsEnum,
   IsLatitude,
   IsLongitude,
+  IsNumber,
   IsObject,
+  IsOptional,
   IsString,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { GeofenceAccessMode, GeofenceShapeType } from '../geofence.entity';
+import { CreateGeofenceRulesDto } from './geofence-rules.dto';
 
 class GeofenceCoordinateDto {
   @IsLatitude()
@@ -19,39 +25,34 @@ class GeofenceCoordinateDto {
   lng: number;
 }
 
-class GeofenceRulesDto {
-  @IsBoolean()
-  smsAllowed: boolean;
-
-  @IsBoolean()
-  gprsAllowed: boolean;
-
-  @IsBoolean()
-  rfidAllowed: boolean;
-
-  @IsBoolean()
-  serialAllowed: boolean;
-
-  @IsBoolean()
-  bluetoothAllowed: boolean;
-}
-
 export class CreateGeofenceDto {
   @IsString()
   @MaxLength(120)
   name: string;
 
+  @IsEnum(GeofenceShapeType)
+  shapeType: GeofenceShapeType;
+
   @IsArray()
-  @ArrayMinSize(3)
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => GeofenceCoordinateDto)
   coordinates: GeofenceCoordinateDto[];
 
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  radiusMeters?: number;
+
+  @IsOptional()
   @IsBoolean()
-  applyInside: boolean;
+  applyInside?: boolean;
+
+  @IsEnum(GeofenceAccessMode)
+  accessMode: GeofenceAccessMode;
 
   @IsObject()
   @ValidateNested()
-  @Type(() => GeofenceRulesDto)
-  rules: GeofenceRulesDto;
+  @Type(() => CreateGeofenceRulesDto)
+  rules: CreateGeofenceRulesDto;
 }

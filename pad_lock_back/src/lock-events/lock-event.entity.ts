@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   JoinColumn,
@@ -30,7 +31,16 @@ export enum LockEventSeverity {
   Critical = 'critical',
 }
 
+export enum LockEventStatus {
+  Unread = 'unread',
+  Read = 'read',
+  Investigating = 'investigating',
+  Resolve = 'resolve',
+}
+
 @Entity('lock_events')
+@Index(['terminalId', 'occurredAt'])
+@Index(['deletedAt', 'occurredAt'])
 export class LockEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -56,6 +66,14 @@ export class LockEvent {
   @Column({ type: 'enum', enum: LockEventSeverity })
   severity: LockEventSeverity;
 
+  @Index()
+  @Column({
+    type: 'enum',
+    enum: LockEventStatus,
+    default: LockEventStatus.Unread,
+  })
+  status: LockEventStatus;
+
   @Column({ type: 'varchar', length: 120, nullable: true })
   source: string | null;
 
@@ -77,4 +95,7 @@ export class LockEvent {
 
   @CreateDateColumn()
   receivedAt: Date;
+
+  @DeleteDateColumn()
+  deletedAt: Date | null;
 }

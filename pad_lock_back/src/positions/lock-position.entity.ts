@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   JoinColumn,
@@ -10,6 +11,8 @@ import {
 import { LockDevice } from '../locks/lock-device.entity';
 
 @Entity('lock_positions')
+@Index(['terminalId', 'recordedAt'])
+@Index(['deletedAt', 'recordedAt'])
 export class LockPosition {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -47,6 +50,12 @@ export class LockPosition {
   @Column({ type: 'boolean', nullable: true })
   isLocked: boolean | null;
 
+  @Column({ type: 'boolean', default: false })
+  isPositioned: boolean;
+
+  @Column({ type: 'integer', nullable: true })
+  mileage: number | null;
+
   @Column({ type: 'jsonb', nullable: true })
   rawPayload: Record<string, unknown> | null;
 
@@ -56,4 +65,7 @@ export class LockPosition {
 
   @CreateDateColumn()
   receivedAt: Date;
+
+  @DeleteDateColumn()
+  deletedAt: Date | null;
 }

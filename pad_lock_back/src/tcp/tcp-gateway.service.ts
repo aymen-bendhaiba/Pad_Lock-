@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   GatewayTimeoutException,
   Injectable,
   Logger,
@@ -9,18 +11,32 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Socket, createServer, Server } from 'node:net';
-import { Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import {
   Geofence,
-  GeofenceCoordinate,
+  GeofenceAccessMode,
   GeofenceRules,
 } from '../geofences/geofence.entity';
+import {
+  isLockAccessAllowedByGeofence,
+  isPointInGeofence,
+} from '../geofences/geofence-geometry';
 import { LockEventType } from '../lock-events/lock-event.entity';
 import { LockEventsService } from '../lock-events/lock-events.service';
+import { LockConfigurationsService } from '../lock-configurations/lock-configurations.service';
 import { LockDeviceStatus } from '../locks/lock-device.entity';
 import { LocksService } from '../locks/locks.service';
 import { PositionsService } from '../positions/positions.service';
-import { buildUnlockChannelsSetCommand } from '../protocol/jt701d-commands';
+import {
+  buildRfidAddCommand,
+  buildRfidDeleteCommand,
+  buildUnlockChannelsSetCommand,
+} from '../protocol/jt701d-commands';
+import {
+  RfidCard,
+  RfidCardRole,
+  RfidCardSyncStatus,
+} from '../rfid/rfid-card.entity';
 import {
   parseAsciiFrame,
   ParsedAsciiFrame,
@@ -73,8 +89,13 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     private readonly lockEventsService: LockEventsService,
     private readonly positionsService: PositionsService,
     private readonly locksService: LocksService,
+    @Inject(forwardRef(() => LockConfigurationsService))
+    private readonly lockConfigurationsService: LockConfigurationsService,
+    private readonly dataSource: DataSource,
     @InjectRepository(Geofence)
     private readonly geofencesRepository: Repository<Geofence>,
+    @InjectRepository(RfidCard)
+    private readonly rfidCardsRepository: Repository<RfidCard>,
   ) {}
 
   onModuleInit() {
@@ -214,6 +235,10 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  isConnected(terminalId: string): boolean {
+    return this.connectedDevices.has(terminalId.toUpperCase());
+  }
+
   private handleSocket(socket: DeviceSocket) {
     socket.buffer = Buffer.alloc(0);
     socket.lastSerial = null;
@@ -341,8 +366,22 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
 
   private registerSocket(terminalId: string, socket: DeviceSocket): void {
     const normalizedTerminalId = terminalId.toUpperCase();
+    const isNewConnection =
+      this.connectedDevices.get(normalizedTerminalId) !== socket;
     socket.terminalId = normalizedTerminalId;
     this.connectedDevices.set(normalizedTerminalId, socket);
+
+    if (isNewConnection) {
+      void this.lockConfigurationsService
+        .retryPendingForLock(normalizedTerminalId)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Could not retry lock configuration for ${normalizedTerminalId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
+    }
   }
 
   private resolveRfidRequest(
@@ -417,11 +456,18 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
         speedKmh: parsed.speedKmh,
         directionDegrees: parsed.directionDegrees,
         isLocked: parsed.eventSourceCode === '5',
+        isPositioned: parsed.isPositioned,
+        mileage: parsed.mileage,
         rawPayload: parsed,
         recordedAt: this.protocolDate(parsed.timestamp),
       });
 
       await this.applyGeofenceRules(
+        parsed.terminalId,
+        parsed.latitude,
+        parsed.longitude,
+      );
+      await this.applyRfidGeofenceEnforcement(
         parsed.terminalId,
         parsed.latitude,
         parsed.longitude,
@@ -469,11 +515,18 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
       batteryPercentage: this.batteryPercentage(parsed.batteryLevel),
       isCharging: parsed.batteryLevel === 'Charging',
       isLocked: parsed.status.isMotorLocked,
+      isPositioned: parsed.isPositioned,
+      mileage: parsed.mileage,
       rawPayload: parsed,
       recordedAt: this.protocolDate(parsed.timestamp),
     });
 
     await this.applyGeofenceRules(
+      parsed.terminalId,
+      parsed.latitude,
+      parsed.longitude,
+    );
+    await this.applyRfidGeofenceEnforcement(
       parsed.terminalId,
       parsed.latitude,
       parsed.longitude,
@@ -507,25 +560,31 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
       rfidAllowed: true,
       serialAllowed: true,
       bluetoothAllowed: true,
+      lockAccessAllowed: true,
     };
 
     for (const geofence of geofences) {
-      const inside = isPointInPolygon(
+      const inShape = await this.isPositionInGeofence(
         latitude,
         longitude,
-        geofence.coordinates,
+        geofence,
       );
-      const active = geofence.applyInside ? inside : !inside;
+      const lockAccessAllowed = this.isAccessModeAllowed(
+        latitude,
+        longitude,
+        geofence,
+        inShape,
+      );
 
-      if (!active) {
-        continue;
+      if (inShape) {
+        mergedRules.smsAllowed &&= geofence.rules.smsAllowed;
+        mergedRules.gprsAllowed &&= geofence.rules.gprsAllowed;
+        mergedRules.serialAllowed &&= geofence.rules.serialAllowed;
+        mergedRules.bluetoothAllowed &&= geofence.rules.bluetoothAllowed;
       }
 
-      mergedRules.smsAllowed &&= geofence.rules.smsAllowed;
-      mergedRules.gprsAllowed &&= geofence.rules.gprsAllowed;
-      mergedRules.rfidAllowed &&= geofence.rules.rfidAllowed;
-      mergedRules.serialAllowed &&= geofence.rules.serialAllowed;
-      mergedRules.bluetoothAllowed &&= geofence.rules.bluetoothAllowed;
+      mergedRules.lockAccessAllowed &&=
+        lockAccessAllowed && geofence.rules.lockAccessAllowed;
     }
 
     const normalizedTerminalId = terminalId.toUpperCase();
@@ -551,6 +610,144 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
         bluetooth: mergedRules.bluetoothAllowed,
       }),
     );
+  }
+
+  private async applyRfidGeofenceEnforcement(
+    terminalId: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<void> {
+    const lockDevice =
+      await this.locksService.findByTerminalIdOrFail(terminalId);
+    const limitedCards = await this.rfidCardsRepository.find({
+      where: {
+        lockDeviceId: lockDevice.id,
+        role: RfidCardRole.Limited,
+        active: true,
+      },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (limitedCards.length === 0) {
+      return;
+    }
+
+    const allowed = await this.isLimitedRfidAllowedAtPosition(
+      latitude,
+      longitude,
+    );
+    const cardsToDelete = allowed
+      ? []
+      : limitedCards
+          .filter((card) => card.installedOnLock)
+          .map((card) => card.cardNumber);
+    const cardsToAdd = allowed
+      ? limitedCards
+          .filter((card) => !card.installedOnLock)
+          .map((card) => card.cardNumber)
+      : [];
+
+    await this.syncPhysicalRfidCards(
+      terminalId,
+      lockDevice.id,
+      cardsToDelete,
+      false,
+    );
+    await this.syncPhysicalRfidCards(
+      terminalId,
+      lockDevice.id,
+      cardsToAdd,
+      true,
+    );
+  }
+
+  private async isLimitedRfidAllowedAtPosition(
+    latitude: number,
+    longitude: number,
+  ): Promise<boolean> {
+    const geofences = await this.geofencesRepository.find();
+
+    for (const geofence of geofences) {
+      const inShape = await this.isPositionInGeofence(
+        latitude,
+        longitude,
+        geofence,
+      );
+      const accessModeAllows = this.isAccessModeAllowed(
+        latitude,
+        longitude,
+        geofence,
+        inShape,
+      );
+      const activeRuleBlocks =
+        inShape &&
+        (geofence.rules.lockAccessAllowed === false ||
+          geofence.rules.rfidAllowed === false);
+
+      if (!accessModeAllows || activeRuleBlocks) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private async syncPhysicalRfidCards(
+    terminalId: string,
+    lockDeviceId: string,
+    cards: string[],
+    install: boolean,
+  ): Promise<void> {
+    if (cards.length === 0) {
+      return;
+    }
+
+    const status = install
+      ? RfidCardSyncStatus.PendingAdd
+      : RfidCardSyncStatus.PendingDelete;
+
+    await this.rfidCardsRepository.update(
+      { lockDeviceId, cardNumber: In(cards) },
+      {
+        lastSyncStatus: status,
+        lastSyncError: null,
+      },
+    );
+
+    for (const chunk of chunks(cards, 20)) {
+      try {
+        await this.sendRfidCommand(
+          terminalId,
+          install ? buildRfidAddCommand(chunk) : buildRfidDeleteCommand(chunk),
+        );
+        await this.rfidCardsRepository.update(
+          { lockDeviceId, cardNumber: In(chunk) },
+          {
+            installedOnLock: install,
+            lastSyncStatus: RfidCardSyncStatus.Synced,
+            lastSyncError: null,
+            lastSyncedAt: new Date(),
+          },
+        );
+      } catch (error) {
+        await this.rfidCardsRepository.update(
+          { lockDeviceId, cardNumber: In(chunk) },
+          {
+            lastSyncStatus:
+              error instanceof BadRequestException
+                ? status
+                : RfidCardSyncStatus.Failed,
+            lastSyncError:
+              error instanceof Error ? error.message : String(error),
+          },
+        );
+        this.logger.warn(
+          `Could not ${install ? 'install' : 'remove'} RFID cards for ${terminalId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
   }
 
   private alarmTypesFromBinary(parsed: ParsedJt701dBinary): LockEventType[] {
@@ -605,6 +802,46 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     const parsed = Number.parseInt(value.replace('%', ''), 10);
     return Number.isFinite(parsed) ? parsed : null;
   }
+
+  private async isPositionInGeofence(
+    latitude: number,
+    longitude: number,
+    geofence: Geofence,
+  ): Promise<boolean> {
+    if (!geofence.geoBoundaryId) {
+      return isPointInGeofence(latitude, longitude, geofence);
+    }
+
+    const rows = await this.dataSource.query<Array<{ inside: boolean }>>(
+      `
+        SELECT ST_Covers(
+          geometry,
+          ST_SetSRID(ST_MakePoint($2, $1), 4326)
+        ) AS inside
+        FROM geo_boundaries
+        WHERE id = $3
+        LIMIT 1
+      `,
+      [latitude, longitude, geofence.geoBoundaryId],
+    );
+
+    return rows[0]?.inside ?? false;
+  }
+
+  private isAccessModeAllowed(
+    latitude: number,
+    longitude: number,
+    geofence: Geofence,
+    inShape: boolean,
+  ): boolean {
+    if (geofence.geoBoundaryId) {
+      return geofence.accessMode === GeofenceAccessMode.AllowInside
+        ? inShape
+        : !inShape;
+    }
+
+    return isLockAccessAllowedByGeofence(latitude, longitude, geofence);
+  }
 }
 
 function sameRules(left: GeofenceRules, right: GeofenceRules): boolean {
@@ -613,29 +850,17 @@ function sameRules(left: GeofenceRules, right: GeofenceRules): boolean {
     left.gprsAllowed === right.gprsAllowed &&
     left.rfidAllowed === right.rfidAllowed &&
     left.serialAllowed === right.serialAllowed &&
-    left.bluetoothAllowed === right.bluetoothAllowed
+    left.bluetoothAllowed === right.bluetoothAllowed &&
+    left.lockAccessAllowed === right.lockAccessAllowed
   );
 }
 
-function isPointInPolygon(
-  lat: number,
-  lng: number,
-  polygon: GeofenceCoordinate[],
-): boolean {
-  let inside = false;
+function chunks<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
 
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
-    const xi = polygon[i].lat;
-    const yi = polygon[i].lng;
-    const xj = polygon[j].lat;
-    const yj = polygon[j].lng;
-    const intersects =
-      yi > lng !== yj > lng && lat < ((xj - xi) * (lng - yi)) / (yj - yi) + xi;
-
-    if (intersects) {
-      inside = !inside;
-    }
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
   }
 
-  return inside;
+  return result;
 }

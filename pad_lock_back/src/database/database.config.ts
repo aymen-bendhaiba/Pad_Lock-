@@ -1,7 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleAsyncOptions } from '@nestjs/typeorm';
 import { Geofence } from '../geofences/geofence.entity';
+import { GeoBoundary } from '../geo-boundaries/geo-boundary.entity';
 import { LockEvent } from '../lock-events/lock-event.entity';
+import { LockConfiguration } from '../lock-configurations/lock-configuration.entity';
 import { LockDevice } from '../locks/lock-device.entity';
 import { LockPosition } from '../positions/lock-position.entity';
 import { RfidCard } from '../rfid/rfid-card.entity';
@@ -17,7 +19,16 @@ export const databaseConfig: TypeOrmModuleAsyncOptions = {
             rejectUnauthorized: false,
           }
         : false,
-      entities: [User, LockDevice, RfidCard, LockEvent, LockPosition, Geofence],
+      entities: [
+        User,
+        LockDevice,
+        RfidCard,
+        LockEvent,
+        LockConfiguration,
+        LockPosition,
+        Geofence,
+        GeoBoundary,
+      ],
       synchronize: config.getOrThrow<boolean>('DB_SYNCHRONIZE'),
     };
     const databaseUrl = config.get<string>('DATABASE_URL');

@@ -20,10 +20,21 @@ const toBoolean = (value: string | undefined, fallback = false): boolean => {
 
 export function validateEnv(env: Env) {
   const jwtSecret = required(env, 'JWT_SECRET');
+  const deviceConfigEncryptionKey = required(
+    env,
+    'DEVICE_CONFIG_ENCRYPTION_KEY',
+  );
   const databaseUrl = env.DATABASE_URL?.trim();
+  const archiveDatabaseUrl = env.ARCHIVE_DATABASE_URL?.trim();
 
   if (jwtSecret.length < 32) {
     throw new Error('JWT_SECRET must be at least 32 characters long');
+  }
+
+  if (deviceConfigEncryptionKey.length < 32) {
+    throw new Error(
+      'DEVICE_CONFIG_ENCRYPTION_KEY must be at least 32 characters long',
+    );
   }
 
   return {
@@ -40,8 +51,16 @@ export function validateEnv(env: Env) {
     DB_SYNCHRONIZE: toBoolean(env.DB_SYNCHRONIZE),
     JWT_SECRET: jwtSecret,
     JWT_EXPIRES_IN: env.JWT_EXPIRES_IN ?? '15m',
+    DEVICE_CONFIG_ENCRYPTION_KEY: deviceConfigEncryptionKey,
     TCP_HOST: env.TCP_HOST ?? '0.0.0.0',
     TCP_PORT: Number(env.TCP_PORT ?? 8989),
     TCP_COMMAND_TIMEOUT_MS: Number(env.TCP_COMMAND_TIMEOUT_MS ?? 60000),
+    RETENTION_ENABLED: toBoolean(env.RETENTION_ENABLED, true),
+    DATA_RETENTION_DAYS: Number(env.DATA_RETENTION_DAYS ?? 30),
+    RETENTION_ARCHIVE_BATCH_SIZE: Number(
+      env.RETENTION_ARCHIVE_BATCH_SIZE ?? 1000,
+    ),
+    ARCHIVE_DATABASE_URL: archiveDatabaseUrl,
+    ARCHIVE_DB_SSL: toBoolean(env.ARCHIVE_DB_SSL, Boolean(archiveDatabaseUrl)),
   };
 }

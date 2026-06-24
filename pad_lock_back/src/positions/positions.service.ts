@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { Between, MoreThanOrEqual, Repository } from 'typeorm';
 import { LocksService } from '../locks/locks.service';
+import { HistoryQueryDto } from './dto/history-query.dto';
 import { LockPosition } from './lock-position.entity';
 
 type RecordPositionInput = {
@@ -12,6 +13,8 @@ type RecordPositionInput = {
   batteryPercentage?: number | null;
   isCharging?: boolean;
   isLocked?: boolean | null;
+  isPositioned?: boolean;
+  mileage?: number | null;
   rawPayload?: Record<string, unknown>;
   recordedAt: Date;
 };
@@ -46,6 +49,8 @@ export class PositionsService {
         batteryPercentage: input.batteryPercentage ?? null,
         isCharging: input.isCharging ?? false,
         isLocked: input.isLocked ?? null,
+        isPositioned: input.isPositioned ?? true,
+        mileage: input.mileage ?? null,
         rawPayload: input.rawPayload ?? null,
         recordedAt: input.recordedAt,
       }),
@@ -53,19 +58,15 @@ export class PositionsService {
   }
 
   async findActiveDevices() {
-    const positions = await this.positionsRepository.find({
-      order: { recordedAt: 'DESC' },
-      take: 1000,
-    });
-    const latestByTerminal = new Map<string, LockPosition>();
+    const positions = await this.positionsRepository
+      .createQueryBuilder('position')
+      .distinctOn(['position.terminalId'])
+      .orderBy('position.terminalId', 'ASC')
+      .addOrderBy('position.recordedAt', 'DESC')
+      .limit(1000)
+      .getMany();
 
-    for (const position of positions) {
-      if (!latestByTerminal.has(position.terminalId)) {
-        latestByTerminal.set(position.terminalId, position);
-      }
-    }
-
-    return [...latestByTerminal.values()].map((position) => ({
+    return positions.map((position) => ({
       id: position.terminalId,
       position: {
         lat: position.latitude,
@@ -79,22 +80,44 @@ export class PositionsService {
             : `${position.batteryPercentage}%`,
         isCharging: position.isCharging,
         isLocked: position.isLocked,
+        is_positioned: position.isPositioned,
+        mileage: position.mileage,
       },
     }));
   }
 
-  async findTodayHistory(terminalId: string): Promise<number[][]> {
-    const startOfToday = new Date();
-    startOfToday.setUTCHours(0, 0, 0, 0);
+  async findHistory(
+    terminalId: string,
+    query: HistoryQueryDto = {},
+  ): Promise<number[][]> {
+    const from = query.from ? new Date(query.from) : startOfUtcToday();
+    const to = query.to ? new Date(query.to) : null;
+
+    if (to && from > to) {
+      throw new BadRequestException('History from date must be before to date');
+    }
 
     const positions = await this.positionsRepository.find({
       where: {
         terminalId: terminalId.toUpperCase(),
-        recordedAt: MoreThanOrEqual(startOfToday),
+        recordedAt: to ? Between(from, to) : MoreThanOrEqual(from),
       },
       order: { recordedAt: 'ASC' },
     });
 
     return positions.map((position) => [position.latitude, position.longitude]);
   }
+
+  findLatestForLock(terminalId: string): Promise<LockPosition | null> {
+    return this.positionsRepository.findOne({
+      where: { terminalId: terminalId.toUpperCase() },
+      order: { recordedAt: 'DESC' },
+    });
+  }
+}
+
+function startOfUtcToday(): Date {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
 }

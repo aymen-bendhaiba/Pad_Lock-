@@ -99,6 +99,31 @@ export function buildUnlockChannelsQueryCommand(): string {
   return '(P59,0)';
 }
 
+export function buildSimConfigurationSetCommand(
+  sim: 1 | 2,
+  input: {
+    ipAddress: string;
+    port: number;
+    apn: string;
+    apnUser: string;
+    apnPassword: string;
+  },
+): string {
+  const operation = sim === 1 ? 1 : 3;
+  return `(P06,${operation},${input.ipAddress},${input.port},${input.apn},${input.apnUser},${input.apnPassword})`;
+}
+
+export function buildReportingIntervalsSetCommand(
+  trackingUploadIntervalSeconds: number,
+  wakeUpIntervalMinutes: number,
+): string {
+  return `(P04,1,${trackingUploadIntervalSeconds},${wakeUpIntervalMinutes})`;
+}
+
+export function buildVibrationLevelSetCommand(levelMg: number): string {
+  return `(P37,1,${levelMg})`;
+}
+
 function assertCardBatch(cards: string[]): void {
   if (cards.length < 1 || cards.length > CARD_BATCH_LIMIT) {
     throw new Error(

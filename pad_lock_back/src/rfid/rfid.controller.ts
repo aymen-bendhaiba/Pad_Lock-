@@ -6,10 +6,11 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RfidCardsDto } from './dto/rfid-cards.dto';
+import { RfidCardsDto, UpdateRfidCardRoleDto } from './dto/rfid-cards.dto';
 import { RfidService } from './rfid.service';
 
 @UseGuards(JwtAuthGuard)
@@ -33,6 +34,15 @@ export class RfidController {
     @Body() dto: RfidCardsDto,
   ) {
     return this.rfidService.deleteCards(terminalId, dto);
+  }
+
+  @Put(':cardNumber/role')
+  updateCardRole(
+    @Param('terminalId') terminalId: string,
+    @Param('cardNumber') cardNumber: string,
+    @Body() dto: UpdateRfidCardRoleDto,
+  ) {
+    return this.rfidService.updateCardRole(terminalId, cardNumber, dto.role);
   }
 
   @Delete('all')

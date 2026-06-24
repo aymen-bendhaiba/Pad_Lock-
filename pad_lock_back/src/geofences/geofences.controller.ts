@@ -8,6 +8,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CheckCardAccessDto } from './dto/check-card-access.dto';
+import { CreateGeofenceFromBoundaryDto } from './dto/create-geofence-from-boundary.dto';
 import { CreateGeofenceDto } from './dto/create-geofence.dto';
 import { SetUnlockChannelsDto } from './dto/unlock-channels.dto';
 import { GeofencesService } from './geofences.service';
@@ -27,6 +29,11 @@ export class GeofencesController {
     return this.geofencesService.create(dto);
   }
 
+  @Post('geofences/from-boundary')
+  createFromBoundary(@Body() dto: CreateGeofenceFromBoundaryDto) {
+    return this.geofencesService.createFromBoundary(dto);
+  }
+
   @Delete('geofences/:id')
   delete(@Param('id') id: string) {
     return this.geofencesService.delete(id);
@@ -40,5 +47,13 @@ export class GeofencesController {
   @Post('geofence/device/set')
   setUnlockChannels(@Body() dto: SetUnlockChannelsDto) {
     return this.geofencesService.setUnlockChannels(dto.terminalId, dto);
+  }
+
+  @Post('locks/:terminalId/access/check')
+  checkCardAccess(
+    @Param('terminalId') terminalId: string,
+    @Body() dto: CheckCardAccessDto,
+  ) {
+    return this.geofencesService.checkCardAccess(terminalId, dto);
   }
 }
