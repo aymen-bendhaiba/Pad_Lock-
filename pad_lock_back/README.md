@@ -61,7 +61,7 @@ Retention and archive behavior:
 - Example: with 30 days retention, when July 1 is reached, June 1 becomes eligible. The next day, June 2 becomes eligible, and so on.
 - Archived rows are copied into the separate database from `ARCHIVE_DATABASE_URL` before soft delete.
 - The archive database stores full original rows as JSON in `archived_records`, with `source_table`, `source_id`, `terminal_id`, `data_timestamp`, and `archived_at`.
-- Currently archived high-volume tables: `lock_events` and `lock_positions`.
+- Currently archived high-volume tables: `lock_events`, `lock_positions`, and `geofence_transitions`.
 - Set `DATA_RETENTION_DAYS` per client contract, for example `30`, `60`, or `90`.
 
 ## API
@@ -95,6 +95,11 @@ Protected lock-management routes require `Authorization: Bearer <accessToken>`:
 - `GET /api/devices`
 - `GET /api/history/:terminalId`
 - `GET /api/dashboard/summary`
+- `GET /api/reports/alerts`
+- `GET /api/reports/geofences`
+- `GET /api/reports/unlocks`
+- `GET /api/reports/mileage`
+- `GET /api/reports/battery`
 - `GET /api/geo-boundaries`
 - `GET /api/geo-boundaries/:id`
 - `GET /api/alerts/stream`
@@ -378,6 +383,70 @@ Common error responses:
   "error": "Not Found"
 }
 ```
+
+### Reports
+
+All report routes require `Authorization: Bearer <accessToken>`.
+
+Common filters are `from`, `to`, `terminalId`, `groupBy=day|week|month`, `page`, and `limit`. The default range is the last 30 days, the default grouping is `day`, and `limit` can be `1-100`.
+
+Every response contains `range`, `filters`, a report-specific `summary`, chart-ready `timeline`, `pagination`, and detailed `rows`.
+
+- `GET /api/reports/alerts`
+  - Extra filters: `type`, `severity`, `status`.
+  - Returns alert totals, unresolved/critical counts, grouped counts, timeline, and alert rows.
+- `GET /api/reports/geofences`
+  - Extra filter: `geofenceId`.
+  - Returns geofence entries, exits, unlocks inside sites, affected locks, configuration/rule rows, and timeline.
+- `GET /api/reports/unlocks`
+  - Extra filters: `geofenceId`, `method`.
+  - Methods: `rfid`, `static_password`, `dynamic_password`, `bluetooth`, `other`.
+  - Returns total openings, openings inside sites, card/password totals, method groups, timeline, and unlock rows.
+- `GET /api/reports/mileage`
+  - Returns total kilometers and per-lock starting mileage, ending mileage, calculated distance, and timestamps.
+- `GET /api/reports/battery`
+  - Extra filter: `below=0-100`.
+  - Returns average/minimum/maximum battery, low/charging samples, timeline, and per-lock battery rows.
+
+Example:
+
+```http
+GET /api/reports/unlocks?from=2026-06-01T00:00:00.000Z&to=2026-06-24T23:59:59.999Z&terminalId=8034400004&method=rfid&groupBy=day&page=1&limit=25
+Authorization: Bearer <accessToken>
+```
+
+Expected response structure:
+
+```json
+{
+  "range": {
+    "from": "2026-06-01T00:00:00.000Z",
+    "to": "2026-06-24T23:59:59.999Z",
+    "groupBy": "day"
+  },
+  "filters": {
+    "terminalId": "8034400004"
+  },
+  "summary": {
+    "totalOpened": 18,
+    "openedInsideSite": 12,
+    "openedByCard": 18,
+    "openedByPassword": 0,
+    "affectedLocks": 1,
+    "byMethod": [{ "key": "rfid", "count": 18 }]
+  },
+  "timeline": [],
+  "pagination": {
+    "page": 1,
+    "limit": 25,
+    "total": 18,
+    "pages": 1
+  },
+  "rows": []
+}
+```
+
+TCP positions now persist geofence entry/exit transitions, and lock events store the geofences containing their coordinates. Reports use the live retained database; with the default policy, detailed data covers 30 days. Older archive data is not merged into report responses.
 
 Dashboard summary:
 

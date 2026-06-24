@@ -14,6 +14,13 @@ CREATE INDEX IF NOT EXISTS lock_events_terminal_occurred_idx
 CREATE INDEX IF NOT EXISTS lock_events_retention_idx
   ON lock_events ("deletedAt", "occurredAt");
 
+CREATE INDEX IF NOT EXISTS lock_events_report_filters_idx
+  ON lock_events ("occurredAt" DESC, type, severity, status)
+  WHERE "deletedAt" IS NULL;
+
+CREATE INDEX IF NOT EXISTS lock_events_geofences_gin_idx
+  ON lock_events USING GIN (geofences);
+
 CREATE INDEX IF NOT EXISTS rfid_cards_lock_active_created_idx
   ON rfid_cards ("lockDeviceId", active, "createdAt" DESC);
 
@@ -32,6 +39,22 @@ CREATE INDEX IF NOT EXISTS geofences_geo_boundary_idx
 
 CREATE INDEX IF NOT EXISTS geofences_created_idx
   ON geofences ("createdAt" DESC);
+
+CREATE INDEX IF NOT EXISTS lock_positions_battery_report_idx
+  ON lock_positions ("recordedAt" DESC, "terminalId", "batteryPercentage")
+  WHERE "deletedAt" IS NULL AND "batteryPercentage" IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS lock_positions_mileage_report_idx
+  ON lock_positions ("terminalId", "recordedAt", mileage)
+  WHERE "deletedAt" IS NULL AND mileage IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS geofence_transitions_terminal_time_idx
+  ON geofence_transitions ("terminalId", "occurredAt" DESC)
+  WHERE "deletedAt" IS NULL;
+
+CREATE INDEX IF NOT EXISTS geofence_transitions_geofence_time_idx
+  ON geofence_transitions ("geofenceId", "occurredAt" DESC)
+  WHERE "deletedAt" IS NULL;
 
 CREATE INDEX IF NOT EXISTS geo_boundaries_geometry_gist_idx
   ON geo_boundaries USING GIST (geometry);

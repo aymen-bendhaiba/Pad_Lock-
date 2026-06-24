@@ -46,6 +46,7 @@ export class LockEventsService {
         latitude: dto.latitude ?? null,
         longitude: dto.longitude ?? null,
         rawPayload: dto.rawPayload ?? null,
+        geofences: [],
         occurredAt: new Date(dto.occurredAt),
       }),
     );
@@ -89,6 +90,7 @@ export class LockEventsService {
       latitude?: number | null;
       longitude?: number | null;
       rawPayload?: Record<string, unknown>;
+      geofences?: Array<{ id: string; name: string }>;
       occurredAt: Date;
     },
   ): Promise<LockEvent> {
@@ -107,6 +109,7 @@ export class LockEventsService {
         latitude: input.latitude ?? null,
         longitude: input.longitude ?? null,
         rawPayload: input.rawPayload ?? null,
+        geofences: input.geofences ?? [],
         occurredAt: input.occurredAt,
       }),
     );

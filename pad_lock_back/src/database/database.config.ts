@@ -1,6 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleAsyncOptions } from '@nestjs/typeorm';
 import { Geofence } from '../geofences/geofence.entity';
+import { GeofenceDeviceState } from '../geofences/geofence-device-state.entity';
+import { GeofenceTransition } from '../geofences/geofence-transition.entity';
 import { GeoBoundary } from '../geo-boundaries/geo-boundary.entity';
 import { LockEvent } from '../lock-events/lock-event.entity';
 import { LockConfiguration } from '../lock-configurations/lock-configuration.entity';
@@ -27,6 +29,8 @@ export const databaseConfig: TypeOrmModuleAsyncOptions = {
         LockConfiguration,
         LockPosition,
         Geofence,
+        GeofenceDeviceState,
+        GeofenceTransition,
         GeoBoundary,
       ],
       synchronize: config.getOrThrow<boolean>('DB_SYNCHRONIZE'),

@@ -89,6 +89,9 @@ export class LockEvent {
   @Column({ type: 'jsonb', nullable: true })
   rawPayload: Record<string, unknown> | null;
 
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  geofences: Array<{ id: string; name: string }>;
+
   @Index()
   @Column({ type: 'timestamptz' })
   occurredAt: Date;

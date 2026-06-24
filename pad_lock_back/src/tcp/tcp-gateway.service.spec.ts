@@ -65,6 +65,15 @@ function serviceFixture(input: {
     { retryPendingForLock: jest.fn() } as never,
     {} as never,
     geofencesRepository as never,
+    {
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((value: unknown): unknown => value),
+      save: jest.fn((value: unknown) => Promise.resolve<unknown>(value)),
+    } as never,
+    {
+      create: jest.fn((value: unknown): unknown => value),
+      save: jest.fn((value: unknown) => Promise.resolve<unknown>(value)),
+    } as never,
     rfidCardsRepository as never,
   );
 

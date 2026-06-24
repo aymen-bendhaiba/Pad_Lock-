@@ -17,6 +17,11 @@ import {
   GeofenceAccessMode,
   GeofenceRules,
 } from '../geofences/geofence.entity';
+import { GeofenceDeviceState } from '../geofences/geofence-device-state.entity';
+import {
+  GeofenceTransition,
+  GeofenceTransitionType,
+} from '../geofences/geofence-transition.entity';
 import {
   isLockAccessAllowedByGeofence,
   isPointInGeofence,
@@ -94,6 +99,10 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     private readonly dataSource: DataSource,
     @InjectRepository(Geofence)
     private readonly geofencesRepository: Repository<Geofence>,
+    @InjectRepository(GeofenceDeviceState)
+    private readonly geofenceStatesRepository: Repository<GeofenceDeviceState>,
+    @InjectRepository(GeofenceTransition)
+    private readonly geofenceTransitionsRepository: Repository<GeofenceTransition>,
     @InjectRepository(RfidCard)
     private readonly rfidCardsRepository: Repository<RfidCard>,
   ) {}
@@ -467,6 +476,12 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
         parsed.latitude,
         parsed.longitude,
       );
+      await this.recordGeofenceTransitions(
+        parsed.terminalId,
+        parsed.latitude,
+        parsed.longitude,
+        this.protocolDate(parsed.timestamp),
+      );
       await this.applyRfidGeofenceEnforcement(
         parsed.terminalId,
         parsed.latitude,
@@ -490,7 +505,17 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     input: Parameters<LockEventsService['recordFromTcp']>[1],
   ): Promise<void> {
     try {
-      await this.lockEventsService.recordFromTcp(terminalId, input);
+      const geofences =
+        input.latitude !== null &&
+        input.latitude !== undefined &&
+        input.longitude !== null &&
+        input.longitude !== undefined
+          ? await this.geofenceSnapshots(input.latitude, input.longitude)
+          : [];
+      await this.lockEventsService.recordFromTcp(terminalId, {
+        ...input,
+        geofences,
+      });
     } catch (error) {
       this.logger.warn(
         `Could not persist TCP event for ${terminalId}: ${
@@ -526,6 +551,12 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
       parsed.latitude,
       parsed.longitude,
     );
+    await this.recordGeofenceTransitions(
+      parsed.terminalId,
+      parsed.latitude,
+      parsed.longitude,
+      this.protocolDate(parsed.timestamp),
+    );
     await this.applyRfidGeofenceEnforcement(
       parsed.terminalId,
       parsed.latitude,
@@ -546,6 +577,111 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
         }`,
       );
     }
+  }
+
+  private async geofenceSnapshots(
+    latitude: number,
+    longitude: number,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const geofences = await this.geofencesRepository.find();
+    const snapshots: Array<{ id: string; name: string }> = [];
+
+    for (const geofence of geofences) {
+      if (await this.isPositionInGeofence(latitude, longitude, geofence)) {
+        snapshots.push({ id: geofence.id, name: geofence.name });
+      }
+    }
+
+    return snapshots;
+  }
+
+  private async recordGeofenceTransitions(
+    terminalId: string,
+    latitude: number,
+    longitude: number,
+    occurredAt: Date,
+  ): Promise<void> {
+    const normalizedTerminalId = terminalId.toUpperCase();
+    const [geofences, states] = await Promise.all([
+      this.geofencesRepository.find(),
+      this.geofenceStatesRepository.find({
+        where: { terminalId: normalizedTerminalId },
+      }),
+    ]);
+    const stateByGeofence = new Map(
+      states.map((state) => [state.geofenceId, state]),
+    );
+
+    for (const geofence of geofences) {
+      const isInside = await this.isPositionInGeofence(
+        latitude,
+        longitude,
+        geofence,
+      );
+      const state = stateByGeofence.get(geofence.id);
+
+      if (!state) {
+        await this.geofenceStatesRepository.save(
+          this.geofenceStatesRepository.create({
+            terminalId: normalizedTerminalId,
+            geofenceId: geofence.id,
+            isInside,
+            lastObservedAt: occurredAt,
+            lastChangedAt: isInside ? occurredAt : null,
+          }),
+        );
+
+        if (isInside) {
+          await this.saveGeofenceTransition(
+            normalizedTerminalId,
+            geofence,
+            GeofenceTransitionType.Enter,
+            latitude,
+            longitude,
+            occurredAt,
+          );
+        }
+        continue;
+      }
+
+      state.lastObservedAt = occurredAt;
+
+      if (state.isInside !== isInside) {
+        state.isInside = isInside;
+        state.lastChangedAt = occurredAt;
+        await this.saveGeofenceTransition(
+          normalizedTerminalId,
+          geofence,
+          isInside ? GeofenceTransitionType.Enter : GeofenceTransitionType.Exit,
+          latitude,
+          longitude,
+          occurredAt,
+        );
+      }
+
+      await this.geofenceStatesRepository.save(state);
+    }
+  }
+
+  private saveGeofenceTransition(
+    terminalId: string,
+    geofence: Geofence,
+    type: GeofenceTransitionType,
+    latitude: number,
+    longitude: number,
+    occurredAt: Date,
+  ): Promise<GeofenceTransition> {
+    return this.geofenceTransitionsRepository.save(
+      this.geofenceTransitionsRepository.create({
+        terminalId,
+        geofenceId: geofence.id,
+        geofenceName: geofence.name,
+        type,
+        latitude,
+        longitude,
+        occurredAt,
+      }),
+    );
   }
 
   private async applyGeofenceRules(
