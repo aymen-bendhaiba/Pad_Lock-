@@ -1,8 +1,8 @@
 import Image from "next/image";
-import Link from "next/link";
 import loginBg from "../public/images/loginBg.png";
 import logoHarmony from "../public/images/logoHarmony.png";
 import logo from "../public/images/logo.png";
+import { LoginForm } from "./login-form";
 
 const stats = [
   { value: "5,200+", label: "Vehicles Connected" },
@@ -79,81 +79,7 @@ export default function Home() {
               Welcome back
             </h2>
 
-            <form className="mt-8" aria-label="Login form">
-              <div>
-                <h3 className="text-[16px] font-semibold leading-none text-[#17171c]">
-                  Log in
-                </h3>
-                <p className="mt-3 text-[12px] leading-none text-[#777781]">
-                  Enter your email below to log in your account
-                </p>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                <div>
-                  <label
-                    htmlFor="email"
-                    className="block text-[11px] font-medium leading-none text-[#1d1d22]"
-                  >
-                    Email
-                  </label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="m@example.com"
-                    className="mt-2 h-9 w-full rounded-[4px] border border-[#dddddf] bg-white px-3 text-[12px] text-[#17171c] outline-none transition focus:border-[#1E9ADA] focus:ring-2 focus:ring-[#1E9ADA]/20"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between gap-4">
-                    <label
-                      htmlFor="password"
-                      className="block text-[11px] font-medium leading-none text-[#1d1d22]"
-                    >
-                      Password
-                    </label>
-                    <Link
-                      href="#"
-                      className="text-[11px] font-normal leading-none text-[#1d1d22] underline underline-offset-2"
-                    >
-                      Forgot your password?
-                    </Link>
-                  </div>
-                  <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    className="mt-2 h-9 w-full rounded-[4px] border border-[#dddddf] bg-white px-3 text-[12px] text-[#17171c] outline-none transition focus:border-[#1E9ADA] focus:ring-2 focus:ring-[#1E9ADA]/20"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                <button
-                  type="submit"
-                  className="h-9 w-full rounded-[4px] bg-[#1c1c21] text-[12px] font-medium text-white transition hover:bg-[#0C4E71] focus:outline-none focus:ring-2 focus:ring-[#1E9ADA]/35"
-                >
-                  Login
-                </button>
-                <button
-                  type="button"
-                  className="h-9 w-full rounded-[4px] border border-[#dddddf] bg-white text-[12px] font-medium text-[#1d1d22] transition hover:border-[#1E9ADA] focus:outline-none focus:ring-2 focus:ring-[#1E9ADA]/25"
-                >
-                  Login with Google
-                </button>
-              </div>
-
-              <p className="mt-4 text-center text-[12px] leading-none text-[#1d1d22]">
-                Don&apos;t have an account?{" "}
-                <Link href="#" className="underline underline-offset-2">
-                  Sign up
-                </Link>
-              </p>
-            </form>
+            <LoginForm />
           </div>
         </div>
 

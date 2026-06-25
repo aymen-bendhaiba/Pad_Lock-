@@ -1,42 +1,35 @@
-export const liveMapAssets = [
-  {
-    id: "truck-casablanca",
-    name: "Truck-A2-879",
-    code: "JT87-230",
-    status: "Moving",
-    color: "#047857",
-    battery: "97%",
-    lock: "Locked",
-    position: [33.5731, -7.5898] as [number, number],
-  },
-  {
-    id: "truck-paris",
-    name: "Truck-A2-879",
-    code: "JT87-230",
-    status: "Alarm",
-    color: "#dc2626",
-    battery: "67%",
-    lock: "Unlocked",
-    position: [48.8566, 2.3522] as [number, number],
-  },
-  {
-    id: "truck-new-york",
-    name: "Truck-A2-879",
-    code: "JT87-230",
-    status: "Moving",
-    color: "#047857",
-    battery: "03%",
-    lock: "Locked",
-    position: [40.7128, -74.006] as [number, number],
-  },
-  {
-    id: "truck-dubai",
-    name: "Truck-A2-879",
-    code: "JT87-230",
-    status: "Moving",
-    color: "#047857",
-    battery: "87%",
-    lock: "Unlocked",
-    position: [25.2048, 55.2708] as [number, number],
-  },
-];
+export type LiveMapStatus = "Moving" | "Idle" | "Offline" | "Alarm";
+export type LiveMapLockState = "Locked" | "Unlocked" | "Unknown";
+
+export type LiveMapPlaybackPoint = {
+  position: [number, number];
+  timestamp: string | undefined;
+  placeName?: string;
+};
+
+export type LiveMapDeviceDetail = {
+  label: string;
+  value: string;
+};
+
+export type LiveMapAsset = {
+  id: string;
+  terminalId: string;
+  name: string;
+  code: string;
+  status: LiveMapStatus;
+  color: string;
+  battery: string;
+  signal: string;
+  lock: LiveMapLockState;
+  position?: [number, number];
+  updatedAt?: string;
+  deviceDetails: LiveMapDeviceDetail[];
+};
+
+export const LIVE_MAP_COLORS: Record<LiveMapStatus, string> = {
+  Moving: "#047857",
+  Idle: "#f59e0b",
+  Offline: "#94a3b8",
+  Alarm: "#dc2626",
+};

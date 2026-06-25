@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { SplashPreloader } from "./splash-preloader";
+import { AlertToastListener } from "./alert-toast-listener";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -23,7 +25,11 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <SplashPreloader />
+        <AlertToastListener />
+        {children}
+      </body>
     </html>
   );
 }

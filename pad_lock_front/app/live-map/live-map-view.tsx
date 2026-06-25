@@ -1,13 +1,134 @@
 "use client";
 
-import { DivIcon } from "leaflet";
-import { useEffect } from "react";
-import { MapContainer, Marker, TileLayer, useMap, ZoomControl } from "react-leaflet";
+import { DivIcon, LatLngBounds } from "leaflet";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Minus, Plus } from "lucide-react";
+import {
+  MapContainer,
+  Marker,
+  Polyline,
+  Popup,
+  TileLayer,
+  useMap,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { liveMapAssets } from "./live-map-data";
+import type { LiveMapAsset, LiveMapPlaybackPoint } from "./live-map-data";
 
-function markerIcon(color: string) {
-  return new DivIcon({
+const SATELLITE_LAYER = {
+  attribution: "Tiles &copy; Esri",
+  maxNativeZoom: 17,
+  maxZoom: 17,
+  url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+};
+
+const MIN_MAP_ZOOM = 3;
+
+const markerIconCache = new globalThis.Map<string, DivIcon>();
+
+const reverseGeocodeMemory = new globalThis.Map<string, string>();
+
+function reverseGeocodeKey(position: [number, number]) {
+  return position.map((value) => value.toFixed(5)).join(",");
+}
+
+function placeFromNominatim(payload: unknown) {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as { display_name?: string; name?: string; address?: Record<string, string | undefined> };
+  const address = record.address ?? {};
+  const compact = [
+    address.road ?? address.neighbourhood ?? address.suburb ?? record.name,
+    address.city ?? address.town ?? address.village ?? address.municipality,
+    address.state ?? address.region,
+    address.country,
+  ].filter(Boolean).join(", ");
+
+  return compact || record.display_name;
+}
+
+function isDeviceNameLocation(value: string | undefined, asset: LiveMapAsset) {
+  if (!value) return true;
+  const normalized = value.trim().toLowerCase();
+  return normalized === asset.name.toLowerCase()
+    || normalized === asset.code.toLowerCase()
+    || normalized === asset.terminalId.toLowerCase()
+    || normalized.startsWith("lock ")
+    || normalized.startsWith("device-")
+    || normalized.includes(asset.terminalId.toLowerCase());
+}
+function useReverseGeocode(position: [number, number] | undefined, enabled: boolean) {
+  const [place, setPlace] = useState<string | undefined>();
+  const [isResolving, setIsResolving] = useState(false);
+
+  useEffect(() => {
+    if (!position || !enabled) return;
+
+    let isMounted = true;
+    const key = reverseGeocodeKey(position);
+    const storageKey = "pad-lock:place:" + key;
+    const memoryValue = reverseGeocodeMemory.get(key);
+    const storageValue = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+
+    if (memoryValue || storageValue) {
+      setPlace(memoryValue ?? storageValue ?? undefined);
+      return;
+    }
+
+    setIsResolving(true);
+    const params = new URLSearchParams({
+      format: "jsonv2",
+      lat: String(position[0]),
+      lon: String(position[1]),
+      zoom: "16",
+      addressdetails: "1",
+    });
+
+    fetch("https://nominatim.openstreetmap.org/reverse?" + params.toString(), {
+      headers: { Accept: "application/json" },
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (!isMounted) return;
+        const nextPlace = placeFromNominatim(payload);
+        if (nextPlace) {
+          reverseGeocodeMemory.set(key, nextPlace);
+          window.localStorage.setItem(storageKey, nextPlace);
+          setPlace(nextPlace);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (isMounted) setIsResolving(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [enabled, position]);
+
+  return { place, isResolving };
+}
+
+function markerIcon(color: string, lockState: LiveMapAsset["lock"]) {
+  const cacheKey = color + ":" + lockState;
+  const cached = markerIconCache.get(cacheKey);
+  if (cached) return cached;
+
+  const lockAccent = lockState === "Unlocked" ? "#f59e0b" : lockState === "Locked" ? "#10b981" : "white";
+  const lockIcon = lockState === "Unlocked"
+    ? `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect width="14" height="10" x="5" y="11" rx="2"/>
+        <path d="M8 11V7a4 4 0 0 1 7.4-2.1"/>
+      </svg>
+    `
+    : `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect width="14" height="10" x="5" y="11" rx="2"/>
+        <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+      </svg>
+    `;
+
+  const icon = new DivIcon({
     className: "",
     html: `
       <div style="
@@ -16,21 +137,19 @@ function markerIcon(color: string) {
         display: grid;
         place-items: center;
         border-radius: 999px;
-        border: 3px solid white;
+        border: 3px solid ${lockAccent};
         background: ${color};
         color: white;
-        box-shadow: 0 12px 22px rgba(15, 23, 42, 0.22);
+        box-shadow: 0 0 0 2px white, 0 12px 22px rgba(15, 23, 42, 0.22);
       ">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M10 17h4V5H2v12h3"/>
-          <path d="M14 17h1V9h4l3 4v4h-2"/>
-          <circle cx="7.5" cy="17.5" r="2.5"/>
-          <circle cx="17.5" cy="17.5" r="2.5"/>
-        </svg>
+        ${lockIcon}
       </div>
     `,
     iconAnchor: [20, 20],
+    popupAnchor: [0, -18],
   });
+  markerIconCache.set(cacheKey, icon);
+  return icon;
 }
 
 function AssetFocusHandler() {
@@ -41,7 +160,7 @@ function AssetFocusHandler() {
       const assetEvent = event as CustomEvent<{ position: [number, number] }>;
 
       if (assetEvent.detail?.position) {
-        map.flyTo(assetEvent.detail.position, 10, {
+        map.flyTo(assetEvent.detail.position, map.getMaxZoom(), {
           animate: true,
           duration: 1.1,
         });
@@ -58,33 +177,230 @@ function AssetFocusHandler() {
   return null;
 }
 
-export function LiveMapView() {
+function FitVisibleAssets({ assets }: { assets: LiveMapAsset[] }) {
+  const map = useMap();
+  const positionedAssets = useMemo(
+    () => assets.filter((asset) => asset.position),
+    [assets],
+  );
+
+  useEffect(() => {
+    if (!positionedAssets.length) {
+      map.setView([31.7917, -7.0926], 6);
+      return;
+    }
+
+    if (positionedAssets.length === 1) {
+      map.setView(positionedAssets[0].position!, 12);
+      return;
+    }
+
+    const bounds = new LatLngBounds(positionedAssets.map((asset) => asset.position!));
+    map.fitBounds(bounds, { padding: [56, 56], maxZoom: 12 });
+  }, [map, positionedAssets]);
+
+  return null;
+}
+
+function MapControls() {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setMinZoom(MIN_MAP_ZOOM);
+    map.setMaxZoom(SATELLITE_LAYER.maxZoom);
+
+    if (map.getZoom() > SATELLITE_LAYER.maxZoom) map.setZoom(SATELLITE_LAYER.maxZoom);
+    if (map.getZoom() < MIN_MAP_ZOOM) map.setZoom(MIN_MAP_ZOOM);
+  }, [map]);
+
+  return (
+    <div className="leaflet-top leaflet-left">
+      <div className="leaflet-control ml-3 mt-3 overflow-hidden rounded-[10px] border border-[#dfe6ee] bg-white/95 shadow-sm backdrop-blur">
+        <button
+          type="button"
+          onClick={() => map.zoomIn()}
+          className="grid size-10 place-items-center text-[#111827] transition hover:bg-[#f3f7fa] focus:bg-[#f3f7fa] focus:outline-none disabled:cursor-not-allowed disabled:text-[#cbd5e1]"
+          aria-label="Zoom in"
+          title="Zoom in"
+          disabled={map.getZoom() >= map.getMaxZoom()}
+        >
+          <Plus size={18} strokeWidth={2.3} />
+        </button>
+        <div className="h-px bg-[#dfe6ee]" />
+        <button
+          type="button"
+          onClick={() => map.zoomOut()}
+          className="grid size-10 place-items-center text-[#111827] transition hover:bg-[#f3f7fa] focus:bg-[#f3f7fa] focus:outline-none disabled:cursor-not-allowed disabled:text-[#cbd5e1]"
+          aria-label="Zoom out"
+          title="Zoom out"
+          disabled={map.getZoom() <= MIN_MAP_ZOOM}
+        >
+          <Minus size={18} strokeWidth={2.3} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PlaybackOverlay({
+  points,
+  index,
+  playbackAsset,
+}: {
+  points: LiveMapPlaybackPoint[];
+  index: number;
+  playbackAsset?: LiveMapAsset | null;
+}) {
+  const map = useMap();
+  const positions = useMemo(() => points.map((point) => point.position), [points]);
+  const activePoint = points[index];
+  const fittedRouteKey = useRef("");
+  const routeKey = useMemo(() => positions.map((position) => position.join(",")).join("|"), [positions]);
+
+  useEffect(() => {
+    if (positions.length > 1 && fittedRouteKey.current !== routeKey) {
+      fittedRouteKey.current = routeKey;
+      const bounds = new LatLngBounds(positions);
+      map.fitBounds(bounds, { padding: [70, 70], maxZoom: Math.min(map.getZoom() || 15, 15) });
+    }
+
+    if (!positions.length) {
+      fittedRouteKey.current = "";
+    }
+  }, [map, positions, routeKey]);
+
+  useEffect(() => {
+    if (activePoint) {
+      map.panTo(activePoint.position, { animate: true, duration: 0.35 });
+    }
+  }, [activePoint, map]);
+
+  if (!positions.length) {
+    return null;
+  }
+
+  return (
+    <>
+      {positions.length > 1 ? (
+        <Polyline
+          positions={positions}
+          pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.88 }}
+        />
+      ) : null}
+      <Marker
+        position={activePoint?.position ?? positions[0]}
+        icon={markerIcon(playbackAsset?.color ?? "#2563eb", playbackAsset?.lock ?? "Locked")}
+      >
+        <Popup closeButton={false} className="fleet-asset-popup">
+          <div className="rounded-[8px] bg-white px-3 py-2 text-[12px] font-semibold text-[#111827]">
+            {activePoint?.placeName ?? "Playback position"}
+          </div>
+        </Popup>
+      </Marker>
+    </>
+  );
+}
+
+function AssetPopupContent({ asset, shouldResolveLocation }: { asset: LiveMapAsset; shouldResolveLocation: boolean }) {
+  const rawBackendLocation = asset.deviceDetails.find((detail) => detail.label === "Location")?.value;
+  const backendLocation = isDeviceNameLocation(rawBackendLocation, asset) ? undefined : rawBackendLocation;
+  const { place, isResolving } = useReverseGeocode(asset.position, shouldResolveLocation && !backendLocation);
+  const locationValue = place ?? backendLocation ?? (isResolving ? "Resolving location..." : "Place name unavailable");
+  const details = [
+    { label: "Location", value: locationValue },
+    ...asset.deviceDetails.filter((detail) => detail.label !== "Location"),
+  ];
+
+  return (
+    <div className="w-[260px] overflow-hidden rounded-[10px] text-[#0f172a]">
+      <div className="flex items-start justify-between gap-3 border-b border-[#e6edf5] bg-[#f8fafc] px-3 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-[14px] font-bold leading-tight">{asset.name}</p>
+          <p className="mt-1 truncate text-[11px] font-medium text-[#64748b]">{asset.code}</p>
+        </div>
+        <span className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white" style={{ backgroundColor: asset.color }}>{asset.status}</span>
+      </div>
+      <div className="max-h-[180px] space-y-1 overflow-y-auto bg-white px-3 py-3 text-[11px]">
+        {details.slice(0, 8).map((detail) => (
+          <div key={asset.id + "-" + detail.label} className="flex items-center justify-between gap-3 rounded-[6px] bg-[#f8fafc] px-2.5 py-2">
+            <span className="min-w-0 truncate font-semibold text-[#64748b]">{detail.label}</span>
+            <span className="max-w-[150px] truncate text-right font-bold text-[#111827]" title={detail.value}>{detail.value}</span>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-[#e6edf5] bg-white px-3 py-2 text-[10px] font-medium text-[#94a3b8]">
+        {backendLocation ? "GET /api/devices" : "Reverse geocoded from GPS"}
+      </div>
+    </div>
+  );
+}
+
+function AssetMarkers({ assets, hiddenAssetId }: { assets: LiveMapAsset[]; hiddenAssetId?: string }) {
+  const map = useMap();
+  const [openAssetId, setOpenAssetId] = useState<string | null>(null);
+
+  const visibleAssets = useMemo(() => assets.filter((asset) => asset.id !== hiddenAssetId), [assets, hiddenAssetId]);
+
+  return (
+    <>
+      {visibleAssets.map((asset) => (
+        <Marker
+          key={asset.id}
+          position={asset.position!}
+          icon={markerIcon(asset.color, asset.lock)}
+          eventHandlers={{
+            click: () => {
+              setOpenAssetId(asset.id);
+              map.flyTo(asset.position!, map.getMaxZoom(), {
+                animate: true,
+                duration: 0.9,
+              });
+            },
+            popupclose: () => setOpenAssetId((current) => current === asset.id ? null : current),
+          }}
+        >
+          <Popup closeButton={false} className="fleet-asset-popup">
+            <AssetPopupContent asset={asset} shouldResolveLocation={openAssetId === asset.id} />
+          </Popup>
+        </Marker>
+      ))}
+    </>
+  );
+}
+
+type LiveMapViewProps = {
+  assets: LiveMapAsset[];
+  playbackPoints: LiveMapPlaybackPoint[];
+  playbackIndex: number;
+  playbackAsset?: LiveMapAsset | null;
+  isPlaybackOpen?: boolean;
+};
+
+export function LiveMapView({ assets, playbackPoints, playbackIndex, playbackAsset, isPlaybackOpen }: LiveMapViewProps) {
+  const positionedAssets = useMemo(() => assets.filter((asset) => asset.position), [assets]);
+
   return (
     <MapContainer
       center={[31.7917, -7.0926]}
       zoom={6}
-      minZoom={2}
-      maxZoom={18}
+      minZoom={MIN_MAP_ZOOM}
+      maxZoom={SATELLITE_LAYER.maxZoom}
       scrollWheelZoom
       zoomControl={false}
       className="absolute inset-0 z-0"
       worldCopyJump
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        maxNativeZoom={18}
-        maxZoom={18}
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution={SATELLITE_LAYER.attribution}
+        maxNativeZoom={SATELLITE_LAYER.maxNativeZoom}
+        maxZoom={SATELLITE_LAYER.maxZoom}
+        url={SATELLITE_LAYER.url}
       />
-      <ZoomControl position="topleft" />
+      <MapControls />
+      {!playbackPoints.length ? <FitVisibleAssets assets={assets} /> : null}
       <AssetFocusHandler />
-      {liveMapAssets.map((marker) => (
-        <Marker
-          key={marker.id}
-          position={marker.position}
-          icon={markerIcon(marker.color)}
-        />
-      ))}
+      <PlaybackOverlay points={playbackPoints} index={playbackIndex} playbackAsset={playbackAsset} />
+      <AssetMarkers assets={positionedAssets} hiddenAssetId={isPlaybackOpen && playbackPoints.length ? playbackAsset?.id : undefined} />
     </MapContainer>
   );
 }

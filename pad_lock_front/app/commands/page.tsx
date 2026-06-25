@@ -1,28 +1,28 @@
 import Image from "next/image";
 import {
   Bell,
-  CarFront,
+  ChevronDown,
   CircleOff,
   Command,
   FileText,
   House,
   Map,
-  Route,
   Settings,
 } from "lucide-react";
+import { AlarmNotificationBadge } from "../alarm-notification-badge";
+import { LiveLocksBadge } from "../live-locks-badge";
 import logo from "../../public/images/logo.png";
-import { CommandsWorkspace } from "./commands-panel";
+import { UserProfileMenu } from "../user-profile-menu";
+import { CommandsPanel } from "./commands-panel";
 
 const navItems = [
-  { label: "Dashboard", icon: House, href: "/dashboard" },
-  { label: "Live Map", icon: Map, href: "/live-map" },
-  { label: "Alarms", icon: Bell, href: "/alarms", badge: "6" },
-  { label: "Geofence", icon: CircleOff, href: "/geofence" },
-  { label: "Routes", icon: Route, href: "/routes" },
-  { label: "Reports", icon: FileText, href: "/reports" },
+  { label: "Tableau de bord", icon: House, href: "/dashboard" },
+  { label: "Carte en direct", icon: Map, href: "/live-map", badge: <LiveLocksBadge compact /> },
+  { label: "Alarmes", icon: Bell, href: "/alarms", badge: <AlarmNotificationBadge /> },
+  { label: "Geofences", icon: CircleOff, href: "/geofence" },
+  { label: "Rapports", icon: FileText, href: "/reports" },
   { label: "Configurations", icon: Settings, href: "/configurations" },
-  { label: "Maintenance", icon: CarFront, href: "/maintenance" },
-  { label: "Commands", icon: Command, href: "/commands", active: true },
+  { label: "Commandes", icon: Command, href: "/commands", active: true },
 ];
 
 export default function CommandsPage() {
@@ -46,13 +46,6 @@ export default function CommandsPage() {
                 Des Douanes Et Impots Indirect
               </p>
             </div>
-            <button
-              className="grid size-8 place-items-center rounded-[6px] border border-[#dfe6ee] text-[#64748b]"
-              type="button"
-              aria-label="Notifications"
-            >
-              <Bell size={15} />
-            </button>
           </div>
 
           <nav className="space-y-1 px-4 py-3">
@@ -80,7 +73,25 @@ export default function CommandsPage() {
           </nav>
         </aside>
 
-        <CommandsWorkspace />
+        <section className="min-w-0">
+          <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-[#dfe6ee] bg-white/95 px-4 backdrop-blur md:px-6">
+            <button
+              type="button"
+              className="flex h-9 items-center gap-2 rounded-[5px] bg-[#050505] px-3 text-[12px] font-semibold text-white"
+            >
+              Autorisation des badges RFID
+              <ChevronDown size={14} />
+            </button>
+
+            <div className="flex items-center gap-4">
+              <span className="hidden h-7 items-center rounded-full bg-[#eaf8ef] px-3 text-[12px] font-semibold text-[#16883f] sm:flex"><LiveLocksBadge /></span>
+              <div className="hidden h-9 border-l border-[#dfe6ee] md:block" />
+              <UserProfileMenu />
+            </div>
+          </header>
+
+          <CommandsPanel />
+        </section>
       </div>
     </main>
   );
