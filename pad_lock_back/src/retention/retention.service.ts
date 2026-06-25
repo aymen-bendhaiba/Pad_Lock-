@@ -11,12 +11,13 @@ import { Pool } from 'pg';
 import { Between, IsNull, LessThan, Repository } from 'typeorm';
 import { LockEvent } from '../lock-events/lock-event.entity';
 import { LockPosition } from '../positions/lock-position.entity';
+import { GeofenceTransition } from '../geofences/geofence-transition.entity';
 
-type RetentionEntity = LockEvent | LockPosition;
+type RetentionEntity = LockEvent | LockPosition | GeofenceTransition;
 
 type RetentionJobConfig<T extends RetentionEntity> = {
   repository: Repository<T>;
-  tableName: 'lock_events' | 'lock_positions';
+  tableName: 'lock_events' | 'lock_positions' | 'geofence_transitions';
   timestampColumn: 'occurredAt' | 'recordedAt';
 };
 
@@ -32,6 +33,8 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
     private readonly lockEventsRepository: Repository<LockEvent>,
     @InjectRepository(LockPosition)
     private readonly lockPositionsRepository: Repository<LockPosition>,
+    @InjectRepository(GeofenceTransition)
+    private readonly geofenceTransitionsRepository: Repository<GeofenceTransition>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -51,7 +54,18 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
         : undefined,
     });
 
-    await this.ensureArchiveSchema();
+    try {
+      await this.ensureArchiveSchema();
+    } catch (error) {
+      this.logger.error(
+        `Archive database is unavailable; retention archiving is disabled: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      await this.archivePool.end().catch(() => undefined);
+      this.archivePool = null;
+      this.archiveReady = false;
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -95,6 +109,14 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
         repository: this.lockPositionsRepository,
         tableName: 'lock_positions',
         timestampColumn: 'recordedAt',
+      },
+      cutoff,
+    );
+    await this.archiveOldestExpiredDay(
+      {
+        repository: this.geofenceTransitionsRepository,
+        tableName: 'geofence_transitions',
+        timestampColumn: 'occurredAt',
       },
       cutoff,
     );
@@ -245,6 +267,6 @@ function getRetentionTimestamp<T extends RetentionEntity>(
   row: T,
 ): Date {
   return job.timestampColumn === 'occurredAt'
-    ? (row as LockEvent).occurredAt
+    ? (row as LockEvent | GeofenceTransition).occurredAt
     : (row as LockPosition).recordedAt;
 }

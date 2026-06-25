@@ -61,7 +61,7 @@ Retention and archive behavior:
 - Example: with 30 days retention, when July 1 is reached, June 1 becomes eligible. The next day, June 2 becomes eligible, and so on.
 - Archived rows are copied into the separate database from `ARCHIVE_DATABASE_URL` before soft delete.
 - The archive database stores full original rows as JSON in `archived_records`, with `source_table`, `source_id`, `terminal_id`, `data_timestamp`, and `archived_at`.
-- Currently archived high-volume tables: `lock_events` and `lock_positions`.
+- Currently archived high-volume tables: `lock_events`, `lock_positions`, and `geofence_transitions`.
 - Set `DATA_RETENTION_DAYS` per client contract, for example `30`, `60`, or `90`.
 
 ## API
@@ -95,6 +95,12 @@ Protected lock-management routes require `Authorization: Bearer <accessToken>`:
 - `GET /api/devices`
 - `GET /api/history/:terminalId`
 - `GET /api/dashboard/summary`
+- `GET /api/reports`
+- `GET /api/reports/alerts`
+- `GET /api/reports/geofences`
+- `GET /api/reports/unlocks`
+- `GET /api/reports/mileage`
+- `GET /api/reports/battery`
 - `GET /api/geo-boundaries`
 - `GET /api/geo-boundaries/:id`
 - `GET /api/alerts/stream`
@@ -114,10 +120,22 @@ Protected lock-management routes require `Authorization: Bearer <accessToken>`:
 - `GET /api/geofences`
 - `POST /api/geofences`
 - `POST /api/geofences/from-boundary`
+- `PATCH /api/geofences/:id`
 - `DELETE /api/geofences/:id`
 - `POST /api/locks/:terminalId/access/check`
 - `GET /api/geofence/device/query/:terminalId`
 - `POST /api/geofence/device/set`
+
+Optimized list filters:
+
+- `GET /api/locks`: `search`, `status=online|offline|unknown`, `page`, `limit=1-200`.
+- `GET /api/devices`: `search`, `isPositioned=true|false`, `limit=1-1000`.
+- `GET /api/alerts` and `GET /api/locks/:terminalId/events`: `terminalId`, `status`, `type`, `severity`, `from`, `to`, `page`, `limit=1-200`.
+- `GET /api/locks/:terminalId/rfid-cards`: `search`, `role`, `syncStatus`, `installedOnLock`, `limit=1-100`.
+- `GET /api/geofences`: `search`, `terminalId`, `shapeType`, `accessMode`, `assigned`, `page`, `limit=1-200`.
+- `GET /api/geo-boundaries`: `type`, `search`, `countryCode`, `continent`, `page`, `limit=1-100`, `includeMetadata`.
+
+List endpoints remain arrays for frontend compatibility. Pagination limits the returned slice without changing the response shape.
 
 RFID card commands follow JT701D `P41`:
 
@@ -379,24 +397,90 @@ Common error responses:
 }
 ```
 
+### Reports
+
+All report routes require `Authorization: Bearer <accessToken>`.
+
+Common filters are `from`, `to`, `terminalId`, `groupBy=day|week|month`, `page`, and `limit`. The default range is the last 30 days, the default grouping is `day`, and `limit` can be `1-100`.
+
+Every response contains `range`, `filters`, a report-specific `summary`, chart-ready `timeline`, `pagination`, and detailed `rows`.
+
+- `GET /api/reports/alerts`
+  - Extra filters: `type`, `severity`, `status`.
+  - Returns alert totals, unresolved/critical counts, grouped counts, timeline, and alert rows.
+- `GET /api/reports/geofences`
+  - Extra filter: `geofenceId`.
+  - Returns geofence entries, exits, unlocks inside sites, affected locks, configuration/rule rows, and timeline.
+- `GET /api/reports/unlocks`
+  - Extra filters: `geofenceId`, `method`.
+  - Methods: `rfid`, `static_password`, `dynamic_password`, `bluetooth`, `other`.
+  - Returns total openings, openings inside sites, card/password totals, method groups, timeline, and unlock rows.
+  - JT701D P45 RFID/dynamic verification values `1-10` and `98` count as successful unlocks. Value `99` is a geofence rejection and `0` is a failed verification.
+- `GET /api/reports/mileage`
+  - Returns total kilometers and per-lock starting mileage, ending mileage, calculated distance, and timestamps.
+- `GET /api/reports/battery`
+  - Extra filter: `below=0-100`.
+  - Returns average/minimum/maximum battery, low/charging samples, timeline, and per-lock battery rows.
+
+Example:
+
+```http
+GET /api/reports/unlocks?from=2026-06-01T00:00:00.000Z&to=2026-06-24T23:59:59.999Z&terminalId=8034400004&method=rfid&groupBy=day&page=1&limit=25
+Authorization: Bearer <accessToken>
+```
+
+Expected response structure:
+
+```json
+{
+  "range": {
+    "from": "2026-06-01T00:00:00.000Z",
+    "to": "2026-06-24T23:59:59.999Z",
+    "groupBy": "day"
+  },
+  "filters": {
+    "terminalId": "8034400004"
+  },
+  "summary": {
+    "totalOpened": 18,
+    "openedInsideSite": 12,
+    "openedByCard": 18,
+    "openedByPassword": 0,
+    "affectedLocks": 1,
+    "byMethod": [{ "key": "rfid", "count": 18 }]
+  },
+  "timeline": [],
+  "pagination": {
+    "page": 1,
+    "limit": 25,
+    "total": 18,
+    "pages": 1
+  },
+  "rows": []
+}
+```
+
+TCP positions now persist geofence entry/exit transitions, and lock events store the geofences containing their coordinates. Reports use the live retained database; with the default policy, detailed data covers 30 days. Older archive data is not merged into report responses.
+
 Dashboard summary:
 
 - `GET /api/dashboard/summary` returns KPI cards and chart-ready data for the dashboard.
-- Optional query params: `from` and `to` as ISO date strings.
+- Optional query params: `from`, `to`, and `terminalId`.
 - Date range filtering applies to position-derived KPIs, lock activity, alarm count, and top alarms.
+- `terminalId` scopes every dashboard metric, including lock status and RFID synchronization.
 - `totalAssets`, `online`, `offline`, and `connectionStatus` are current snapshot values.
 - The response includes `kpis`, `connectionStatus`, `lockActivity`, `topAlarms`, `lockStateDistribution`, and `rfidSyncStatus`.
 
 Example:
 
 ```http
-GET /api/dashboard/summary?from=2026-06-01T00:00:00.000Z&to=2026-06-22T23:59:59.999Z
+GET /api/dashboard/summary?terminalId=8034400004&from=2026-06-01T00:00:00.000Z&to=2026-06-22T23:59:59.999Z
 ```
 
 Realtime alerts:
 
 - `GET /api/alerts` returns the latest stored alerts for initial loading and fallback polling.
-- Filter alerts with `terminalId`, `status`, `from`, and/or `to`: `GET /api/alerts?terminalId=8034400004&status=unread&from=2026-06-01T00:00:00.000Z&to=2026-06-23T23:59:59.999Z`.
+- Filter alerts with `terminalId`, `status`, `type`, `severity`, `from`, `to`, `page`, and/or `limit`: `GET /api/alerts?terminalId=8034400004&status=unread&severity=critical&from=2026-06-01T00:00:00.000Z&to=2026-06-23T23:59:59.999Z&page=1&limit=50`.
 - Alert status defaults to `unread`. Valid status values are `unread`, `read`, `investigating`, and `resolve`.
 - Update alert status with `PATCH /api/alerts/:id/status`.
 - `GET /api/alerts/stream` opens a Server-Sent Events stream for new alerts.
@@ -503,7 +587,9 @@ Geo boundary search filters:
 - `search`: partial boundary name match, for example `morocco` or `costa`.
 - `countryCode`: exact ISO country code match, for example `MAR` or `CRI`.
 - `continent`: exact case-insensitive continent name match, for example `Africa`.
+- `page`: result page, starting at `1`.
 - `limit`: number of records to return, from `1` to `100`; defaults to `50`.
+- `includeMetadata`: defaults to `false`. Set it to `true` only when list metadata is needed; geometry still comes only from `GET /api/geo-boundaries/:id`.
 
 Import the provided country GeoJSON file:
 
@@ -544,6 +630,7 @@ Example geofence from imported country boundary:
 ```json
 {
   "name": "Costa Rica country rule",
+  "terminalIds": ["8034400004"],
   "geoBoundaryId": "boundary-uuid-here",
   "accessMode": "allow_inside",
   "rules": {
@@ -568,6 +655,34 @@ Geofence access is controlled by `accessMode`:
 - `allow_inside`: limited cards may unlock only when the lock is inside the geofence shape.
 - `allow_outside`: limited cards may unlock only when the lock is outside the geofence shape.
 
+`terminalIds` is optional when creating a geofence. When omitted, the geofence
+is saved with no lock assignment and does not enforce access rules. Assign one
+or more locks later with `PATCH /api/geofences/:id`. A geofence never restricts
+an unrelated lock.
+
+Update a geofence's inside/outside logic or checkbox rules:
+
+```http
+PATCH /api/geofences/geofence-uuid
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+```json
+{
+  "terminalIds": ["8034400004"],
+  "accessMode": "allow_outside",
+  "rules": {
+    "lockAccessAllowed": false,
+    "rfidAllowed": false
+  }
+}
+```
+
+Every PATCH field is optional, but at least one field must be sent. Supported fields are `name`, `terminalIds`, `shapeType`, `coordinates`, `radiusMeters`, `accessMode`, and any subset of `rules`. `terminalIds` must contain at least one existing lock terminal ID. Omitted rule booleans retain their current values. The response is the complete updated geofence object.
+
+The updated rule is enforced on the next positioned GPS report from a lock. Admin cards continue to bypass geofence restrictions; limited cards are physically removed from or restored to the lock through `P41` according to the new result.
+
 Geofence rules include `lockAccessAllowed`. The frontend checkbox should write this boolean to `rules.lockAccessAllowed`. For limited cards, access is blocked when the `accessMode` rule does not match the lock position, or when `rules.lockAccessAllowed` or `rules.rfidAllowed` is `false` in a geofence that currently contains the lock. Admin cards bypass these backend restrictions.
 
 Physical RFID swipe enforcement:
@@ -584,6 +699,7 @@ Example polygon geofence:
 ```json
 {
   "name": "Warehouse yard",
+  "terminalIds": ["8034400004"],
   "shapeType": "polygon",
   "accessMode": "allow_inside",
   "coordinates": [
@@ -607,6 +723,7 @@ Example circle geofence:
 ```json
 {
   "name": "Depot radius",
+  "terminalIds": ["8034400004"],
   "shapeType": "circle",
   "accessMode": "allow_inside",
   "coordinates": [{ "lat": 33.594, "lng": -7.62 }],
@@ -627,6 +744,7 @@ Example route geofence:
 ```json
 {
   "name": "Approved route",
+  "terminalIds": ["8034400004"],
   "shapeType": "route",
   "accessMode": "allow_outside",
   "coordinates": [
@@ -653,7 +771,7 @@ Incoming JT701D TCP handling:
 - ASCII `P45` lock/unlock reports are parsed, ACKed with `P69`, and stored as lock events.
 - ASCII `P22` time sync requests are answered.
 - ASCII `P04`, `P06`, `P37`, `P41`, `P43`, `P59`, `P61`, `P44`, `P03`, `P11`, `P12`, and `P15` responses resolve pending API requests.
-- GPS reports are checked against saved geofences. Active overlapping geofence rules are merged with the most restrictive permissions and sent to the lock with `P59` when channel settings change.
+- GPS reports are checked only against geofences assigned to that lock through `terminalIds`. Active overlapping assigned rules are merged with the most restrictive permissions and sent to the lock with `P59` when channel settings change.
 
 `GET /api/devices` returns each latest positioned lock as:
 
@@ -675,11 +793,15 @@ Incoming JT701D TCP handling:
 }
 ```
 
-`GET /api/history/:terminalId` returns route points for a lock. By default it returns today's UTC route. The frontend can request a date range with `from` and `to` ISO timestamps:
+`GET /api/history/:terminalId` returns route points for a lock. By default it returns today's UTC route. The frontend can request a date range with `from` and `to` ISO timestamps and control the maximum returned map points with `maxPoints` (`100-10000`, default `2000`):
 
 ```http
-GET /api/history/8034400004?from=2026-06-01T00:00:00.000Z&to=2026-06-23T23:59:59.999Z
+GET /api/history/8034400004?from=2026-06-01T00:00:00.000Z&to=2026-06-23T23:59:59.999Z&maxPoints=2000
 ```
+
+Long routes are evenly sampled in chronological order while preserving the
+first and last points. The query reads only latitude and longitude and excludes
+soft-deleted or invalid/unpositioned GPS rows.
 
 Create a lock record before expecting events to persist:
 

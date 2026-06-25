@@ -76,6 +76,7 @@ export function parseAsciiFrame(frame: string): ParsedAsciiFrame | null {
 
   if (command === 'P45' && parts.length >= 18) {
     const eventSourceCode = parts[11];
+    const unlockVerificationValue = Number.parseInt(parts[12] ?? '0', 10);
     const latitude = coordinateOrNull(parts[4], parts[5], 'S');
     const longitude = coordinateOrNull(parts[6], parts[7], 'W');
 
@@ -91,12 +92,10 @@ export function parseAsciiFrame(frame: string): ParsedAsciiFrame | null {
       eventSourceCode,
       eventSource:
         eventSources[eventSourceCode] ?? `Unknown (${eventSourceCode})`,
-      unlockVerification:
-        parts[12] === '1'
-          ? 'Pass'
-          : ['2', '3', '5'].includes(eventSourceCode)
-            ? 'N/A'
-            : 'Reject',
+      unlockVerification: unlockVerification(
+        eventSourceCode,
+        unlockVerificationValue,
+      ),
       rfidCard: parts[13] !== '0000000000' ? parts[13] : null,
       passwordCorrect: parts[14] === '1',
       incorrectPasswordsCount: Number.parseInt(parts[15] ?? '0', 10),
@@ -115,6 +114,25 @@ export function parseAsciiFrame(frame: string): ParsedAsciiFrame | null {
     parts,
     raw: frame,
   };
+}
+
+function unlockVerification(
+  eventSourceCode: string,
+  value: number,
+): 'Pass' | 'Reject' | 'N/A' {
+  if (['2', '3', '5', '8'].includes(eventSourceCode)) {
+    return 'N/A';
+  }
+
+  if (eventSourceCode === '1' || eventSourceCode === '6') {
+    return (value >= 1 && value <= 10) || value === 98 ? 'Pass' : 'Reject';
+  }
+
+  if (eventSourceCode === '4' || eventSourceCode === '7') {
+    return value === 1 ? 'Pass' : 'Reject';
+  }
+
+  return 'N/A';
 }
 
 function coordinateOrNull(

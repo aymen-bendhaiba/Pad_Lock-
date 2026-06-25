@@ -30,6 +30,13 @@ export class CreateGeofenceDto {
   @MaxLength(120)
   name: string;
 
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  @MaxLength(32, { each: true })
+  @IsOptional()
+  terminalIds?: string[];
+
   @IsEnum(GeofenceShapeType)
   shapeType: GeofenceShapeType;
 

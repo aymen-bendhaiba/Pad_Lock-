@@ -165,6 +165,10 @@ def build_story(markdown):
             flush_paragraph()
             continue
 
+        if line.startswith("Create a lock record before expecting events to persist:"):
+            flush_paragraph()
+            break
+
         if line.startswith("# "):
             flush_paragraph()
             story.append(Spacer(1, 12 * mm))
@@ -188,6 +192,8 @@ def build_story(markdown):
 
         if line.startswith("## "):
             flush_paragraph()
+            if line[3:].strip() == "Verification":
+                break
             story.append(Paragraph(escape(line[3:].strip()), style["h2"]))
             continue
 

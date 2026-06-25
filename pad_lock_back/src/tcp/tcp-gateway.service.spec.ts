@@ -11,6 +11,7 @@ function geofence(accessMode: GeofenceAccessMode): Geofence {
   return {
     id: 'geofence-1',
     name: 'Test geofence',
+    terminalIds: ['8034400004'],
     geoBoundaryId: null,
     shapeType: GeofenceShapeType.Circle,
     coordinates: [{ lat: 33, lng: -7 }],
@@ -65,6 +66,15 @@ function serviceFixture(input: {
     { retryPendingForLock: jest.fn() } as never,
     {} as never,
     geofencesRepository as never,
+    {
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((value: unknown): unknown => value),
+      save: jest.fn((value: unknown) => Promise.resolve<unknown>(value)),
+    } as never,
+    {
+      create: jest.fn((value: unknown): unknown => value),
+      save: jest.fn((value: unknown) => Promise.resolve<unknown>(value)),
+    } as never,
     rfidCardsRepository as never,
   );
 

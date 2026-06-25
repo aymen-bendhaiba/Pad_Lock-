@@ -4,14 +4,18 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CheckCardAccessDto } from './dto/check-card-access.dto';
 import { CreateGeofenceFromBoundaryDto } from './dto/create-geofence-from-boundary.dto';
 import { CreateGeofenceDto } from './dto/create-geofence.dto';
+import { FindGeofencesQueryDto } from './dto/find-geofences-query.dto';
 import { SetUnlockChannelsDto } from './dto/unlock-channels.dto';
+import { UpdateGeofenceDto } from './dto/update-geofence.dto';
 import { GeofencesService } from './geofences.service';
 
 @UseGuards(JwtAuthGuard)
@@ -20,8 +24,8 @@ export class GeofencesController {
   constructor(private readonly geofencesService: GeofencesService) {}
 
   @Get('geofences')
-  findAll() {
-    return this.geofencesService.findAll();
+  findAll(@Query() query: FindGeofencesQueryDto) {
+    return this.geofencesService.findAll(query);
   }
 
   @Post('geofences')
@@ -32,6 +36,11 @@ export class GeofencesController {
   @Post('geofences/from-boundary')
   createFromBoundary(@Body() dto: CreateGeofenceFromBoundaryDto) {
     return this.geofencesService.createFromBoundary(dto);
+  }
+
+  @Patch('geofences/:id')
+  update(@Param('id') id: string, @Body() dto: UpdateGeofenceDto) {
+    return this.geofencesService.update(id, dto);
   }
 
   @Delete('geofences/:id')

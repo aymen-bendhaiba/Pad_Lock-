@@ -20,6 +20,7 @@ import { RfidModule } from './rfid/rfid.module';
 import { TcpModule } from './tcp/tcp.module';
 import { UsersModule } from './users/users.module';
 import { RetentionModule } from './retention/retention.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { RetentionModule } from './retention/retention.module';
     CommandsModule,
     DashboardModule,
     RetentionModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [

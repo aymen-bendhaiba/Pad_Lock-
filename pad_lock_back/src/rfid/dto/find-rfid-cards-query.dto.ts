@@ -8,42 +8,32 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { GeoBoundaryType } from '../geo-boundary.entity';
+import { RfidCardRole, RfidCardSyncStatus } from '../rfid-card.entity';
 
-export class GeoBoundaryQueryDto {
-  @IsOptional()
-  @IsEnum(GeoBoundaryType)
-  type?: GeoBoundaryType;
-
+export class FindRfidCardsQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
 
   @IsOptional()
-  @IsString()
-  countryCode?: string;
+  @IsEnum(RfidCardRole)
+  role?: RfidCardRole;
 
   @IsOptional()
-  @IsString()
-  continent?: string;
+  @IsEnum(RfidCardSyncStatus)
+  syncStatus?: RfidCardSyncStatus;
 
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => optionalBoolean(value))
   @IsBoolean()
-  includeMetadata?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
+  installedOnLock?: boolean;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 50;
+  limit?: number = 20;
 }
 
 function optionalBoolean(value: unknown): unknown {

@@ -41,6 +41,9 @@ export class Geofence {
   @Column({ type: 'varchar', length: 120 })
   name: string;
 
+  @Column({ type: 'text', array: true, default: () => "'{}'" })
+  terminalIds: string[];
+
   @Column({ type: 'uuid', nullable: true })
   geoBoundaryId: string | null;
 

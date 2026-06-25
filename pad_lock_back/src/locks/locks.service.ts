@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateLockDeviceDto } from './dto/create-lock-device.dto';
+import { FindLocksQueryDto } from './dto/find-locks-query.dto';
 import { UpdateLockDeviceDto } from './dto/update-lock-device.dto';
 import { LockDevice, LockDeviceStatus } from './lock-device.entity';
 
@@ -16,10 +17,36 @@ export class LocksService {
     private readonly lockDevicesRepository: Repository<LockDevice>,
   ) {}
 
-  findAll(): Promise<LockDevice[]> {
-    return this.lockDevicesRepository.find({
-      order: { createdAt: 'DESC' },
-    });
+  findAll(query: FindLocksQueryDto = {}): Promise<LockDevice[]> {
+    const builder = this.lockDevicesRepository
+      .createQueryBuilder('lock')
+      .select([
+        'lock.id',
+        'lock.terminalId',
+        'lock.name',
+        'lock.imei',
+        'lock.status',
+        'lock.lastSeenAt',
+        'lock.createdAt',
+        'lock.updatedAt',
+      ])
+      .orderBy('lock.createdAt', 'DESC')
+      .skip(((query.page ?? 1) - 1) * (query.limit ?? 100))
+      .take(query.limit ?? 100);
+
+    if (query.status) {
+      builder.andWhere('lock.status = :status', { status: query.status });
+    }
+
+    if (query.search?.trim()) {
+      builder.andWhere(
+        `(COALESCE(lock."terminalId", '') || ' ' || COALESCE(lock.name, '') ||
+          ' ' || COALESCE(lock.imei, '')) ILIKE :search`,
+        { search: `%${query.search.trim()}%` },
+      );
+    }
+
+    return builder.getMany();
   }
 
   async create(dto: CreateLockDeviceDto): Promise<LockDevice> {
