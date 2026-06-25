@@ -13,6 +13,7 @@ import {
   buildRfidQueryCommand,
 } from '../protocol/jt701d-commands';
 import { TcpGatewayService } from '../tcp/tcp-gateway.service';
+import { FindRfidCardsQueryDto } from './dto/find-rfid-cards-query.dto';
 import { RfidCardsDto } from './dto/rfid-cards.dto';
 import { RfidCard, RfidCardRole, RfidCardSyncStatus } from './rfid-card.entity';
 
@@ -35,14 +36,43 @@ export class RfidService {
     private readonly tcpGatewayService: TcpGatewayService,
   ) {}
 
-  async findForLock(terminalId: string): Promise<RfidCard[]> {
+  async findForLock(
+    terminalId: string,
+    query: FindRfidCardsQueryDto = {},
+  ): Promise<RfidCard[]> {
     const lockDevice =
       await this.locksService.findByTerminalIdOrFail(terminalId);
 
-    return this.rfidCardsRepository.find({
-      where: { lockDeviceId: lockDevice.id, active: true },
-      order: { createdAt: 'DESC' },
-    });
+    const builder = this.rfidCardsRepository
+      .createQueryBuilder('card')
+      .where('card."lockDeviceId" = :lockDeviceId', {
+        lockDeviceId: lockDevice.id,
+      })
+      .andWhere('card.active = true')
+      .orderBy('card.createdAt', 'DESC')
+      .take(query.limit ?? 20);
+
+    if (query.role) {
+      builder.andWhere('card.role = :role', { role: query.role });
+    }
+    if (query.syncStatus) {
+      builder.andWhere('card."lastSyncStatus" = :syncStatus', {
+        syncStatus: query.syncStatus,
+      });
+    }
+    if (query.installedOnLock !== undefined) {
+      builder.andWhere('card."installedOnLock" = :installedOnLock', {
+        installedOnLock: query.installedOnLock,
+      });
+    }
+    if (query.search?.trim()) {
+      builder.andWhere(
+        '(card."cardNumber" ILIKE :search OR card.label ILIKE :search)',
+        { search: `%${query.search.trim()}%` },
+      );
+    }
+
+    return builder.getMany();
   }
 
   async addCards(

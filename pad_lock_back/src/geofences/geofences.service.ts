@@ -4,8 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ArrayContains, In, Repository } from 'typeorm';
 import { GeoBoundariesService } from '../geo-boundaries/geo-boundaries.service';
+import { LockDevice } from '../locks/lock-device.entity';
 import { PositionsService } from '../positions/positions.service';
 import {
   buildUnlockChannelsQueryCommand,
@@ -16,7 +17,9 @@ import { TcpGatewayService } from '../tcp/tcp-gateway.service';
 import { CheckCardAccessDto } from './dto/check-card-access.dto';
 import { CreateGeofenceFromBoundaryDto } from './dto/create-geofence-from-boundary.dto';
 import { CreateGeofenceDto } from './dto/create-geofence.dto';
+import { FindGeofencesQueryDto } from './dto/find-geofences-query.dto';
 import { UnlockChannelsDto } from './dto/unlock-channels.dto';
+import { UpdateGeofenceDto } from './dto/update-geofence.dto';
 import {
   Geofence,
   GeofenceAccessMode,
@@ -34,20 +37,60 @@ export class GeofencesService {
     private readonly geofencesRepository: Repository<Geofence>,
     @InjectRepository(RfidCard)
     private readonly rfidCardsRepository: Repository<RfidCard>,
+    @InjectRepository(LockDevice)
+    private readonly locksRepository: Repository<LockDevice>,
     private readonly geoBoundariesService: GeoBoundariesService,
     private readonly tcpGatewayService: TcpGatewayService,
     private readonly positionsService: PositionsService,
   ) {}
 
-  findAll(): Promise<Geofence[]> {
-    return this.geofencesRepository.find({ order: { createdAt: 'DESC' } });
+  findAll(query: FindGeofencesQueryDto = {}): Promise<Geofence[]> {
+    const builder = this.geofencesRepository
+      .createQueryBuilder('geofence')
+      .orderBy('geofence.createdAt', 'DESC')
+      .skip(((query.page ?? 1) - 1) * (query.limit ?? 100))
+      .take(query.limit ?? 100);
+
+    if (query.terminalId?.trim()) {
+      builder.andWhere('geofence."terminalIds" @> ARRAY[:terminalId]::text[]', {
+        terminalId: query.terminalId.trim().toUpperCase(),
+      });
+    }
+    if (query.shapeType) {
+      builder.andWhere('geofence."shapeType" = :shapeType', {
+        shapeType: query.shapeType,
+      });
+    }
+    if (query.accessMode) {
+      builder.andWhere('geofence."accessMode" = :accessMode', {
+        accessMode: query.accessMode,
+      });
+    }
+    if (query.assigned !== undefined) {
+      builder.andWhere(
+        query.assigned
+          ? 'cardinality(geofence."terminalIds") > 0'
+          : 'cardinality(geofence."terminalIds") = 0',
+      );
+    }
+    if (query.search?.trim()) {
+      builder.andWhere('geofence.name ILIKE :search', {
+        search: `%${query.search.trim()}%`,
+      });
+    }
+
+    return builder.getMany();
   }
 
   async create(dto: CreateGeofenceDto) {
     this.assertGeofenceShape(dto);
+    const terminalIds = dto.terminalIds
+      ? await this.validateTerminalIds(dto.terminalIds)
+      : [];
     const geofence = await this.geofencesRepository.save(
       this.geofencesRepository.create({
         ...dto,
+        terminalIds,
         radiusMeters: dto.radiusMeters ?? null,
         applyInside:
           dto.applyInside ?? dto.accessMode === GeofenceAccessMode.AllowInside,
@@ -58,10 +101,14 @@ export class GeofencesService {
 
   async createFromBoundary(dto: CreateGeofenceFromBoundaryDto) {
     await this.geoBoundariesService.findOne(dto.geoBoundaryId);
+    const terminalIds = dto.terminalIds
+      ? await this.validateTerminalIds(dto.terminalIds)
+      : [];
 
     const geofence = await this.geofencesRepository.save(
       this.geofencesRepository.create({
         name: dto.name,
+        terminalIds,
         geoBoundaryId: dto.geoBoundaryId,
         shapeType: GeofenceShapeType.Polygon,
         coordinates: [],
@@ -73,6 +120,48 @@ export class GeofencesService {
     );
 
     return { success: true, id: geofence.id };
+  }
+
+  async update(id: string, dto: UpdateGeofenceDto): Promise<Geofence> {
+    if (!hasUpdateValues(dto)) {
+      throw new BadRequestException('At least one geofence field is required');
+    }
+
+    const geofence = await this.geofencesRepository.findOneBy({ id });
+
+    if (!geofence) {
+      throw new NotFoundException('Geofence not found');
+    }
+
+    if (dto.name !== undefined) {
+      geofence.name = dto.name;
+    }
+    if (dto.terminalIds !== undefined) {
+      geofence.terminalIds = await this.validateTerminalIds(dto.terminalIds);
+    }
+    if (dto.shapeType !== undefined) {
+      geofence.shapeType = dto.shapeType;
+    }
+    if (dto.coordinates !== undefined) {
+      geofence.coordinates = dto.coordinates;
+    }
+    if (dto.radiusMeters !== undefined) {
+      geofence.radiusMeters = dto.radiusMeters;
+    }
+    if (dto.accessMode !== undefined) {
+      geofence.accessMode = dto.accessMode;
+      geofence.applyInside = dto.accessMode === GeofenceAccessMode.AllowInside;
+    }
+    if (dto.rules !== undefined) {
+      geofence.rules = {
+        ...geofence.rules,
+        ...dto.rules,
+      };
+    }
+
+    this.assertGeofenceShape(geofence);
+
+    return this.geofencesRepository.save(geofence);
   }
 
   async delete(id: string) {
@@ -143,7 +232,10 @@ export class GeofencesService {
       };
     }
 
-    const geofences = await this.geofencesRepository.find();
+    const normalizedTerminalId = terminalId.toUpperCase();
+    const geofences = await this.geofencesRepository.find({
+      where: { terminalIds: ArrayContains([normalizedTerminalId]) },
+    });
     const evaluatedGeofences: Array<{
       geofence: Geofence;
       inShape: boolean;
@@ -206,7 +298,16 @@ export class GeofencesService {
     };
   }
 
-  private assertGeofenceShape(dto: CreateGeofenceDto): void {
+  private assertGeofenceShape(dto: {
+    shapeType: GeofenceShapeType;
+    coordinates: Array<{ lat: number; lng: number }>;
+    radiusMeters?: number | null;
+    geoBoundaryId?: string | null;
+  }): void {
+    if (dto.geoBoundaryId) {
+      return;
+    }
+
     if (
       dto.shapeType === GeofenceShapeType.Polygon &&
       dto.coordinates.length < 3
@@ -231,6 +332,26 @@ export class GeofencesService {
         throw new BadRequestException('Route geofences require radiusMeters');
       }
     }
+  }
+
+  private async validateTerminalIds(terminalIds: string[]): Promise<string[]> {
+    const normalized = [
+      ...new Set(terminalIds.map((terminalId) => terminalId.toUpperCase())),
+    ];
+    const locks = await this.locksRepository.find({
+      where: { terminalId: In(normalized) },
+      select: { terminalId: true },
+    });
+    const found = new Set(locks.map((lock) => lock.terminalId.toUpperCase()));
+    const missing = normalized.filter((terminalId) => !found.has(terminalId));
+
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Unknown lock terminalId(s): ${missing.join(', ')}`,
+      );
+    }
+
+    return normalized;
   }
 
   private async isPositionInGeofence(
@@ -263,6 +384,18 @@ export class GeofencesService {
 
     return isLockAccessAllowedByGeofence(latitude, longitude, geofence);
   }
+}
+
+function hasUpdateValues(dto: UpdateGeofenceDto): boolean {
+  return (
+    dto.name !== undefined ||
+    dto.terminalIds !== undefined ||
+    dto.shapeType !== undefined ||
+    dto.coordinates !== undefined ||
+    dto.radiusMeters !== undefined ||
+    dto.accessMode !== undefined ||
+    (dto.rules !== undefined && Object.keys(dto.rules).length > 0)
+  );
 }
 
 function parseP59Response(parts: string[]) {

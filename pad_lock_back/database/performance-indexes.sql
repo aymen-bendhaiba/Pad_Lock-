@@ -1,7 +1,33 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE INDEX IF NOT EXISTS lock_positions_terminal_recorded_idx
   ON lock_positions ("terminalId", "recordedAt" DESC)
+  WHERE "deletedAt" IS NULL;
+
+CREATE INDEX IF NOT EXISTS lock_positions_history_covering_idx
+  ON lock_positions ("terminalId", "recordedAt" ASC)
+  INCLUDE (latitude, longitude)
+  WHERE "deletedAt" IS NULL AND "isPositioned" = true;
+
+CREATE INDEX IF NOT EXISTS lock_positions_latest_device_covering_idx
+  ON lock_positions ("terminalId", "recordedAt" DESC)
+  INCLUDE (
+    latitude,
+    longitude,
+    "speedKmh",
+    "batteryPercentage",
+    "isCharging",
+    "isLocked",
+    "isPositioned",
+    mileage,
+    "receivedAt"
+  )
+  WHERE "deletedAt" IS NULL;
+
+CREATE INDEX IF NOT EXISTS lock_positions_dashboard_time_idx
+  ON lock_positions ("recordedAt", "terminalId")
+  INCLUDE ("speedKmh", "isLocked")
   WHERE "deletedAt" IS NULL;
 
 CREATE INDEX IF NOT EXISTS lock_positions_retention_idx
@@ -16,6 +42,22 @@ CREATE INDEX IF NOT EXISTS lock_events_retention_idx
 
 CREATE INDEX IF NOT EXISTS lock_events_report_filters_idx
   ON lock_events ("occurredAt" DESC, type, severity, status)
+  WHERE "deletedAt" IS NULL;
+
+CREATE INDEX IF NOT EXISTS lock_events_terminal_status_time_idx
+  ON lock_events ("terminalId", status, "occurredAt" DESC)
+  WHERE "deletedAt" IS NULL;
+
+CREATE INDEX IF NOT EXISTS lock_events_type_time_idx
+  ON lock_events (type, "occurredAt" DESC)
+  WHERE "deletedAt" IS NULL;
+
+CREATE INDEX IF NOT EXISTS lock_events_severity_time_idx
+  ON lock_events (severity, "occurredAt" DESC)
+  WHERE "deletedAt" IS NULL;
+
+CREATE INDEX IF NOT EXISTS lock_events_status_time_idx
+  ON lock_events (status, "occurredAt" DESC)
   WHERE "deletedAt" IS NULL;
 
 CREATE INDEX IF NOT EXISTS lock_events_geofences_gin_idx
@@ -33,12 +75,40 @@ CREATE INDEX IF NOT EXISTS rfid_cards_lock_role_active_installed_idx
 CREATE INDEX IF NOT EXISTS rfid_cards_lock_sync_status_idx
   ON rfid_cards ("lockDeviceId", "lastSyncStatus");
 
+CREATE INDEX IF NOT EXISTS rfid_cards_lock_active_sync_idx
+  ON rfid_cards (
+    "lockDeviceId",
+    active,
+    role,
+    "lastSyncStatus",
+    "installedOnLock",
+    "createdAt" DESC
+  );
+
+CREATE INDEX IF NOT EXISTS lock_devices_status_created_idx
+  ON lock_devices (status, "createdAt" DESC);
+
+CREATE INDEX IF NOT EXISTS lock_devices_search_trgm_idx
+  ON lock_devices USING GIN (
+    (COALESCE("terminalId", '') || ' ' || COALESCE(name, '') || ' ' || COALESCE(imei, ''))
+    gin_trgm_ops
+  );
+
 CREATE INDEX IF NOT EXISTS geofences_geo_boundary_idx
   ON geofences ("geoBoundaryId")
   WHERE "geoBoundaryId" IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS geofences_created_idx
   ON geofences ("createdAt" DESC);
+
+CREATE INDEX IF NOT EXISTS geofences_terminal_ids_gin_idx
+  ON geofences USING GIN ("terminalIds");
+
+CREATE INDEX IF NOT EXISTS geofences_filter_idx
+  ON geofences ("shapeType", "accessMode", "createdAt" DESC);
+
+CREATE INDEX IF NOT EXISTS geofences_name_trgm_idx
+  ON geofences USING GIN (name gin_trgm_ops);
 
 CREATE INDEX IF NOT EXISTS lock_positions_battery_report_idx
   ON lock_positions ("recordedAt" DESC, "terminalId", "batteryPercentage")
@@ -64,3 +134,9 @@ CREATE INDEX IF NOT EXISTS geo_boundaries_type_name_idx
 
 CREATE INDEX IF NOT EXISTS geo_boundaries_country_code_idx
   ON geo_boundaries ("countryCode");
+
+CREATE INDEX IF NOT EXISTS geo_boundaries_name_trgm_idx
+  ON geo_boundaries USING GIN (name gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS geo_boundaries_continent_name_idx
+  ON geo_boundaries (LOWER(continent), type, name);

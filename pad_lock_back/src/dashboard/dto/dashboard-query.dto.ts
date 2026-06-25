@@ -1,6 +1,10 @@
-import { IsDateString, IsOptional } from 'class-validator';
+import { IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class DashboardQueryDto {
+  @IsOptional()
+  @IsString()
+  terminalId?: string;
+
   @IsOptional()
   @IsDateString()
   from?: string;

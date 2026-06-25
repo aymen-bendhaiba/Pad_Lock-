@@ -7,10 +7,12 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RfidCardsDto, UpdateRfidCardRoleDto } from './dto/rfid-cards.dto';
+import { FindRfidCardsQueryDto } from './dto/find-rfid-cards-query.dto';
 import { RfidService } from './rfid.service';
 
 @UseGuards(JwtAuthGuard)
@@ -19,8 +21,11 @@ export class RfidController {
   constructor(private readonly rfidService: RfidService) {}
 
   @Get()
-  findForLock(@Param('terminalId') terminalId: string) {
-    return this.rfidService.findForLock(terminalId);
+  findForLock(
+    @Param('terminalId') terminalId: string,
+    @Query() query: FindRfidCardsQueryDto,
+  ) {
+    return this.rfidService.findForLock(terminalId, query);
   }
 
   @Post()

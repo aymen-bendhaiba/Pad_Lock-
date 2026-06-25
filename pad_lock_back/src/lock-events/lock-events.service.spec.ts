@@ -1,7 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { firstValueFrom, filter, take } from 'rxjs';
-import { FindManyOptions, FindOperator } from 'typeorm';
 import { LocksService } from '../locks/locks.service';
 import { LockEventsService } from './lock-events.service';
 import {
@@ -17,6 +16,20 @@ describe('LockEventsService', () => {
     id: 'lock-1',
     terminalId: '8034400004',
   };
+  const queryBuilder = {
+    select: jest.fn(),
+    where: jest.fn(),
+    andWhere: jest.fn(),
+    orderBy: jest.fn(),
+    skip: jest.fn(),
+    take: jest.fn(),
+    getMany: jest.fn().mockResolvedValue([]),
+  };
+  Object.values(queryBuilder).forEach((mock) => {
+    if (mock !== queryBuilder.getMany) {
+      mock.mockReturnValue(queryBuilder);
+    }
+  });
   const repository = {
     create: jest.fn((input: Partial<LockEvent>) => input),
     save: jest.fn((input: Partial<LockEvent>) =>
@@ -40,9 +53,7 @@ describe('LockEventsService', () => {
           : null,
       ),
     ),
-    find: jest.fn<Promise<LockEvent[]>, [FindManyOptions<LockEvent>]>(() =>
-      Promise.resolve([]),
-    ),
+    createQueryBuilder: jest.fn(() => queryBuilder),
   };
   const locksService = {
     findOrCreateFromTcp: jest.fn((terminalId: string) =>
@@ -166,22 +177,31 @@ describe('LockEventsService', () => {
     await service.findLatest({
       terminalId: '8034400004',
       status: LockEventStatus.Unread,
+      type: LockEventType.LowBattery,
+      severity: LockEventSeverity.Warning,
       from: '2026-06-01T00:00:00.000Z',
       to: '2026-06-23T23:59:59.999Z',
+      page: 2,
+      limit: 25,
     });
 
-    const findOptions = repository.find.mock.calls[0][0];
-    const where = findOptions.where as {
-      terminalId: string;
-      status: LockEventStatus;
-      occurredAt: FindOperator<Date>;
-    };
-
-    expect(where.terminalId).toBe('8034400004');
-    expect(where.status).toBe(LockEventStatus.Unread);
-    expect(where.occurredAt.type).toBe('between');
-    expect(findOptions.order).toEqual({ occurredAt: 'DESC' });
-    expect(findOptions.take).toBe(100);
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'event."terminalId" = :terminalId',
+      { terminalId: '8034400004' },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'event.status = :status',
+      { status: LockEventStatus.Unread },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('event.type = :type', {
+      type: LockEventType.LowBattery,
+    });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'event.severity = :severity',
+      { severity: LockEventSeverity.Warning },
+    );
+    expect(queryBuilder.skip).toHaveBeenCalledWith(25);
+    expect(queryBuilder.take).toHaveBeenCalledWith(25);
   });
 
   it('rejects invalid alert date ranges', async () => {

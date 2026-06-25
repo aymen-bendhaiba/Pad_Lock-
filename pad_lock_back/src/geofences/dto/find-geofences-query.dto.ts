@@ -8,29 +8,29 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { GeoBoundaryType } from '../geo-boundary.entity';
+import { GeofenceAccessMode, GeofenceShapeType } from '../geofence.entity';
 
-export class GeoBoundaryQueryDto {
-  @IsOptional()
-  @IsEnum(GeoBoundaryType)
-  type?: GeoBoundaryType;
-
+export class FindGeofencesQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
 
   @IsOptional()
   @IsString()
-  countryCode?: string;
+  terminalId?: string;
 
   @IsOptional()
-  @IsString()
-  continent?: string;
+  @IsEnum(GeofenceShapeType)
+  shapeType?: GeofenceShapeType;
+
+  @IsOptional()
+  @IsEnum(GeofenceAccessMode)
+  accessMode?: GeofenceAccessMode;
 
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => optionalBoolean(value))
   @IsBoolean()
-  includeMetadata?: boolean;
+  assigned?: boolean;
 
   @IsOptional()
   @Type(() => Number)
@@ -42,8 +42,8 @@ export class GeoBoundaryQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
-  limit?: number = 50;
+  @Max(200)
+  limit?: number = 100;
 }
 
 function optionalBoolean(value: unknown): unknown {

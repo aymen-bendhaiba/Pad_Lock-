@@ -1,49 +1,29 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
-  IsEnum,
   IsInt,
   IsOptional,
   IsString,
   Max,
   Min,
 } from 'class-validator';
-import { GeoBoundaryType } from '../geo-boundary.entity';
 
-export class GeoBoundaryQueryDto {
-  @IsOptional()
-  @IsEnum(GeoBoundaryType)
-  type?: GeoBoundaryType;
-
+export class FindDevicesQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
 
   @IsOptional()
-  @IsString()
-  countryCode?: string;
-
-  @IsOptional()
-  @IsString()
-  continent?: string;
-
-  @IsOptional()
   @Transform(({ value }: { value: unknown }) => optionalBoolean(value))
   @IsBoolean()
-  includeMetadata?: boolean;
+  isPositioned?: boolean;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  page?: number = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 50;
+  @Max(1000)
+  limit?: number = 500;
 }
 
 function optionalBoolean(value: unknown): unknown {

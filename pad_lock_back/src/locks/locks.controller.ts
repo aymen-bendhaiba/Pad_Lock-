@@ -5,10 +5,12 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CreateLockDeviceDto } from './dto/create-lock-device.dto';
+import { FindLocksQueryDto } from './dto/find-locks-query.dto';
 import { UpdateLockDeviceDto } from './dto/update-lock-device.dto';
 import { LocksService } from './locks.service';
 
@@ -18,8 +20,8 @@ export class LocksController {
   constructor(private readonly locksService: LocksService) {}
 
   @Get()
-  findAll() {
-    return this.locksService.findAll();
+  findAll(@Query() query: FindLocksQueryDto) {
+    return this.locksService.findAll(query);
   }
 
   @Post()

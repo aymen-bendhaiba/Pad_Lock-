@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { interval, map, merge, Observable, Subject, filter } from 'rxjs';
-import { Between, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { LocksService } from '../locks/locks.service';
 import { CreateLockEventDto } from './dto/create-lock-event.dto';
 import { FindAlertsQueryDto } from './dto/find-alerts-query.dto';
@@ -64,21 +64,52 @@ export class LockEventsService {
       throw new BadRequestException('Alert from date must be before to date');
     }
 
-    const where = {
-      ...(query.terminalId
-        ? { terminalId: query.terminalId.toUpperCase() }
-        : {}),
-      ...(query.status ? { status: query.status } : {}),
-      ...(from && to ? { occurredAt: Between(from, to) } : {}),
-      ...(from && !to ? { occurredAt: MoreThanOrEqual(from) } : {}),
-      ...(!from && to ? { occurredAt: LessThanOrEqual(to) } : {}),
-    };
+    const builder = this.lockEventsRepository
+      .createQueryBuilder('event')
+      .select([
+        'event.id',
+        'event.lockDeviceId',
+        'event.terminalId',
+        'event.type',
+        'event.severity',
+        'event.status',
+        'event.source',
+        'event.rfidCardNumber',
+        'event.latitude',
+        'event.longitude',
+        'event.geofences',
+        'event.occurredAt',
+        'event.receivedAt',
+      ])
+      .where('event.deletedAt IS NULL')
+      .orderBy('event.occurredAt', 'DESC')
+      .skip(((query.page ?? 1) - 1) * (query.limit ?? 100))
+      .take(query.limit ?? 100);
 
-    return this.lockEventsRepository.find({
-      where,
-      order: { occurredAt: 'DESC' },
-      take: 100,
-    });
+    if (query.terminalId) {
+      builder.andWhere('event."terminalId" = :terminalId', {
+        terminalId: query.terminalId.toUpperCase(),
+      });
+    }
+    if (query.status) {
+      builder.andWhere('event.status = :status', { status: query.status });
+    }
+    if (query.type) {
+      builder.andWhere('event.type = :type', { type: query.type });
+    }
+    if (query.severity) {
+      builder.andWhere('event.severity = :severity', {
+        severity: query.severity,
+      });
+    }
+    if (from) {
+      builder.andWhere('event."occurredAt" >= :from', { from });
+    }
+    if (to) {
+      builder.andWhere('event."occurredAt" <= :to', { to });
+    }
+
+    return builder.getMany();
   }
 
   async recordFromTcp(

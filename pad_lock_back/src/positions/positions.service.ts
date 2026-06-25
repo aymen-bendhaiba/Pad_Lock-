@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, MoreThanOrEqual, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { LocksService } from '../locks/locks.service';
 import { HistoryQueryDto } from './dto/history-query.dto';
+import { FindDevicesQueryDto } from './dto/find-devices-query.dto';
 import { LockPosition } from './lock-position.entity';
 
 type RecordPositionInput = {
@@ -57,14 +58,40 @@ export class PositionsService {
     );
   }
 
-  async findActiveDevices() {
-    const positions = await this.positionsRepository
+  async findActiveDevices(query: FindDevicesQueryDto = {}) {
+    const builder = this.positionsRepository
       .createQueryBuilder('position')
       .distinctOn(['position.terminalId'])
+      .select([
+        'position.terminalId',
+        'position.latitude',
+        'position.longitude',
+        'position.speedKmh',
+        'position.batteryPercentage',
+        'position.isCharging',
+        'position.isLocked',
+        'position.isPositioned',
+        'position.mileage',
+        'position.recordedAt',
+        'position.receivedAt',
+      ])
+      .where('position.deletedAt IS NULL')
       .orderBy('position.terminalId', 'ASC')
       .addOrderBy('position.recordedAt', 'DESC')
-      .limit(1000)
-      .getMany();
+      .limit(query.limit ?? 500);
+
+    if (query.search?.trim()) {
+      builder.andWhere('position."terminalId" ILIKE :search', {
+        search: `%${query.search.trim()}%`,
+      });
+    }
+    if (query.isPositioned !== undefined) {
+      builder.andWhere('position."isPositioned" = :isPositioned', {
+        isPositioned: query.isPositioned,
+      });
+    }
+
+    const positions = await builder.getMany();
 
     return positions.map((position) => ({
       id: position.terminalId,
@@ -91,21 +118,67 @@ export class PositionsService {
     query: HistoryQueryDto = {},
   ): Promise<number[][]> {
     const from = query.from ? new Date(query.from) : startOfUtcToday();
-    const to = query.to ? new Date(query.to) : null;
+    const to = query.to ? new Date(query.to) : new Date();
+    const maxPoints = query.maxPoints ?? 2000;
 
-    if (to && from > to) {
+    if (from > to) {
       throw new BadRequestException('History from date must be before to date');
     }
 
-    const positions = await this.positionsRepository.find({
-      where: {
-        terminalId: terminalId.toUpperCase(),
-        recordedAt: to ? Between(from, to) : MoreThanOrEqual(from),
-      },
-      order: { recordedAt: 'ASC' },
-    });
+    const normalizedTerminalId = terminalId.toUpperCase();
+    const [countRow] = await this.positionsRepository.query<
+      Array<{ total: string }>
+    >(
+      `
+        SELECT COUNT(*)::text AS total
+        FROM lock_positions
+        WHERE "terminalId" = $1
+          AND "recordedAt" >= $2
+          AND "recordedAt" <= $3
+          AND "deletedAt" IS NULL
+          AND "isPositioned" = true
+      `,
+      [normalizedTerminalId, from, to],
+    );
+    const total = Number.parseInt(countRow?.total ?? '0', 10);
 
-    return positions.map((position) => [position.latitude, position.longitude]);
+    if (total === 0) {
+      return [];
+    }
+
+    const sampleStep =
+      total <= maxPoints
+        ? 1
+        : Math.ceil((total - 1) / Math.max(1, maxPoints - 1));
+    const positions = await this.positionsRepository.query<
+      Array<{ latitude: number; longitude: number }>
+    >(
+      `
+        WITH ordered_positions AS (
+          SELECT
+            latitude,
+            longitude,
+            ROW_NUMBER() OVER (ORDER BY "recordedAt" ASC) AS row_number
+          FROM lock_positions
+          WHERE "terminalId" = $1
+            AND "recordedAt" >= $2
+            AND "recordedAt" <= $3
+            AND "deletedAt" IS NULL
+            AND "isPositioned" = true
+        )
+        SELECT latitude, longitude
+        FROM ordered_positions
+        WHERE MOD(row_number - 1, $4) = 0
+           OR row_number = $5
+        ORDER BY row_number ASC
+      `,
+      [normalizedTerminalId, from, to, sampleStep, total],
+    );
+
+    return positions.map((position) => [
+      Number(position.latitude),
+      Number(position.longitude),
+    ]);
   }
 
   findLatestForLock(terminalId: string): Promise<LockPosition | null> {

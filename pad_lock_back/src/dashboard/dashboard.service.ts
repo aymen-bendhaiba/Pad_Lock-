@@ -35,27 +35,28 @@ type SyncRow = {
   count: string;
 };
 
+type DashboardSnapshotRow = KpiRow & {
+  latestPositions: LatestPositionRow[];
+  alarmCount: string;
+  activityRows: ActivityRow[];
+  topAlarms: AlarmRow[];
+  syncRows: SyncRow[];
+};
+
 @Injectable()
 export class DashboardService {
   constructor(private readonly dataSource: DataSource) {}
 
   async summary(query: DashboardQueryDto) {
     const { from, to } = dateRange(query);
-    const [
-      lockCounts,
-      latestPositions,
-      alarmCount,
-      activityRows,
-      topAlarms,
-      syncRows,
-    ] = await Promise.all([
-      this.lockCounts(),
-      this.latestPositions(from, to),
-      this.alarmCount(from, to),
-      this.activity(from, to),
-      this.topAlarms(from, to),
-      this.rfidSyncStatus(),
-    ]);
+    const terminalId = query.terminalId?.toUpperCase() ?? null;
+    const snapshot = await this.dashboardSnapshot(from, to, terminalId);
+    const lockCounts = snapshot;
+    const latestPositions = snapshot.latestPositions;
+    const alarmCount = { count: snapshot.alarmCount };
+    const activityRows = snapshot.activityRows;
+    const topAlarms = snapshot.topAlarms;
+    const syncRows = snapshot.syncRows;
     const movement = movementCounts(latestPositions);
     const lockState = lockStateCounts(latestPositions);
     const totalLocks = Number(lockCounts.total);
@@ -69,6 +70,7 @@ export class DashboardService {
         from: from.toISOString(),
         to: to.toISOString(),
       },
+      filters: { terminalId },
       kpis: {
         totalAssets: totalLocks,
         online,
@@ -113,15 +115,151 @@ export class DashboardService {
     };
   }
 
-  private async lockCounts(): Promise<KpiRow> {
-    const rows = await this.dataSource.query<KpiRow[]>(`
+  private async dashboardSnapshot(
+    from: Date,
+    to: Date,
+    terminalId: string | null,
+  ): Promise<DashboardSnapshotRow> {
+    const terminalFilter = terminalId ? `AND "terminalId" = $3` : '';
+    const lockFilter = terminalId ? `WHERE "terminalId" = $3` : '';
+    const cardFilter = terminalId ? `AND lock."terminalId" = $3` : '';
+    const rows = await this.dataSource.query<DashboardSnapshotRow[]>(
+      `
+        WITH filtered_positions AS MATERIALIZED (
+          SELECT "terminalId", "speedKmh", "isLocked", "recordedAt"
+          FROM lock_positions
+          WHERE "deletedAt" IS NULL
+            AND "recordedAt" >= $1
+            AND "recordedAt" <= $2
+            ${terminalFilter}
+        ),
+        ranked_positions AS (
+          SELECT *,
+            ROW_NUMBER() OVER (
+              PARTITION BY "terminalId" ORDER BY "recordedAt" DESC
+            ) AS row_number
+          FROM filtered_positions
+        ),
+        activity_rows AS (
+          SELECT
+            DATE_TRUNC('day', "recordedAt")::date::text AS day,
+            COUNT(*) FILTER (
+              WHERE COALESCE("speedKmh", 0) > 0
+            )::int AS moving,
+            COUNT(*) FILTER (
+              WHERE COALESCE("speedKmh", 0) <= 0
+            )::int AS idle
+          FROM filtered_positions
+          GROUP BY 1
+        ),
+        filtered_alarms AS MATERIALIZED (
+          SELECT type
+          FROM lock_events
+          WHERE "deletedAt" IS NULL
+            AND "occurredAt" >= $1
+            AND "occurredAt" <= $2
+            ${terminalFilter}
+            AND type NOT IN ('locked', 'unlocked')
+        ),
+        top_alarm_rows AS (
+          SELECT type, COUNT(*)::int AS count
+          FROM filtered_alarms
+          GROUP BY type
+          ORDER BY COUNT(*) DESC, type ASC
+          LIMIT 5
+        ),
+        lock_counts AS (
+          SELECT
+            COUNT(*)::text AS total,
+            COUNT(*) FILTER (WHERE status = 'online')::text AS online,
+            COUNT(*) FILTER (WHERE status = 'offline')::text AS offline,
+            COUNT(*) FILTER (WHERE status = 'unknown')::text AS unknown
+          FROM lock_devices
+          ${lockFilter}
+        )
+        SELECT
+          lock_counts.total,
+          lock_counts.online,
+          lock_counts.offline,
+          lock_counts.unknown,
+          COALESCE((
+            SELECT JSONB_AGG(
+              JSONB_BUILD_OBJECT(
+                'terminalId', "terminalId",
+                'speedKmh', "speedKmh",
+                'isLocked', "isLocked"
+              )
+              ORDER BY "terminalId"
+            )
+            FROM ranked_positions
+            WHERE row_number = 1
+          ), '[]'::jsonb) AS "latestPositions",
+          (SELECT COUNT(*)::text FROM filtered_alarms) AS "alarmCount",
+          COALESCE((
+            SELECT JSONB_AGG(
+              JSONB_BUILD_OBJECT(
+                'day', day,
+                'moving', moving,
+                'idle', idle
+              )
+              ORDER BY day
+            )
+            FROM activity_rows
+          ), '[]'::jsonb) AS "activityRows",
+          COALESCE((
+            SELECT JSONB_AGG(
+              JSONB_BUILD_OBJECT('type', type, 'count', count)
+              ORDER BY count DESC, type
+            )
+            FROM top_alarm_rows
+          ), '[]'::jsonb) AS "topAlarms",
+          COALESCE((
+            SELECT JSONB_AGG(
+              JSONB_BUILD_OBJECT('status', status, 'count', count)
+              ORDER BY status
+            )
+            FROM (
+              SELECT card."lastSyncStatus" AS status, COUNT(*)::int AS count
+              FROM rfid_cards card
+              JOIN lock_devices lock ON lock.id = card."lockDeviceId"
+              WHERE card.active = true
+                ${cardFilter}
+              GROUP BY card."lastSyncStatus"
+            ) sync_counts
+          ), '[]'::jsonb) AS "syncRows"
+        FROM lock_counts
+      `,
+      terminalId ? [from, to, terminalId] : [from, to],
+    );
+
+    return (
+      rows[0] ?? {
+        total: '0',
+        online: '0',
+        offline: '0',
+        unknown: '0',
+        latestPositions: [],
+        alarmCount: '0',
+        activityRows: [],
+        topAlarms: [],
+        syncRows: [],
+      }
+    );
+  }
+
+  private async lockCounts(terminalId: string | null): Promise<KpiRow> {
+    const rows = await this.dataSource.query<KpiRow[]>(
+      `
       SELECT
         COUNT(*)::text AS total,
         COUNT(*) FILTER (WHERE status = 'online')::text AS online,
         COUNT(*) FILTER (WHERE status = 'offline')::text AS offline,
         COUNT(*) FILTER (WHERE status = 'unknown')::text AS unknown
       FROM lock_devices
-    `);
+      ${terminalId ? 'WHERE "terminalId" = $1' : ''}
+    `,
+      terminalId ? [terminalId] : [],
+    );
 
     return rows[0] ?? { total: '0', online: '0', offline: '0', unknown: '0' };
   }
@@ -129,6 +267,7 @@ export class DashboardService {
   private async latestPositions(
     from: Date,
     to: Date,
+    terminalId: string | null,
   ): Promise<LatestPositionRow[]> {
     return this.dataSource.query<LatestPositionRow[]>(
       `
@@ -140,13 +279,18 @@ export class DashboardService {
       WHERE "deletedAt" IS NULL
         AND "recordedAt" >= $1
         AND "recordedAt" <= $2
+        ${terminalId ? 'AND "terminalId" = $3' : ''}
       ORDER BY "terminalId", "recordedAt" DESC
     `,
-      [from, to],
+      terminalId ? [from, to, terminalId] : [from, to],
     );
   }
 
-  private async alarmCount(from: Date, to: Date): Promise<CountRow> {
+  private async alarmCount(
+    from: Date,
+    to: Date,
+    terminalId: string | null,
+  ): Promise<CountRow> {
     const rows = await this.dataSource.query<CountRow[]>(
       `
         SELECT COUNT(*)::text AS count
@@ -154,15 +298,20 @@ export class DashboardService {
         WHERE "deletedAt" IS NULL
           AND "occurredAt" >= $1
           AND "occurredAt" <= $2
+          ${terminalId ? 'AND "terminalId" = $3' : ''}
           AND type NOT IN ('locked', 'unlocked')
       `,
-      [from, to],
+      terminalId ? [from, to, terminalId] : [from, to],
     );
 
     return rows[0] ?? { count: '0' };
   }
 
-  private async activity(from: Date, to: Date): Promise<ActivityRow[]> {
+  private async activity(
+    from: Date,
+    to: Date,
+    terminalId: string | null,
+  ): Promise<ActivityRow[]> {
     return this.dataSource.query<ActivityRow[]>(
       `
         SELECT
@@ -173,14 +322,19 @@ export class DashboardService {
         WHERE "deletedAt" IS NULL
           AND "recordedAt" >= $1
           AND "recordedAt" <= $2
+          ${terminalId ? 'AND "terminalId" = $3' : ''}
         GROUP BY 1
         ORDER BY 1 ASC
       `,
-      [from, to],
+      terminalId ? [from, to, terminalId] : [from, to],
     );
   }
 
-  private async topAlarms(from: Date, to: Date): Promise<AlarmRow[]> {
+  private async topAlarms(
+    from: Date,
+    to: Date,
+    terminalId: string | null,
+  ): Promise<AlarmRow[]> {
     return this.dataSource.query<AlarmRow[]>(
       `
         SELECT type, COUNT(*)::text AS count
@@ -188,23 +342,29 @@ export class DashboardService {
         WHERE "deletedAt" IS NULL
           AND "occurredAt" >= $1
           AND "occurredAt" <= $2
+          ${terminalId ? 'AND "terminalId" = $3' : ''}
           AND type NOT IN ('locked', 'unlocked')
         GROUP BY type
         ORDER BY COUNT(*) DESC, type ASC
         LIMIT 5
       `,
-      [from, to],
+      terminalId ? [from, to, terminalId] : [from, to],
     );
   }
 
-  private async rfidSyncStatus(): Promise<SyncRow[]> {
-    return this.dataSource.query<SyncRow[]>(`
+  private async rfidSyncStatus(terminalId: string | null): Promise<SyncRow[]> {
+    return this.dataSource.query<SyncRow[]>(
+      `
       SELECT "lastSyncStatus" AS status, COUNT(*)::text AS count
-      FROM rfid_cards
-      WHERE active = true
+      FROM rfid_cards card
+      ${terminalId ? 'JOIN lock_devices lock ON lock.id = card."lockDeviceId"' : ''}
+      WHERE card.active = true
+        ${terminalId ? 'AND lock."terminalId" = $1' : ''}
       GROUP BY "lastSyncStatus"
       ORDER BY "lastSyncStatus" ASC
-    `);
+    `,
+      terminalId ? [terminalId] : [],
+    );
   }
 }
 

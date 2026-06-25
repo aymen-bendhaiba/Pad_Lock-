@@ -11,7 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Socket, createServer, Server } from 'node:net';
-import { DataSource, In, Repository } from 'typeorm';
+import { ArrayContains, DataSource, In, Repository } from 'typeorm';
 import {
   Geofence,
   GeofenceAccessMode,
@@ -510,7 +510,11 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
         input.latitude !== undefined &&
         input.longitude !== null &&
         input.longitude !== undefined
-          ? await this.geofenceSnapshots(input.latitude, input.longitude)
+          ? await this.geofenceSnapshots(
+              terminalId,
+              input.latitude,
+              input.longitude,
+            )
           : [];
       await this.lockEventsService.recordFromTcp(terminalId, {
         ...input,
@@ -580,10 +584,11 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async geofenceSnapshots(
+    terminalId: string,
     latitude: number,
     longitude: number,
   ): Promise<Array<{ id: string; name: string }>> {
-    const geofences = await this.geofencesRepository.find();
+    const geofences = await this.findGeofencesForLock(terminalId);
     const snapshots: Array<{ id: string; name: string }> = [];
 
     for (const geofence of geofences) {
@@ -603,7 +608,7 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const normalizedTerminalId = terminalId.toUpperCase();
     const [geofences, states] = await Promise.all([
-      this.geofencesRepository.find(),
+      this.findGeofencesForLock(normalizedTerminalId),
       this.geofenceStatesRepository.find({
         where: { terminalId: normalizedTerminalId },
       }),
@@ -689,7 +694,7 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     latitude: number,
     longitude: number,
   ): Promise<void> {
-    const geofences = await this.geofencesRepository.find();
+    const geofences = await this.findGeofencesForLock(terminalId);
     const mergedRules: GeofenceRules = {
       smsAllowed: true,
       gprsAllowed: true,
@@ -769,6 +774,7 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     }
 
     const allowed = await this.isLimitedRfidAllowedAtPosition(
+      terminalId,
       latitude,
       longitude,
     );
@@ -798,10 +804,11 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async isLimitedRfidAllowedAtPosition(
+    terminalId: string,
     latitude: number,
     longitude: number,
   ): Promise<boolean> {
-    const geofences = await this.geofencesRepository.find();
+    const geofences = await this.findGeofencesForLock(terminalId);
 
     for (const geofence of geofences) {
       const inShape = await this.isPositionInGeofence(
@@ -826,6 +833,13 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     }
 
     return true;
+  }
+
+  private async findGeofencesForLock(terminalId: string): Promise<Geofence[]> {
+    const normalizedTerminalId = terminalId.toUpperCase();
+    return this.geofencesRepository.find({
+      where: { terminalIds: ArrayContains([normalizedTerminalId]) },
+    });
   }
 
   private async syncPhysicalRfidCards(
@@ -907,9 +921,12 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
   ): LockEventType {
     if (parsed.eventSourceCode === '5') return LockEventType.Locked;
     if (parsed.eventSourceCode === '2') return LockEventType.IllegalRfid;
-    if (parsed.unlockVerification === 'Reject')
-      return LockEventType.UnlockRejected;
-    return LockEventType.Unlocked;
+    if (['1', '4', '6', '7'].includes(parsed.eventSourceCode)) {
+      return parsed.unlockVerification === 'Pass'
+        ? LockEventType.Unlocked
+        : LockEventType.UnlockRejected;
+    }
+    return LockEventType.Other;
   }
 
   private protocolDate(timestamp: string): Date {

@@ -99,3 +99,22 @@ export class BatteryReportQueryDto extends ReportQueryDto {
   @Max(100)
   below?: number;
 }
+
+/** Shared query params for the lightweight GET /api/reports summary endpoint. */
+export class ReportSummaryQueryDto {
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+
+  @IsOptional()
+  @IsString()
+  terminalId?: string;
+
+  @IsOptional()
+  @IsEnum(ReportGroupBy)
+  groupBy: ReportGroupBy = ReportGroupBy.Day;
+}

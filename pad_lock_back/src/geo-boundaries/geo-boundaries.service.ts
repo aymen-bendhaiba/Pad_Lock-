@@ -22,12 +22,16 @@ export class GeoBoundariesService {
         'boundary.countryCode',
         'boundary.continent',
         'boundary.bbox',
-        'boundary.metadata',
         'boundary.createdAt',
         'boundary.updatedAt',
       ])
       .orderBy('boundary.name', 'ASC')
+      .skip(((query.page ?? 1) - 1) * (query.limit ?? 50))
       .take(query.limit ?? 50);
+
+    if (query.includeMetadata) {
+      builder.addSelect('boundary.metadata');
+    }
 
     if (query.type) {
       builder.andWhere('boundary.type = :type', { type: query.type });
@@ -46,8 +50,8 @@ export class GeoBoundariesService {
     }
 
     if (query.continent?.trim()) {
-      builder.andWhere('boundary.continent ILIKE :continent', {
-        continent: query.continent.trim(),
+      builder.andWhere('LOWER(boundary.continent) = :continent', {
+        continent: query.continent.trim().toLowerCase(),
       });
     }
 

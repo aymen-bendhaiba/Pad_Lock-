@@ -7,6 +7,7 @@ import {
   MileageReportQueryDto,
   ReportGroupBy,
   ReportQueryDto,
+  ReportSummaryQueryDto,
   UnlockMethod,
   UnlocksReportQueryDto,
 } from './dto/report-query.dto';
@@ -28,70 +29,153 @@ export class ReportsService {
     const context = reportContext(query);
     const filter = eventFilter(context, query);
     const where = filter.clauses.join(' AND ');
-    const [summaryRows, typeRows, severityRows, statusRows, timeline, rows] =
-      await Promise.all([
-        this.dataSource.query<
-          Array<{
-            total: string;
-            unresolved: string;
-            critical: string;
-            affectedLocks: string;
-          }>
-        >(
-          `SELECT
+    const statisticsRows = await this.dataSource.query<
+      Array<{
+        total: string;
+        unresolved: string;
+        critical: string;
+        affectedLocks: string;
+        byType: CountGroupRow[];
+        bySeverity: CountGroupRow[];
+        byStatus: CountGroupRow[];
+        timeline: ReportRow[];
+        rows: ReportRow[];
+      }>
+    >(
+      `WITH filtered_events AS MATERIALIZED (
+             SELECT
+               id,
+               "terminalId",
+               type,
+               severity,
+               status,
+               source,
+               "rfidCardNumber",
+               latitude,
+               longitude,
+               geofences,
+               "occurredAt",
+               "receivedAt"
+             FROM lock_events
+             WHERE ${where}
+           )
+           SELECT
              COUNT(*)::text AS total,
-             COUNT(*) FILTER (WHERE status <> 'resolve')::text AS unresolved,
-             COUNT(*) FILTER (WHERE severity = 'critical')::text AS critical,
-             COUNT(DISTINCT "terminalId")::text AS "affectedLocks"
-           FROM lock_events
-           WHERE ${where}`,
-          filter.parameters,
-        ),
-        this.groupCount('lock_events', 'type', where, filter.parameters),
-        this.groupCount('lock_events', 'severity', where, filter.parameters),
-        this.groupCount('lock_events', 'status', where, filter.parameters),
-        this.dataSource.query<ReportRow[]>(
-          `SELECT
-             DATE_TRUNC('${context.bucket}', "occurredAt") AS bucket,
-             COUNT(*)::int AS total,
-             COUNT(*) FILTER (WHERE severity = 'critical')::int AS critical
-           FROM lock_events
-           WHERE ${where}
-           GROUP BY 1
-           ORDER BY 1`,
-          filter.parameters,
-        ),
-        this.dataSource.query<ReportRow[]>(
-          `SELECT id, "terminalId", type, severity, status, source,
-                  "rfidCardNumber", latitude, longitude, geofences,
-                  "occurredAt", "receivedAt"
-           FROM lock_events
-           WHERE ${where}
-           ORDER BY "occurredAt" DESC
-           LIMIT ${context.limit} OFFSET ${context.offset}`,
-          filter.parameters,
-        ),
-      ]);
-    const summary = summaryRows[0] ?? {
+             COUNT(*) FILTER (
+               WHERE status <> 'resolve'
+             )::text AS unresolved,
+             COUNT(*) FILTER (
+               WHERE severity = 'critical'
+             )::text AS critical,
+             COUNT(DISTINCT "terminalId")::text AS "affectedLocks",
+             COALESCE((
+               SELECT JSONB_AGG(
+                 JSONB_BUILD_OBJECT('key', key, 'count', count)
+                 ORDER BY count DESC, key
+               )
+               FROM (
+                 SELECT type::text AS key, COUNT(*)::int AS count
+                 FROM filtered_events
+                 GROUP BY type
+               ) grouped
+             ), '[]'::jsonb) AS "byType",
+             COALESCE((
+               SELECT JSONB_AGG(
+                 JSONB_BUILD_OBJECT('key', key, 'count', count)
+                 ORDER BY count DESC, key
+               )
+               FROM (
+                 SELECT severity::text AS key, COUNT(*)::int AS count
+                 FROM filtered_events
+                 GROUP BY severity
+               ) grouped
+             ), '[]'::jsonb) AS "bySeverity",
+             COALESCE((
+               SELECT JSONB_AGG(
+                 JSONB_BUILD_OBJECT('key', key, 'count', count)
+                 ORDER BY count DESC, key
+               )
+               FROM (
+                 SELECT status::text AS key, COUNT(*)::int AS count
+                 FROM filtered_events
+                 GROUP BY status
+               ) grouped
+             ), '[]'::jsonb) AS "byStatus",
+             COALESCE((
+               SELECT JSONB_AGG(
+                 JSONB_BUILD_OBJECT(
+                   'bucket', bucket,
+                   'total', total,
+                   'critical', critical
+                 )
+                 ORDER BY bucket
+               )
+               FROM (
+                 SELECT
+                   DATE_TRUNC(
+                     '${context.bucket}', "occurredAt"
+                   ) AS bucket,
+                   COUNT(*)::int AS total,
+                   COUNT(*) FILTER (
+                     WHERE severity = 'critical'
+                   )::int AS critical
+                 FROM filtered_events
+                 GROUP BY 1
+               ) grouped
+             ), '[]'::jsonb) AS timeline
+             ,
+             COALESCE((
+               SELECT JSONB_AGG(
+                 TO_JSONB(page_rows)
+                 ORDER BY page_rows."occurredAt" DESC
+               )
+               FROM (
+                 SELECT
+                   id,
+                   "terminalId",
+                   type,
+                   severity,
+                   status,
+                   source,
+                   "rfidCardNumber",
+                   latitude,
+                   longitude,
+                   geofences,
+                   "occurredAt",
+                   "receivedAt"
+                 FROM filtered_events
+                 ORDER BY "occurredAt" DESC
+                 LIMIT ${context.limit} OFFSET ${context.offset}
+               ) page_rows
+             ), '[]'::jsonb) AS rows
+           FROM filtered_events`,
+      filter.parameters,
+    );
+    const statistics = statisticsRows[0] ?? {
       total: '0',
       unresolved: '0',
       critical: '0',
       affectedLocks: '0',
+      byType: [],
+      bySeverity: [],
+      byStatus: [],
+      timeline: [],
+      rows: [],
     };
 
     return reportResponse(context, {
       summary: {
-        total: Number(summary.total),
-        unresolved: Number(summary.unresolved),
-        critical: Number(summary.critical),
-        affectedLocks: Number(summary.affectedLocks),
-        byType: numericCounts(typeRows),
-        bySeverity: numericCounts(severityRows),
-        byStatus: numericCounts(statusRows),
+        total: Number(statistics.total),
+        unresolved: Number(statistics.unresolved),
+        critical: Number(statistics.critical),
+        affectedLocks: Number(statistics.affectedLocks),
+        byType: numericCounts(statistics.byType),
+        bySeverity: numericCounts(statistics.bySeverity),
+        byStatus: numericCounts(statistics.byStatus),
       },
-      timeline,
-      rows,
-      total: Number(summary.total),
+      timeline: statistics.timeline,
+      rows: statistics.rows,
+      total: Number(statistics.total),
       filters: {
         type: query.type ?? null,
         severity: query.severity ?? null,
@@ -102,12 +186,41 @@ export class ReportsService {
 
   async geofences(query: GeofencesReportQueryDto) {
     const context = reportContext(query);
-    const baseParameters: unknown[] = [
-      context.from,
-      context.to,
-      context.terminalId,
-      query.geofenceId ?? null,
+    const baseParameters: unknown[] = [context.from, context.to];
+    const transitionClauses = [
+      `t."deletedAt" IS NULL`,
+      `t."occurredAt" >= $1`,
+      `t."occurredAt" <= $2`,
     ];
+    const eventClauses = [
+      `e."deletedAt" IS NULL`,
+      `e.type = 'unlocked'`,
+      `e."occurredAt" >= $1`,
+      `e."occurredAt" <= $2`,
+    ];
+    const geofenceClauses: string[] = [];
+
+    if (context.terminalId) {
+      baseParameters.push(context.terminalId);
+      const placeholder = `$${baseParameters.length}`;
+      transitionClauses.push(`t."terminalId" = ${placeholder}`);
+      eventClauses.push(`e."terminalId" = ${placeholder}`);
+    }
+    if (query.geofenceId) {
+      baseParameters.push(query.geofenceId);
+      const placeholder = `$${baseParameters.length}`;
+      transitionClauses.push(`t."geofenceId" = ${placeholder}::uuid`);
+      eventClauses.push(
+        `e.geofences @> jsonb_build_array(jsonb_build_object('id', ${placeholder}::text))`,
+      );
+      geofenceClauses.push(`g.id = ${placeholder}::uuid`);
+    }
+    const transitionWhere = transitionClauses.join(' AND ');
+    const eventWhere = eventClauses.join(' AND ');
+    const geofenceWhere =
+      geofenceClauses.length > 0 ? geofenceClauses.join(' AND ') : 'TRUE';
+    const limitPlaceholder = `$${baseParameters.length + 1}`;
+    const offsetPlaceholder = `$${baseParameters.length + 2}`;
     const paginatedParameters: unknown[] = [
       ...baseParameters,
       context.limit,
@@ -124,28 +237,16 @@ export class ReportsService {
         }>
       >(
         `SELECT
-           (SELECT COUNT(*) FROM geofences
-             WHERE ($4::uuid IS NULL OR id = $4))::text
+           (SELECT COUNT(*) FROM geofences g
+             WHERE ${geofenceWhere})::text
              AS "totalGeofences",
            COUNT(*) FILTER (WHERE t.type = 'enter')::text AS entries,
            COUNT(*) FILTER (WHERE t.type = 'exit')::text AS exits,
            (SELECT COUNT(*) FROM lock_events e
-             WHERE e."deletedAt" IS NULL
-               AND e.type = 'unlocked'
-               AND e."occurredAt" >= $1
-               AND e."occurredAt" <= $2
-               AND ($3::text IS NULL OR e."terminalId" = $3)
-               AND ($4::uuid IS NULL OR EXISTS (
-                 SELECT 1 FROM jsonb_array_elements(e.geofences) item
-                 WHERE item->>'id' = $4::text
-               )))::text AS "unlocksInside",
+             WHERE ${eventWhere})::text AS "unlocksInside",
            COUNT(DISTINCT t."terminalId")::text AS "affectedLocks"
          FROM geofence_transitions t
-         WHERE t."deletedAt" IS NULL
-           AND t."occurredAt" >= $1
-           AND t."occurredAt" <= $2
-           AND ($3::text IS NULL OR t."terminalId" = $3)
-           AND ($4::uuid IS NULL OR t."geofenceId" = $4)`,
+         WHERE ${transitionWhere}`,
         baseParameters,
       ),
       this.dataSource.query<ReportRow[]>(
@@ -154,11 +255,7 @@ export class ReportsService {
            COUNT(*) FILTER (WHERE t.type = 'enter')::int AS entries,
            COUNT(*) FILTER (WHERE t.type = 'exit')::int AS exits
          FROM geofence_transitions t
-         WHERE t."deletedAt" IS NULL
-           AND t."occurredAt" >= $1
-           AND t."occurredAt" <= $2
-           AND ($3::text IS NULL OR t."terminalId" = $3)
-           AND ($4::uuid IS NULL OR t."geofenceId" = $4)
+         WHERE ${transitionWhere}
          GROUP BY 1
          ORDER BY 1`,
         baseParameters,
@@ -171,14 +268,9 @@ export class ReportsService {
            COUNT(t.id) FILTER (WHERE t.type = 'exit')::int AS exits,
            COUNT(DISTINCT t."terminalId")::int AS "affectedLocks",
            (SELECT COUNT(*) FROM lock_events e
-             WHERE e."deletedAt" IS NULL
-               AND e.type = 'unlocked'
-               AND e."occurredAt" >= $1
-               AND e."occurredAt" <= $2
-               AND ($3::text IS NULL OR e."terminalId" = $3)
-               AND EXISTS (
-                 SELECT 1 FROM jsonb_array_elements(e.geofences) item
-                 WHERE item->>'id' = g.id::text
+             WHERE ${eventWhere}
+               AND e.geofences @> jsonb_build_array(
+                 jsonb_build_object('id', g.id::text)
                ))::int AS "unlocksInside"
          FROM geofences g
          LEFT JOIN geofence_transitions t
@@ -186,18 +278,18 @@ export class ReportsService {
           AND t."deletedAt" IS NULL
           AND t."occurredAt" >= $1
           AND t."occurredAt" <= $2
-          AND ($3::text IS NULL OR t."terminalId" = $3)
-         WHERE ($4::uuid IS NULL OR g.id = $4)
+          ${context.terminalId ? `AND t."terminalId" = $3` : ''}
+         WHERE ${geofenceWhere}
          GROUP BY g.id
          ORDER BY g.name
-         LIMIT $5 OFFSET $6`,
+         LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}`,
         paginatedParameters,
       ),
       this.dataSource.query<Array<{ count: string }>>(
         `SELECT COUNT(*)::text AS count
-         FROM geofences
-         WHERE ($1::uuid IS NULL OR id = $1)`,
-        [query.geofenceId ?? null],
+         FROM geofences g
+         WHERE ${query.geofenceId ? 'g.id = $1::uuid' : 'TRUE'}`,
+        query.geofenceId ? [query.geofenceId] : [],
       ),
     ]);
     const summary = summaryRows[0] ?? {
@@ -234,7 +326,7 @@ export class ReportsService {
       filter.add(
         query.geofenceId,
         (p) =>
-          `EXISTS (SELECT 1 FROM jsonb_array_elements(geofences) item WHERE item->>'id' = ${p})`,
+          `geofences @> jsonb_build_array(jsonb_build_object('id', ${p}::text))`,
       );
     }
     const where = filter.clauses.join(' AND ');
@@ -320,17 +412,22 @@ export class ReportsService {
 
   async mileage(query: MileageReportQueryDto) {
     const context = reportContext(query);
-    const baseParameters: unknown[] = [
-      context.from,
-      context.to,
-      context.terminalId,
-    ];
+    const hasTerminalId = Boolean(context.terminalId);
+    // cteParameters matches the number of $N placeholders the CTE actually uses:
+    // - no terminalId filter → only $1 (from) and $2 (to)
+    // - with terminalId filter → $1, $2, and $3
+    const cteParameters: unknown[] = hasTerminalId
+      ? [context.from, context.to, context.terminalId]
+      : [context.from, context.to];
     const paginatedParameters: unknown[] = [
-      ...baseParameters,
+      ...cteParameters,
       context.limit,
       context.offset,
     ];
-    const cte = mileageCte();
+    const cte = mileageCte(hasTerminalId);
+    // Determine the positional indices for LIMIT/OFFSET based on cteParameters length
+    const limitIdx = cteParameters.length + 1;
+    const offsetIdx = cteParameters.length + 2;
     const [summaryRows, timeline, rows, countRows] = await Promise.all([
       this.dataSource.query<
         Array<{
@@ -345,7 +442,7 @@ export class ReportsService {
            COUNT(DISTINCT "terminalId") FILTER (WHERE delta > 0)::text AS "affectedLocks",
            COUNT(*) FILTER (WHERE delta > 0)::text AS "movingSamples"
          FROM deltas`,
-        baseParameters,
+        cteParameters,
       ),
       this.dataSource.query<ReportRow[]>(
         `${cte}
@@ -354,7 +451,7 @@ export class ReportsService {
          FROM deltas
          GROUP BY 1
          ORDER BY 1`,
-        baseParameters,
+        cteParameters,
       ),
       this.dataSource.query<ReportRow[]>(
         `${cte}
@@ -367,18 +464,27 @@ export class ReportsService {
          FROM deltas
          GROUP BY "terminalId"
          ORDER BY kilometers DESC, "terminalId"
-         LIMIT $4 OFFSET $5`,
+         LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
         paginatedParameters,
       ),
-      this.dataSource.query<Array<{ count: string }>>(
-        `SELECT COUNT(DISTINCT "terminalId")::text AS count
-         FROM lock_positions
-         WHERE "deletedAt" IS NULL
-           AND mileage IS NOT NULL
-           AND "recordedAt" >= $1 AND "recordedAt" <= $2
-           AND ($3::text IS NULL OR "terminalId" = $3)`,
-        baseParameters,
-      ),
+      hasTerminalId
+        ? this.dataSource.query<Array<{ count: string }>>(
+            `SELECT COUNT(DISTINCT "terminalId")::text AS count
+             FROM lock_positions
+             WHERE "deletedAt" IS NULL
+               AND mileage IS NOT NULL
+               AND "recordedAt" >= $1 AND "recordedAt" <= $2
+               AND "terminalId" = $3`,
+            cteParameters,
+          )
+        : this.dataSource.query<Array<{ count: string }>>(
+            `SELECT COUNT(DISTINCT "terminalId")::text AS count
+             FROM lock_positions
+             WHERE "deletedAt" IS NULL
+               AND mileage IS NOT NULL
+               AND "recordedAt" >= $1 AND "recordedAt" <= $2`,
+            cteParameters,
+          ),
     ]);
     const summary = summaryRows[0] ?? {
       totalKilometers: '0',
@@ -492,21 +598,220 @@ export class ReportsService {
       filters: { below: query.below ?? null },
     });
   }
+  /**
+   * Lightweight summary endpoint — runs one scalar query per report type in
+   * parallel and returns all summaries in a single response. No timeline or
+   * paginated rows are included, making this much cheaper than calling each
+   * individual report endpoint.
+   */
+  async summary(query: ReportSummaryQueryDto) {
+    const context = reportContext(query as ReportQueryDto);
 
-  private groupCount(
-    table: string,
-    column: string,
-    where: string,
-    parameters: unknown[],
-  ): Promise<CountGroupRow[]> {
-    return this.dataSource.query<CountGroupRow[]>(
-      `SELECT ${column}::text AS key, COUNT(*)::text AS count
-       FROM ${table}
-       WHERE ${where}
-       GROUP BY ${column}
-       ORDER BY COUNT(*) DESC, ${column}`,
-      parameters,
-    );
+    // ── Alerts ──────────────────────────────────────────────────────────────
+    const alertFilter = eventFilter(context, {});
+    const alertWhere = alertFilter.clauses.join(' AND ');
+
+    // ── Unlocks ─────────────────────────────────────────────────────────────
+    const unlockFilter = eventFilter(context, {});
+    unlockFilter.clauses.push(`type = 'unlocked'`);
+    const unlockWhere = unlockFilter.clauses.join(' AND ');
+
+    // ── Geofences ───────────────────────────────────────────────────────────
+    const geoBaseParams: unknown[] = [context.from, context.to];
+    const transitionClauses = [
+      `t."deletedAt" IS NULL`,
+      `t."occurredAt" >= $1`,
+      `t."occurredAt" <= $2`,
+    ];
+    const eventClauses = [
+      `e."deletedAt" IS NULL`,
+      `e.type = 'unlocked'`,
+      `e."occurredAt" >= $1`,
+      `e."occurredAt" <= $2`,
+    ];
+    if (context.terminalId) {
+      geoBaseParams.push(context.terminalId);
+      const ph = `$${geoBaseParams.length}`;
+      transitionClauses.push(`t."terminalId" = ${ph}`);
+      eventClauses.push(`e."terminalId" = ${ph}`);
+    }
+    const transitionWhere = transitionClauses.join(' AND ');
+    const geoEventWhere = eventClauses.join(' AND ');
+
+    // ── Battery ─────────────────────────────────────────────────────────────
+    const batteryFilter = positionFilter(context);
+    const batteryWhere = batteryFilter.clauses.join(' AND ');
+
+    // ── Mileage ─────────────────────────────────────────────────────────────
+    const hasTerminalId = Boolean(context.terminalId);
+    const milParams: unknown[] = hasTerminalId
+      ? [context.from, context.to, context.terminalId]
+      : [context.from, context.to];
+    const cte = mileageCte(hasTerminalId);
+
+    const [
+      alertRows,
+      unlockRows,
+      geoRows,
+      batteryRows,
+      mileageRows,
+    ] = await Promise.all([
+      this.dataSource.query<
+        Array<{
+          total: string;
+          unresolved: string;
+          critical: string;
+          affectedLocks: string;
+        }>
+      >(
+        `SELECT
+           COUNT(*)::text AS total,
+           COUNT(*) FILTER (WHERE status <> 'resolve')::text AS unresolved,
+           COUNT(*) FILTER (WHERE severity = 'critical')::text AS critical,
+           COUNT(DISTINCT "terminalId")::text AS "affectedLocks"
+         FROM lock_events
+         WHERE ${alertWhere}`,
+        alertFilter.parameters,
+      ),
+      this.dataSource.query<
+        Array<{
+          total: string;
+          insideSite: string;
+          byCard: string;
+          byPassword: string;
+          affectedLocks: string;
+        }>
+      >(
+        `SELECT
+           COUNT(*)::text AS total,
+           COUNT(*) FILTER (WHERE jsonb_array_length(geofences) > 0)::text AS "insideSite",
+           COUNT(*) FILTER (WHERE ${unlockMethodSql('source')} = 'rfid')::text AS "byCard",
+           COUNT(*) FILTER (WHERE ${unlockMethodSql('source')} IN ('static_password', 'dynamic_password'))::text AS "byPassword",
+           COUNT(DISTINCT "terminalId")::text AS "affectedLocks"
+         FROM lock_events
+         WHERE ${unlockWhere}`,
+        unlockFilter.parameters,
+      ),
+      this.dataSource.query<
+        Array<{
+          totalGeofences: string;
+          entries: string;
+          exits: string;
+          unlocksInside: string;
+          affectedLocks: string;
+        }>
+      >(
+        `SELECT
+           (SELECT COUNT(*) FROM geofences)::text AS "totalGeofences",
+           COUNT(*) FILTER (WHERE t.type = 'enter')::text AS entries,
+           COUNT(*) FILTER (WHERE t.type = 'exit')::text AS exits,
+           (SELECT COUNT(*) FROM lock_events e WHERE ${geoEventWhere})::text AS "unlocksInside",
+           COUNT(DISTINCT t."terminalId")::text AS "affectedLocks"
+         FROM geofence_transitions t
+         WHERE ${transitionWhere}`,
+        geoBaseParams,
+      ),
+      this.dataSource.query<
+        Array<{
+          samples: string;
+          average: string | null;
+          minimum: string | null;
+          maximum: string | null;
+          lowSamples: string;
+          chargingSamples: string;
+          affectedLocks: string;
+        }>
+      >(
+        `SELECT
+           COUNT(*)::text AS samples,
+           ROUND(AVG("batteryPercentage"), 2)::text AS average,
+           MIN("batteryPercentage")::text AS minimum,
+           MAX("batteryPercentage")::text AS maximum,
+           COUNT(*) FILTER (WHERE "batteryPercentage" <= 30)::text AS "lowSamples",
+           COUNT(*) FILTER (WHERE "isCharging")::text AS "chargingSamples",
+           COUNT(DISTINCT "terminalId")::text AS "affectedLocks"
+         FROM lock_positions
+         WHERE ${batteryWhere}`,
+        batteryFilter.parameters,
+      ),
+      this.dataSource.query<
+        Array<{
+          totalKilometers: string;
+          affectedLocks: string;
+          movingSamples: string;
+        }>
+      >(
+        `${cte}
+         SELECT
+           COALESCE(SUM(delta), 0)::text AS "totalKilometers",
+           COUNT(DISTINCT "terminalId") FILTER (WHERE delta > 0)::text AS "affectedLocks",
+           COUNT(*) FILTER (WHERE delta > 0)::text AS "movingSamples"
+         FROM deltas`,
+        milParams,
+      ),
+    ]);
+
+    const alerts = alertRows[0] ?? {
+      total: '0', unresolved: '0', critical: '0', affectedLocks: '0',
+    };
+    const unlocks = unlockRows[0] ?? {
+      total: '0', insideSite: '0', byCard: '0', byPassword: '0', affectedLocks: '0',
+    };
+    const geo = geoRows[0] ?? {
+      totalGeofences: '0', entries: '0', exits: '0', unlocksInside: '0', affectedLocks: '0',
+    };
+    const battery = batteryRows[0] ?? {
+      samples: '0', average: null, minimum: null, maximum: null,
+      lowSamples: '0', chargingSamples: '0', affectedLocks: '0',
+    };
+    const mileage = mileageRows[0] ?? {
+      totalKilometers: '0', affectedLocks: '0', movingSamples: '0',
+    };
+
+    return {
+      range: {
+        from: context.from.toISOString(),
+        to: context.to.toISOString(),
+        groupBy: context.groupBy,
+      },
+      filters: { terminalId: context.terminalId },
+      reports: {
+        alerts: {
+          total: Number(alerts.total),
+          unresolved: Number(alerts.unresolved),
+          critical: Number(alerts.critical),
+          affectedLocks: Number(alerts.affectedLocks),
+        },
+        unlocks: {
+          totalOpened: Number(unlocks.total),
+          openedInsideSite: Number(unlocks.insideSite),
+          openedByCard: Number(unlocks.byCard),
+          openedByPassword: Number(unlocks.byPassword),
+          affectedLocks: Number(unlocks.affectedLocks),
+        },
+        geofences: {
+          totalGeofences: Number(geo.totalGeofences),
+          entries: Number(geo.entries),
+          exits: Number(geo.exits),
+          unlocksInside: Number(geo.unlocksInside),
+          affectedLocks: Number(geo.affectedLocks),
+        },
+        battery: {
+          samples: Number(battery.samples),
+          averagePercentage: battery.average === null ? null : Number(battery.average),
+          minimumPercentage: battery.minimum === null ? null : Number(battery.minimum),
+          maximumPercentage: battery.maximum === null ? null : Number(battery.maximum),
+          lowSamples: Number(battery.lowSamples),
+          chargingSamples: Number(battery.chargingSamples),
+          affectedLocks: Number(battery.affectedLocks),
+        },
+        mileage: {
+          totalKilometers: Number(mileage.totalKilometers),
+          affectedLocks: Number(mileage.affectedLocks),
+          movingSamples: Number(mileage.movingSamples),
+        },
+      },
+    };
   }
 }
 
@@ -628,7 +933,9 @@ function unlockMethodSql(column: string): string {
   END`;
 }
 
-function mileageCte(): string {
+function mileageCte(hasTerminalId: boolean): string {
+  const terminalCondition = hasTerminalId ? `AND "terminalId" = $3` : '';
+
   return `
     WITH baseline AS (
       SELECT DISTINCT ON ("terminalId")
@@ -637,7 +944,7 @@ function mileageCte(): string {
       WHERE "deletedAt" IS NULL
         AND mileage IS NOT NULL
         AND "recordedAt" < $1
-        AND ($3::text IS NULL OR "terminalId" = $3)
+        ${terminalCondition}
       ORDER BY "terminalId", "recordedAt" DESC
     ),
     samples AS (
@@ -648,7 +955,7 @@ function mileageCte(): string {
       WHERE "deletedAt" IS NULL
         AND mileage IS NOT NULL
         AND "recordedAt" >= $1 AND "recordedAt" <= $2
-        AND ($3::text IS NULL OR "terminalId" = $3)
+        ${terminalCondition}
     ),
     ordered AS (
       SELECT *, LAG(mileage) OVER (

@@ -11,6 +11,7 @@ function geofence(accessMode: GeofenceAccessMode): Geofence {
   return {
     id: 'geofence-1',
     name: 'Test geofence',
+    terminalIds: ['8034400004'],
     geoBoundaryId: null,
     shapeType: GeofenceShapeType.Circle,
     coordinates: [{ lat: 33, lng: -7 }],

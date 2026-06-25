@@ -5,6 +5,7 @@ import {
   BatteryReportQueryDto,
   GeofencesReportQueryDto,
   MileageReportQueryDto,
+  ReportSummaryQueryDto,
   UnlocksReportQueryDto,
 } from './dto/report-query.dto';
 import { ReportsService } from './reports.service';
@@ -13,6 +14,11 @@ import { ReportsService } from './reports.service';
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
+
+  @Get()
+  summary(@Query() query: ReportSummaryQueryDto) {
+    return this.reportsService.summary(query);
+  }
 
   @Get('alerts')
   alerts(@Query() query: AlertsReportQueryDto) {
