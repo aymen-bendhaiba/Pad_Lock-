@@ -6,6 +6,7 @@ import { AssetCard } from "./asset-card";
 import { LIVE_MAP_COLORS, type LiveMapAsset, type LiveMapLockState, type LiveMapPlaybackPoint, type LiveMapStatus } from "./live-map-data";
 import { LiveMapShell } from "./live-map-shell";
 import { apiFetch, cachedApiJson } from "../../lib/api";
+import { userFriendlyError } from "../../lib/error-messages";
 
 type ApiRecord = Record<string, unknown>;
 type AssetFilter = "all" | "moving" | "idle" | "alarm" | "offline" | "locked" | "unlocked";
@@ -262,7 +263,7 @@ function formatDeviceValue(value: unknown) {
   }
 
   if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
+    return value ? "Oui" : "Non";
   }
 
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -404,10 +405,10 @@ function normalizeSignal(record: ApiRecord, lock?: ApiRecord) {
     ?? readNestedNumber(lock, ["rssi", "signalStrength"]);
 
   if (value === undefined) {
-    return "Unknown";
+    return "Inconnu";
   }
 
-  return value >= 70 ? "Excellent" : value >= 40 ? "Average" : "Poor";
+  return value >= 70 ? "Excellent" : value >= 40 ? "Moyen" : "Faible";
 }
 
 function normalizeLockState(record: ApiRecord, lock?: ApiRecord): LiveMapLockState {
@@ -469,7 +470,7 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
   const status = normalizeStatus(record, activeAlert);
   const name = readString(record, ["name", "assetName", "deviceName", "label"])
     ?? readString(lock, ["name", "assetName", "deviceName", "label"])
-    ?? `Device-${terminalId}`;
+    ?? `Cadenas-${terminalId}`;
 
   const deviceDetails = buildDeviceDetails(record, lock);
   const batteryFromDevice = deviceDetails.find((detail) => detail.label === "Battery")?.value;
@@ -655,13 +656,13 @@ async function fetchPlaybackHistory(path: string) {
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
       const message = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as ApiRecord).message : undefined;
-      throw new Error(Array.isArray(message) ? message.join(" ") : "Playback history request failed.");
+      throw new Error(userFriendlyError(message, "Impossible de charger l'historique du trajet."));
     }
 
     return await response.json();
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("Playback history request timed out.");
+      throw new Error("Le chargement de l'historique a pris trop de temps.");
     }
 
     throw error;
@@ -708,7 +709,7 @@ function playbackPointsFromHistory(payload: unknown) {
 
 function formatPlaybackTime(timestamp?: string) {
   if (!timestamp) {
-    return "No timestamp";
+    return "Aucun horodatage";
   }
 
   const date = new Date(timestamp);
@@ -782,7 +783,7 @@ export function LiveMapPanel() {
           return;
         }
 
-        setError(refreshError instanceof Error ? refreshError.message : "Could not load live devices.");
+        setError(userFriendlyError(refreshError, "Impossible de charger les cadenas en direct."));
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -840,7 +841,7 @@ export function LiveMapPanel() {
 
   async function loadPlayback(asset = selectedAsset) {
     if (!asset) {
-      setPlaybackError("Select a lock before playback.");
+      setPlaybackError("Selectionnez un cadenas avant le playback.");
       setIsPlaybackOpen(true);
       return;
     }
@@ -858,10 +859,10 @@ export function LiveMapPanel() {
       const points = playbackPointsFromHistory(payload);
 
       setPlaybackPoints(points);
-      setPlaybackError(points.length ? null : "No playback positions returned for this lock yet.");
+      setPlaybackError(points.length ? null : "Aucune position de playback pour ce cadenas.");
     } catch (playbackLoadError) {
       setPlaybackPoints([]);
-      setPlaybackError(playbackLoadError instanceof Error ? playbackLoadError.message : "Could not load playback history.");
+      setPlaybackError(userFriendlyError(playbackLoadError, "Impossible de charger l'historique du playback."));
     } finally {
       setIsPlaybackLoading(false);
     }
@@ -904,7 +905,7 @@ export function LiveMapPanel() {
 
         {isLoading ? (
           <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-full border border-[#dfe6ee] bg-white/95 px-4 py-2 text-[12px] font-semibold text-[#475569] shadow-sm">
-            Loading live devices...
+            Chargement des cadenas en direct...
           </div>
         ) : null}
 
@@ -918,7 +919,7 @@ export function LiveMapPanel() {
           <>
             <div className="pointer-events-none absolute left-1/2 top-5 z-20 -translate-x-1/2 rounded-full border border-[#bfdbfe] bg-white/95 px-5 py-2 text-[12px] font-bold text-[#1d4ed8] shadow-[0_10px_24px_rgba(37,99,235,0.18)] backdrop-blur">
               <span className="mr-2 inline-flex size-2 animate-pulse rounded-full bg-[#2563eb]" />
-              {isPlaybackLoading ? "Loading playback" : "Playback mode active"} - {playbackAsset?.name ?? selectedAsset?.name ?? "selected lock"} - {playbackSpeed}x
+              {isPlaybackLoading ? "Chargement du playback" : "Mode playback actif"} - {playbackAsset?.name ?? selectedAsset?.name ?? "cadenas selectionne"} - {playbackSpeed}x
             </div>
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 animate-pulse bg-[linear-gradient(90deg,rgba(37,99,235,0.28),rgba(37,99,235,0.08),transparent)]" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 animate-pulse bg-[linear-gradient(270deg,rgba(37,99,235,0.22),rgba(37,99,235,0.06),transparent)]" />
@@ -928,11 +929,11 @@ export function LiveMapPanel() {
         <div className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap justify-between gap-3 border-t border-[#dfe6ee] bg-white/95 px-4 py-3 text-[11px] text-[#64748b] backdrop-blur">
           <div className="flex flex-wrap gap-x-5 gap-y-2">
             {[
-              ["All", stats.all, "bg-[#34C759]"],
-              ["Motion", stats.moving, "bg-[#3b82f6]"],
-              ["Idle", stats.idle, "bg-[#f97316]"],
-              ["Offline", stats.offline, "bg-[#94a3b8]"],
-              ["Alarm", stats.alarm, "bg-[#ef4444]"],
+              ["Tous", stats.all, "bg-[#34C759]"],
+              ["Mouvement", stats.moving, "bg-[#3b82f6]"],
+              ["Arret", stats.idle, "bg-[#f97316]"],
+              ["Hors ligne", stats.offline, "bg-[#94a3b8]"],
+              ["Alarme", stats.alarm, "bg-[#ef4444]"],
             ].map(([label, value, color]) => (
               <span key={label} className="flex items-center gap-1.5">
                 <span className={`size-2 rounded-full ${color}`} />
@@ -943,11 +944,11 @@ export function LiveMapPanel() {
           <div className="flex gap-x-6">
             <span className="flex items-center gap-1.5">
               <span className="size-2 rounded-full bg-[#a16207]" />
-              Locked: ({stats.locked})
+              Verrouilles : ({stats.locked})
             </span>
             <span className="flex items-center gap-1.5">
               <span className="size-2 rounded-full bg-[#a7f3d0]" />
-              Unlocked: ({stats.unlocked})
+              Deverrouilles : ({stats.unlocked})
             </span>
           </div>
         </div>
@@ -959,7 +960,7 @@ export function LiveMapPanel() {
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#718096]" size={17} />
             <input
               className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white pl-10 pr-4 text-[13px] outline-none transition placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
-              placeholder="Search asset or device ID..."
+              placeholder="Rechercher un cadenas ou un ID..."
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -968,20 +969,20 @@ export function LiveMapPanel() {
         </div>
 
         <div className="flex items-center justify-between px-5 py-4">
-          <h1 className="text-[14px] font-bold">All assets ({filteredAssets.length})</h1>
+          <h1 className="text-[14px] font-bold">Tous les cadenas ({filteredAssets.length})</h1>
           <select
-            aria-label="Filter assets"
+            aria-label="Filtrer les cadenas"
             className="h-8 rounded-[7px] border border-[#dfe6ee] bg-white px-2.5 text-[12px] font-medium text-[#475569] outline-none transition focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
             value={filter}
             onChange={(event) => setFilter(event.target.value as AssetFilter)}
           >
-            <option value="all">All</option>
-            <option value="moving">Moving</option>
-            <option value="idle">Idle</option>
-            <option value="alarm">Alarm</option>
-            <option value="offline">Offline</option>
-            <option value="locked">Locked</option>
-            <option value="unlocked">Unlocked</option>
+            <option value="all">Tous</option>
+            <option value="moving">En mouvement</option>
+            <option value="idle">A l'arret</option>
+            <option value="alarm">Alarme</option>
+            <option value="offline">Hors ligne</option>
+            <option value="locked">Verrouille</option>
+            <option value="unlocked">Deverrouille</option>
           </select>
         </div>
 
@@ -1002,7 +1003,7 @@ export function LiveMapPanel() {
             ))
           ) : (
             <div className="mx-2 rounded-[8px] border border-dashed border-[#d5e0ea] p-4 text-[13px] text-[#64748b]">
-              {isLoading ? "Loading devices from backend..." : "No backend devices match this view yet."}
+              {isLoading ? "Chargement des cadenas..." : "Aucun cadenas ne correspond a cette vue."}
             </div>
           )}
         </div>
@@ -1011,9 +1012,9 @@ export function LiveMapPanel() {
           <div className="rounded-[10px] border border-[#dfe6ee] bg-[#f8fafc] p-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[13px] font-bold text-[#111827]">Playback</p>
+                <p className="text-[13px] font-bold text-[#111827]">Lecture du trajet</p>
                 <p className="mt-0.5 truncate text-[11px] text-[#64748b]">
-                  {selectedAsset ? selectedAsset.name : "Select a lock"}
+                  {selectedAsset ? selectedAsset.name : "Selectionnez un cadenas"}
                 </p>
               </div>
               <button
@@ -1021,8 +1022,8 @@ export function LiveMapPanel() {
                 onClick={() => loadPlayback()}
                 className="grid size-9 place-items-center rounded-[8px] bg-[#111827] text-white transition hover:bg-[#2563eb] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
                 disabled={isPlaybackLoading || !selectedAsset}
-                aria-label="Load playback"
-                title="Load playback"
+                aria-label="Charger le playback"
+                title="Charger le playback"
               >
                 {isPlaybackLoading ? <Loader2 size={17} className="animate-spin" /> : <Play size={17} />}
               </button>
@@ -1032,7 +1033,7 @@ export function LiveMapPanel() {
               <div className="mt-3 space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <label className="text-[10px] font-semibold uppercase text-[#64748b]">
-                    From
+                    Debut
                     <input
                       type="date"
                       value={playbackFrom}
@@ -1041,7 +1042,7 @@ export function LiveMapPanel() {
                     />
                   </label>
                   <label className="text-[10px] font-semibold uppercase text-[#64748b]">
-                    To
+                    Fin
                     <input
                       type="date"
                       value={playbackTo}
@@ -1057,7 +1058,7 @@ export function LiveMapPanel() {
                     <span>{formatPlaybackTime(playbackPoints[playbackIndex]?.timestamp)}</span>
                   </div>
                   <div className="truncate font-semibold text-[#111827]">
-                    {playbackPoints[playbackIndex]?.placeName ?? "No location name"}
+                    {playbackPoints[playbackIndex]?.placeName ?? "Lieu indisponible"}
                   </div>
                 </div>
 
@@ -1072,7 +1073,7 @@ export function LiveMapPanel() {
                   }}
                   disabled={!playbackPoints.length}
                   className="w-full accent-[#2563eb]"
-                  aria-label="Playback timeline"
+                  aria-label="Chronologie du playback"
                 />
 
                 <div className="grid grid-cols-[1fr_auto_auto] gap-2">
@@ -1083,15 +1084,15 @@ export function LiveMapPanel() {
                     className="flex h-9 items-center justify-center gap-2 rounded-[8px] bg-[#2563eb] text-[12px] font-semibold text-white transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:bg-[#cbd5e1]"
                   >
                     {isPlaybackPlaying ? <Pause size={15} /> : <Play size={15} />}
-                    {isPlaybackPlaying ? "Pause" : "Play route"}
+                    {isPlaybackPlaying ? "Pause" : "Lire le trajet"}
                   </button>
                   <button
                     type="button"
                     onClick={resetPlayback}
                     disabled={!playbackPoints.length}
                     className="grid size-9 place-items-center rounded-[8px] border border-[#dfe6ee] bg-white text-[#475569] transition hover:border-[#2563eb] hover:text-[#2563eb] disabled:cursor-not-allowed disabled:text-[#cbd5e1]"
-                    aria-label="Reset playback"
-                    title="Reset playback"
+                    aria-label="Reinitialiser le playback"
+                    title="Reinitialiser le playback"
                   >
                     <RotateCcw size={15} />
                   </button>
@@ -1099,8 +1100,8 @@ export function LiveMapPanel() {
                     type="button"
                     onClick={exitPlayback}
                     className="grid size-9 place-items-center rounded-[8px] border border-[#fee2e2] bg-white text-[#dc2626] transition hover:bg-[#fef2f2]"
-                    aria-label="Exit playback mode"
-                    title="Exit playback mode"
+                    aria-label="Quitter le mode playback"
+                    title="Quitter le mode playback"
                   >
                     <X size={15} />
                   </button>
@@ -1130,13 +1131,13 @@ export function LiveMapPanel() {
         </div>
 
         <div className="flex items-center justify-between border-t border-[#dfe6ee] bg-[#f8fafc] px-5 py-4 text-[12px] text-[#64748b]">
-          <span>Group View</span>
+          <span>Vue groupee</span>
           <div className="flex items-center gap-4">
-            <button className="grid size-7 place-items-center rounded-full bg-white" type="button" aria-label="Previous page">
+            <button className="grid size-7 place-items-center rounded-full bg-white" type="button" aria-label="Page precedente">
               &lsaquo;
             </button>
             <span className="font-semibold text-[#475569]">1 / 1</span>
-            <button className="grid size-7 place-items-center rounded-full bg-white" type="button" aria-label="Next page">
+            <button className="grid size-7 place-items-center rounded-full bg-white" type="button" aria-label="Page suivante">
               &rsaquo;
             </button>
           </div>

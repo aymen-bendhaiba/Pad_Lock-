@@ -79,6 +79,28 @@ function textValue(...values: unknown[]) {
   return undefined;
 }
 
+function translateDashboardLabel(label: string) {
+  const normalized = label.trim().toLowerCase();
+  const translations: Record<string, string> = {
+    alarm: "Alarmes",
+    alarms: "Alarmes",
+    alert: "Alertes",
+    alerts: "Alertes",
+    moving: "En mouvement",
+    movement: "En mouvement",
+    idle: "A l'arret",
+    stopped: "A l'arret",
+    stopping: "A l'arret",
+    locked: "Verrouilles",
+    unlocked: "Deverrouilles",
+    online: "En ligne",
+    offline: "Hors ligne",
+    other: "Autres",
+  };
+
+  return translations[normalized] ?? label;
+}
+
 function numberValue(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -152,22 +174,22 @@ function trendFor(summary: SummaryRecord, label: string) {
     const rowLabel = textValue(record.label, record.name, record.key, record.title)?.toLowerCase();
 
     if (rowLabel?.includes(normalizedLabel)) {
-      return textValue(record.trend, record.change, record.delta, record.subtitle) ?? "Live backend value";
+      return textValue(record.trend, record.change, record.delta, record.subtitle) ?? "Valeur mise a jour";
     }
   }
 
-  return "Live backend value";
+  return "Valeur mise a jour";
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US").format(Math.round(value));
+  return new Intl.NumberFormat("fr-FR").format(Math.round(value));
 }
 
 const rangeOptions: { label: string; value: DashboardRangeFilter }[] = [
-  { label: "Last 7 days", value: "last7" },
-  { label: "Last 30 days", value: "last30" },
-  { label: "This month", value: "thisMonth" },
-  { label: "Last quarter", value: "lastQuarter" },
+  { label: "7 derniers jours", value: "last7" },
+  { label: "30 derniers jours", value: "last30" },
+  { label: "Ce mois", value: "thisMonth" },
+  { label: "Dernier trimestre", value: "lastQuarter" },
 ];
 
 function dateRange(filter: DashboardRangeFilter) {
@@ -230,7 +252,7 @@ function customRange(fromValue: string, toValue: string) {
 }
 
 function formatRange(from: Date, to: Date) {
-  const formatter = new Intl.DateTimeFormat("en-GB", {
+  const formatter = new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -270,7 +292,7 @@ function normalizeActivity(summary: SummaryRecord): ActivityPoint[] {
 
   if (normalized.length > 0) return normalized;
 
-  return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label) => ({
+  return ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"].map((label) => ({
     label,
     moving: 0,
     idle: 0,
@@ -284,7 +306,7 @@ function normalizeNamedCounts(value: unknown, fallbackLabel = "Item") {
 
   if (record && rowsFromValue(value).length === 0) {
     return Object.entries(record)
-      .map(([key, itemValue]) => ({ label: key, value: numberValue(itemValue) ?? 0 }))
+      .map(([key, itemValue]) => ({ label: translateDashboardLabel(key), value: numberValue(itemValue) ?? 0 }))
       .filter((item) => item.value > 0);
   }
 
@@ -294,7 +316,7 @@ function normalizeNamedCounts(value: unknown, fallbackLabel = "Item") {
       if (!item) return null;
 
       return {
-        label: textValue(item.label, item.name, item.type, item.status, item.key) ?? `${fallbackLabel} ${index + 1}`,
+        label: translateDashboardLabel(textValue(item.label, item.name, item.type, item.status, item.key) ?? `${fallbackLabel} ${index + 1}`),
         value: numberValue(item.value, item.count, item.total, item.assets) ?? 0,
       };
     })
@@ -302,7 +324,7 @@ function normalizeNamedCounts(value: unknown, fallbackLabel = "Item") {
 }
 
 function normalizeTopAlarms(summary: SummaryRecord) {
-  return normalizeNamedCounts(summary.topAlarms ?? summary.alarmsByType, "Alarm").slice(0, 5);
+  return normalizeNamedCounts(summary.topAlarms ?? summary.alarmsByType, "Alarme").slice(0, 5);
 }
 
 function normalizeDistribution(summary: SummaryRecord) {
@@ -312,7 +334,7 @@ function normalizeDistribution(summary: SummaryRecord) {
     summary.lockStateDistribution ??
     summary.rfidSyncStatus;
 
-  return normalizeNamedCounts(distribution, "Group").slice(0, 7);
+  return normalizeNamedCounts(distribution, "Groupe").slice(0, 7);
 }
 
 function normalizeLockActivities(summary: SummaryRecord) {
@@ -321,7 +343,7 @@ function normalizeLockActivities(summary: SummaryRecord) {
       summary.lockActivityByType ??
       summary.activityByType ??
       summary.lockStatusBreakdown,
-    "Activity",
+    "Activite",
   );
 
   if (direct.length > 0) return direct.slice(0, 8);
@@ -335,12 +357,12 @@ function normalizeLockActivities(summary: SummaryRecord) {
   const other = Math.max(0, totalAssets - moving - stopping);
 
   return [
-    { label: "Alarms", value: alarms },
-    { label: "Moving", value: moving },
-    { label: "Stopping", value: stopping },
-    { label: "Locked", value: locked },
-    { label: "Unlocked", value: unlocked },
-    { label: "Other", value: other },
+    { label: "Alarmes", value: alarms },
+    { label: "En mouvement", value: moving },
+    { label: "A l'arret", value: stopping },
+    { label: "Verrouilles", value: locked },
+    { label: "Deverrouilles", value: unlocked },
+    { label: "Autres", value: other },
   ].filter((item) => item.value > 0);
 }
 
@@ -360,8 +382,8 @@ function normalizeHeatMapTracks(_summary: SummaryRecord) {
     { label: "Casablanca", value: 92 },
     { label: "Rabat", value: 78 },
     { label: "Marrakech", value: 64 },
-    { label: "Tangier", value: 58 },
-    { label: "Fez", value: 43 },
+    { label: "Tanger", value: 58 },
+    { label: "Fes", value: 43 },
     { label: "Agadir", value: 38 },
     { label: "Meknes", value: 32 },
     { label: "Oujda", value: 25 },
@@ -393,39 +415,39 @@ function buildMetrics(summary: SummaryRecord): Metric[] {
 
   return [
     {
-      label: "Total Assets",
+      label: "Total des cadenas",
       value: getMetricValue(summary, ["total assets", "assets", "locks"], ["totalAssets", "assets", "total", "locks", "totalLocks"]),
       trend: trendFor(summary, "total"),
       icon: Database,
     },
-    { label: "Online", value: connection.online, trend: trendFor(summary, "online"), icon: Wifi },
-    { label: "Offline", value: connection.offline, trend: trendFor(summary, "offline"), icon: WifiOff },
+    { label: "En ligne", value: connection.online, trend: trendFor(summary, "online"), icon: Wifi },
+    { label: "Hors ligne", value: connection.offline, trend: trendFor(summary, "offline"), icon: WifiOff },
     {
-      label: "Moving",
+      label: "En mouvement",
       value: getMetricValue(summary, ["moving", "movement"], ["moving", "movingAssets", "movement"]),
       trend: trendFor(summary, "moving"),
       icon: Activity,
     },
     {
-      label: "Idle",
+      label: "A l'arret",
       value: getMetricValue(summary, ["idle"], ["idle", "idleAssets"]),
       trend: trendFor(summary, "idle"),
       icon: CircleGauge,
     },
     {
-      label: "Locked",
+      label: "Verrouilles",
       value: getMetricValue(summary, ["locked"], ["locked", "lockedAssets", "lockedLocks"]),
       trend: trendFor(summary, "locked"),
       icon: Lock,
     },
     {
-      label: "Unlocked",
+      label: "Deverrouilles",
       value: getMetricValue(summary, ["unlocked"], ["unlocked", "unlockedAssets", "unlockedLocks"]),
       trend: trendFor(summary, "unlocked"),
       icon: Unlock,
     },
     {
-      label: "Alarm",
+      label: "Alarmes",
       value: getMetricValue(summary, ["alarm", "alert"], ["alarm", "alarms", "alerts", "alertCount"]),
       trend: trendFor(summary, "alarm"),
       icon: CircleAlert,
@@ -469,8 +491,8 @@ export function DashboardPanel() {
   );
   const selectedRangeLabel =
     rangeMode === "custom"
-      ? "Custom range"
-      : (rangeOptions.find((option) => option.value === rangeFilter)?.label ?? "Last 30 days");
+      ? "Periode personnalisee"
+      : (rangeOptions.find((option) => option.value === rangeFilter)?.label ?? "30 derniers jours");
   const [summary, setSummary] = useState<SummaryRecord>({});
   const [loadState, setLoadState] = useState<LoadState>("loading");
 
@@ -514,16 +536,16 @@ export function DashboardPanel() {
   const unlocked = getMetricValue(summary, ["unlocked"], ["unlocked", "unlockedAssets", "unlockedLocks"]);
   const sourceLabel =
     loadState === "loading"
-      ? "Loading backend dashboard..."
+      ? "Chargement du tableau de bord..."
       : loadState === "error"
-        ? "Backend dashboard summary unavailable"
-        : "Loaded from backend dashboard summary";
+        ? "Resume du tableau de bord indisponible"
+        : "Donnees du tableau de bord chargees";
 
   return (
     <div className="w-full px-4 py-7 md:px-5 xl:px-6">
       <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h1 className="text-[26px] font-bold tracking-normal text-black">Dashboard</h1>
+          <h1 className="text-[26px] font-bold tracking-normal text-black">Tableau de bord</h1>
           <p className="mt-1 text-[12px] text-[#718096]">{sourceLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -534,7 +556,7 @@ export function DashboardPanel() {
           >
             <CalendarDays size={16} />
             <select
-              aria-label="Dashboard preset range"
+              aria-label="Periode predefinie du tableau de bord"
               value={rangeFilter}
               onChange={(event) => {
                 setRangeMode("preset");
@@ -562,10 +584,10 @@ export function DashboardPanel() {
                 rangeMode === "custom" ? "bg-[#e7f8f5] text-[#0f766e]" : "text-[#475569] hover:bg-[#f8fafc]"
               }`}
             >
-              Range
+              Periode
             </button>
             <input
-              aria-label="Dashboard custom range start"
+              aria-label="Date de debut du tableau de bord"
               type="date"
               value={customFrom}
               onChange={(event) => {
@@ -574,9 +596,9 @@ export function DashboardPanel() {
               }}
               className="h-8 rounded-[6px] border border-[#e2e8f0] px-2 text-[12px] font-medium text-[#1f2937] outline-none focus:border-[#2A9D90]"
             />
-            <span className="text-[11px] font-semibold text-[#94a3b8]">to</span>
+            <span className="text-[11px] font-semibold text-[#94a3b8]">au</span>
             <input
-              aria-label="Dashboard custom range end"
+              aria-label="Date de fin du tableau de bord"
               type="date"
               value={customTo}
               onChange={(event) => {
@@ -618,8 +640,8 @@ export function DashboardPanel() {
         <article className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="flex flex-col gap-3 border-b border-[#e6edf4] px-5 py-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className="text-[15px] font-bold">Lock Activities</h2>
-              <p className="mt-1 text-[12px] text-[#718096]">Live activity composition across alarms, motion, stop, lock and unlock events</p>
+              <h2 className="text-[15px] font-bold">Activites des cadenas</h2>
+              <p className="mt-1 text-[12px] text-[#718096]">Repartition des alarmes, mouvements, arrets, verrouillages et deverrouillages</p>
             </div>
             <button type="button" className="h-9 w-fit rounded-[7px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-medium text-[#475569]">{selectedRangeLabel}</button>
           </div>
@@ -630,9 +652,9 @@ export function DashboardPanel() {
                 <div className="absolute -right-12 -top-12 size-40 rounded-full bg-[#2A9D90]/20 blur-2xl" />
                 <div className="absolute -bottom-14 left-8 size-36 rounded-full bg-[#1E9ADA]/15 blur-2xl" />
                 <div className="relative">
-                  <p className="text-[11px] font-semibold uppercase text-[#64748b]">Total activity</p>
+                  <p className="text-[11px] font-semibold uppercase text-[#64748b]">Activite totale</p>
                   <p className="mt-3 text-[42px] font-bold leading-none">{formatNumber(lockActivities.reduce((total, item) => total + item.value, 0))}</p>
-                  <p className="mt-2 text-[12px] text-[#64748b]">events in selected range</p>
+                  <p className="mt-2 text-[12px] text-[#64748b]">evenements sur la periode selectionnee</p>
 
                   <div className="mt-6 grid place-items-center">
                     {(() => {
@@ -650,7 +672,7 @@ export function DashboardPanel() {
                           <div className="grid size-[102px] place-items-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]">
                             <div className="text-center">
                               <p className="text-[22px] font-bold leading-none">{lockActivities.length}</p>
-                              <p className="mt-1 text-[10px] uppercase text-[#64748b]">signals</p>
+                              <p className="mt-1 text-[10px] uppercase text-[#64748b]">signaux</p>
                             </div>
                           </div>
                         </div>
@@ -681,8 +703,8 @@ export function DashboardPanel() {
 
                 <div className="mt-4 rounded-[8px] border border-[#e2e8f0] bg-white p-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <p className="text-[12px] font-bold text-[#111827]">Activity ranking</p>
-                    <p className="text-[11px] text-[#64748b]">Highest volume first</p>
+                    <p className="text-[12px] font-bold text-[#111827]">Classement des activites</p>
+                    <p className="text-[11px] text-[#64748b]">Volume le plus eleve en premier</p>
                   </div>
                   <div className="space-y-3">
                     {[...lockActivities].sort((a, b) => b.value - a.value).slice(0, 5).map((item, index) => {
@@ -701,14 +723,14 @@ export function DashboardPanel() {
               </div>
             </div>
           ) : (
-            <div className="grid h-[292px] place-items-center bg-[#fbfdff] text-[12px] text-[#64748b]">No backend lock activity data yet.</div>
+            <div className="grid h-[292px] place-items-center bg-[#fbfdff] text-[12px] text-[#64748b]">Aucune activite de cadenas disponible pour le moment.</div>
           )}
         </article>
 
         <article className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="border-b border-[#e6edf4] px-5 py-4">
-            <h2 className="text-[15px] font-bold">Connection Status</h2>
-            <p className="mt-1 text-[12px] text-[#718096]">Backend online health</p>
+            <h2 className="text-[15px] font-bold">Etat de connexion</h2>
+            <p className="mt-1 text-[12px] text-[#718096]">Disponibilite des cadenas connectes</p>
           </div>
           <div className="p-5">
             <div className="grid place-items-center rounded-[10px] bg-[#f8fafc] py-5">
@@ -716,17 +738,17 @@ export function DashboardPanel() {
                 <div className="grid size-[108px] place-items-center rounded-full border border-[#e2e8f0] bg-white shadow-sm">
                   <div className="text-center">
                     <p className="text-[30px] font-bold leading-none text-[#0f172a]">{Math.round(connection.percent)}%</p>
-                    <p className="mt-1 text-[11px] font-semibold uppercase text-[#64748b]">connected</p>
+                    <p className="mt-1 text-[11px] font-semibold uppercase text-[#64748b]">connectes</p>
                   </div>
                 </div>
               </div>
             </div>
             <div className="mt-4 grid gap-3">
               <div className="rounded-[8px] border border-[#d7f3df] bg-[#f0fdf4] px-3 py-3">
-                <div className="flex items-center justify-between text-[12px]"><span className="flex items-center gap-2 font-semibold text-[#047857]"><span className="size-2.5 rounded-full bg-[#34C759]" />Online locks</span><strong className="text-[#064e3b]">{formatNumber(connection.online)}</strong></div>
+                <div className="flex items-center justify-between text-[12px]"><span className="flex items-center gap-2 font-semibold text-[#047857]"><span className="size-2.5 rounded-full bg-[#34C759]" />Cadenas en ligne</span><strong className="text-[#064e3b]">{formatNumber(connection.online)}</strong></div>
               </div>
               <div className="rounded-[8px] border border-[#e2e8f0] bg-white px-3 py-3">
-                <div className="flex items-center justify-between text-[12px]"><span className="flex items-center gap-2 font-semibold text-[#64748b]"><span className="size-2.5 rounded-full bg-[#cbd5e1]" />Offline locks</span><strong className="text-[#334155]">{formatNumber(connection.offline)}</strong></div>
+                <div className="flex items-center justify-between text-[12px]"><span className="flex items-center gap-2 font-semibold text-[#64748b]"><span className="size-2.5 rounded-full bg-[#cbd5e1]" />Cadenas hors ligne</span><strong className="text-[#334155]">{formatNumber(connection.offline)}</strong></div>
               </div>
             </div>
           </div>
@@ -736,8 +758,8 @@ export function DashboardPanel() {
       <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,1fr)]">
         <article className="rounded-[8px] border border-[#dfe6ee] bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="mb-5 flex items-start justify-between">
-            <div><h2 className="text-[15px] font-bold">Most RFID Cards Used</h2><p className="mt-1 text-[12px] text-[#718096]">Static usage sample until backend card ranking is ready</p></div>
-            <button type="button" className="flex h-9 items-center gap-2 rounded-[7px] bg-[#111827] px-3 text-[12px] font-medium text-white">Reports<ChartNoAxesColumn size={14} /></button>
+            <div><h2 className="text-[15px] font-bold">Cartes RFID les plus utilisees</h2><p className="mt-1 text-[12px] text-[#718096]">Exemple statique en attendant le classement des cartes</p></div>
+            <button type="button" className="flex h-9 items-center gap-2 rounded-[7px] bg-[#111827] px-3 text-[12px] font-medium text-white">Rapports<ChartNoAxesColumn size={14} /></button>
           </div>
           {rfidUsage.length > 0 ? (
             <div className="space-y-4">
@@ -750,14 +772,14 @@ export function DashboardPanel() {
               ))}
             </div>
           ) : (
-            <div className="grid h-36 place-items-center rounded-[8px] border border-dashed border-[#dfe6ee] text-[12px] text-[#64748b]">No backend RFID usage data yet.</div>
+            <div className="grid h-36 place-items-center rounded-[8px] border border-dashed border-[#dfe6ee] text-[12px] text-[#64748b]">Aucune donnee RFID disponible pour le moment.</div>
           )}
         </article>
 
         <article className="rounded-[8px] border border-[#dfe6ee] bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="mb-5 flex items-start justify-between gap-3">
-            <div><h2 className="text-[15px] font-bold">Heat Map Track Lock</h2><p className="mt-1 text-[12px] text-[#718096]">Static activity sample until backend heat map is ready</p></div>
-            <button type="button" className="flex h-9 items-center gap-2 rounded-[7px] border border-[#dfe6ee] px-3 text-[12px] font-medium"><Globe2 size={14} />Global view</button>
+            <div><h2 className="text-[15px] font-bold">Carte de chaleur des trajets</h2><p className="mt-1 text-[12px] text-[#718096]">Exemple statique en attendant la carte de chaleur dynamique</p></div>
+            <button type="button" className="flex h-9 items-center gap-2 rounded-[7px] border border-[#dfe6ee] px-3 text-[12px] font-medium"><Globe2 size={14} />Vue globale</button>
           </div>
           <div className="rounded-[10px] border border-[#e6edf4] bg-[#fbfdff] p-4">
             {heatMapTracks.length > 0 ? (
@@ -773,16 +795,16 @@ export function DashboardPanel() {
                 })}
               </div>
             ) : (
-              <div className="grid h-[220px] place-items-center text-[12px] text-[#64748b]">No backend heat map tracking data yet.</div>
+              <div className="grid h-[220px] place-items-center text-[12px] text-[#64748b]">Aucune donnee de trajet disponible pour le moment.</div>
             )}
-            <div className="mt-3 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[11px] text-[#64748b]"><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#ef4444]" />High track activity</span><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#e2e8f0]" />Low track activity</span></div>
+            <div className="mt-3 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[11px] text-[#64748b]"><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#ef4444]" />Activite elevee</span><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#e2e8f0]" />Activite faible</span></div>
           </div>
         </article>
       </section>
 
       <div className="mt-5 flex flex-wrap justify-end gap-x-8 gap-y-2 pb-2 text-[11px] text-[#64748b]">
-        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#a16207]" />Locked: ({formatNumber(locked)})</span>
-        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#a7f3d0]" />Unlocked: ({formatNumber(unlocked)})</span>
+        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#a16207]" />Verrouilles : ({formatNumber(locked)})</span>
+        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#a7f3d0]" />Deverrouilles : ({formatNumber(unlocked)})</span>
       </div>
     </div>
   );

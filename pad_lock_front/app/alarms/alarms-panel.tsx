@@ -11,11 +11,14 @@ import {
   ChevronsRight,
   Ellipsis,
   Info,
+  MapPin,
   Search,
   Upload,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, buildAlertStreamUrl, cachedApiJson, getStoredAccessToken } from "../../lib/api";
+import { AlarmPositionMapShell } from "./alarm-position-map-shell";
 
 type AlarmSeverity = "Low" | "Medium" | "Critical";
 type AlarmStatus = "Read" | "Unread" | "Investigating" | "Resolved";
@@ -29,6 +32,8 @@ type AlarmRow = {
   time: string;
   timestampMs: number | null;
   description: string;
+  latitude: number | null;
+  longitude: number | null;
   status: AlarmStatus;
 };
 
@@ -61,6 +66,15 @@ function textValue(...values: unknown[]) {
   }
 
   return undefined;
+}
+
+function numberValue(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+
+  return null;
 }
 
 function severityFromValue(value: unknown): AlarmSeverity {
@@ -107,6 +121,26 @@ function splitTimestamp(value: unknown) {
   };
 }
 
+function terminalIdsFromPayload(payload: unknown) {
+  return Array.from(new Set(rowsFromPayload(payload).map((row) => {
+    if (!row || typeof row !== "object") return undefined;
+    const record = row as Record<string, unknown>;
+    const lock = record.lock && typeof record.lock === "object" ? record.lock as Record<string, unknown> : undefined;
+    const device = record.device && typeof record.device === "object" ? record.device as Record<string, unknown> : undefined;
+    return textValue(record.terminalId, record.deviceId, record.lockId, record.id, device?.terminalId, device?.id, lock?.terminalId, lock?.id);
+  }).filter((id): id is string => Boolean(id))));
+}
+
+function mergeAlarmRows(...groups: AlarmRow[][]) {
+  const byId = new Map<string, AlarmRow>();
+
+  for (const alarm of groups.flat()) {
+    byId.set(alarm.id, alarm);
+  }
+
+  return Array.from(byId.values()).sort((a, b) => (b.timestampMs ?? 0) - (a.timestampMs ?? 0));
+}
+
 function normalizeAlarms(payload: unknown): AlarmRow[] {
   return rowsFromPayload(payload).reduce<AlarmRow[]>((alarms, row, index) => {
     if (!row || typeof row !== "object") return alarms;
@@ -123,6 +157,9 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
     const timestamp = splitTimestamp(
       record.timestamp ?? record.createdAt ?? record.occurredAt ?? record.time,
     );
+    const position = record.position && typeof record.position === "object" ? record.position as Record<string, unknown> : undefined;
+    const latitude = numberValue(record.latitude, record.lat, position?.latitude, position?.lat);
+    const longitude = numberValue(record.longitude, record.lng, record.lon, position?.longitude, position?.lng, position?.lon);
 
     const deviceLabel =
       textValue(
@@ -133,10 +170,10 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
         device?.id,
         lock?.terminalId,
         lock?.id,
-      ) ?? "Unknown device";
+      ) ?? "Cadenas inconnu";
     const typeLabel =
       textValue(record.type, record.eventType, record.alarmType, record.kind) ??
-      "Alert";
+      "Alerte";
 
     alarms.push({
       id:
@@ -150,12 +187,55 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
       timestampMs: timestamp.ms,
       description:
         textValue(record.description, record.message, record.reason, record.payload) ??
-        "Backend alert received from connected lock device",
+        (latitude !== null && longitude !== null
+          ? "Position: " + latitude.toFixed(6) + ", " + longitude.toFixed(6)
+          : "Alerte recue depuis un cadenas connecte"),
+      latitude,
+      longitude,
       status: statusFromValue(record.status ?? record.readStatus),
     });
 
     return alarms;
   }, []);
+}
+
+function severityLabel(severity: AlarmSeverity) {
+  if (severity === "Critical") return "Critique";
+  if (severity === "Medium") return "Moyenne";
+  return "Faible";
+}
+
+function statusLabel(status: AlarmStatus) {
+  if (status === "Resolved") return "Resolue";
+  if (status === "Investigating") return "En investigation";
+  if (status === "Read") return "Lue";
+  return "Non lue";
+}
+
+function tabLabel(tab: string) {
+  if (tab === "Investigate") return "Investigation";
+  if (tab === "Unread") return "Non lues";
+  if (tab === "Resolved") return "Resolues";
+  return "Resume";
+}
+
+function statusActionLabel(status: AlarmStatus) {
+  if (status === "Resolved") return "resolue";
+  if (status === "Investigating") return "en investigation";
+  if (status === "Read") return "lue";
+  return "non lue";
+}
+
+function severityOptionLabel(severity: string) {
+  if (severity === "All Severities") return "Toutes les severites";
+  if (severity === "Critical") return "Critique";
+  if (severity === "Medium") return "Moyenne";
+  if (severity === "Low") return "Faible";
+  return severity;
+}
+
+function typeOptionLabel(type: string) {
+  return type === "All types" ? "Tous les types" : type;
 }
 
 function severityClass(severity: AlarmSeverity) {
@@ -193,7 +273,7 @@ async function persistAlarmStatus(alarmId: string, status: AlarmStatus) {
   });
 
   if (!response.ok) {
-    throw new Error("Backend did not accept the alert status update");
+    throw new Error("Le serveur n'a pas accepte la mise a jour du statut de l'alerte");
   }
 }
 
@@ -205,17 +285,17 @@ function metricIconClass(index: number) {
 }
 
 function formatTodayLabel() {
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat("fr-FR", {
     day: "numeric",
     month: "short",
   }).format(new Date());
 }
 
 const rangeOptions: { label: string; value: AlarmRangeFilter }[] = [
-  { label: "Last 24 hours", value: "last24" },
-  { label: "Last 7 days", value: "last7" },
-  { label: "Last 30 days", value: "last30" },
-  { label: "This month", value: "thisMonth" },
+  { label: "Dernieres 24 heures", value: "last24" },
+  { label: "7 derniers jours", value: "last7" },
+  { label: "30 derniers jours", value: "last30" },
+  { label: "Ce mois", value: "thisMonth" },
 ];
 
 function startOfDay(date: Date) {
@@ -278,7 +358,7 @@ function customAlarmRange(fromValue: string, toValue: string) {
 }
 
 function formatRange(from: Date, to: Date) {
-  const formatter = new Intl.DateTimeFormat("en-GB", {
+  const formatter = new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -326,15 +406,15 @@ function Pager({
   return (
     <div className="flex items-center justify-between py-4 text-[12px] text-[#64748b]">
       <span>
-        {selectedCount} of {totalCount} row(s) selected.
+        {selectedCount} sur {totalCount} ligne(s) selectionnee(s).
       </span>
       <div className="flex items-center gap-4">
-        <span className="font-semibold text-[#111827]">Rows per page</span>
+        <span className="font-semibold text-[#111827]">Lignes par page</span>
         <button className="flex h-8 items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3" type="button">
           10
           <ChevronDown size={12} />
         </button>
-        <span className="font-semibold text-[#111827]">Page 1 of {pageCount}</span>
+        <span className="font-semibold text-[#111827]">Page 1 sur {pageCount}</span>
         <div className="flex gap-2">
           {[ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight].map((Icon, index) => (
             <button key={index} type="button" className="grid size-8 place-items-center rounded-[6px] bg-white text-[#94a3b8]">
@@ -361,20 +441,21 @@ export function AlarmsPanel() {
   const [customTo, setCustomTo] = useState(() => dateInputValue(defaultRange.to));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [mapAlarm, setMapAlarm] = useState<AlarmRow | null>(null);
   const [pendingStatusIds, setPendingStatusIds] = useState<string[]>([]);
   const [exported, setExported] = useState(false);
-  const [sourceLabel, setSourceLabel] = useState("Loading backend alerts...");
+  const [sourceLabel, setSourceLabel] = useState("Chargement des alertes...");
   const [actionLabel, setActionLabel] = useState("");
   const [streamState, setStreamState] = useState<StreamState>("connecting");
-  const [streamLabel, setStreamLabel] = useState("Live alert stream connecting...");
+  const [streamLabel, setStreamLabel] = useState("Connexion au flux des alertes...");
   const range = useMemo(
     () => (rangeMode === "custom" ? customAlarmRange(customFrom, customTo) : alarmDateRange(rangeFilter)),
     [customFrom, customTo, rangeFilter, rangeMode],
   );
   const selectedRangeLabel =
     rangeMode === "custom"
-      ? "Custom range"
-      : (rangeOptions.find((option) => option.value === rangeFilter)?.label ?? "Last 7 days");
+      ? "Periode personnalisee"
+      : (rangeOptions.find((option) => option.value === rangeFilter)?.label ?? "7 derniers jours");
   const backendStatusFilter = useMemo(() => statusFromTab(tab), [tab]);
   const alertListPath = useMemo(
     () => alertsPath(range.from, range.to, backendStatusFilter),
@@ -386,11 +467,23 @@ export function AlarmsPanel() {
 
     async function loadAlerts() {
       setLoadState("loading");
-      setSourceLabel("Loading backend alerts...");
+      setSourceLabel("Chargement des alertes...");
 
       try {
-        const payload = await cachedApiJson(alertListPath, true);
-        const normalized = normalizeAlarms(payload);
+        const [alertsPayload, locksPayload] = await Promise.all([
+          cachedApiJson(alertListPath, true),
+          cachedApiJson("/locks", true).catch(() => []),
+        ]);
+        const terminalIds = terminalIdsFromPayload(locksPayload);
+        const eventResults = await Promise.allSettled(
+          terminalIds.map((terminalId) =>
+            cachedApiJson("/locks/" + encodeURIComponent(terminalId) + "/events", true),
+          ),
+        );
+        const eventAlarms = eventResults.flatMap((result) =>
+          result.status === "fulfilled" ? normalizeAlarms(result.value) : [],
+        );
+        const normalized = mergeAlarmRows(normalizeAlarms(alertsPayload), eventAlarms);
 
         if (!isMounted) return;
 
@@ -398,8 +491,8 @@ export function AlarmsPanel() {
         setLoadState("ready");
         setSourceLabel(
           normalized.length > 0
-            ? `Loaded backend alerts for ${selectedRangeLabel}`
-            : `Backend returned 0 alerts for ${selectedRangeLabel}`,
+            ? `Alertes chargees pour ${selectedRangeLabel}`
+            : `Aucune alerte pour ${selectedRangeLabel}`,
         );
         setSelectedIds([]);
         setOpenMenuId(null);
@@ -407,7 +500,7 @@ export function AlarmsPanel() {
         if (isMounted) {
           setAlarms([]);
           setLoadState("error");
-          setSourceLabel("Could not load backend alerts");
+          setSourceLabel("Impossible de charger les alertes");
           setSelectedIds([]);
           setOpenMenuId(null);
         }
@@ -444,7 +537,7 @@ export function AlarmsPanel() {
         );
       });
       setLoadState("ready");
-      setSourceLabel("Loaded from backend alerts");
+      setSourceLabel("Alertes chargees depuis le serveur");
     }
     async function waitBeforeReconnect() {
       await new Promise<void>((resolve) => {
@@ -460,7 +553,7 @@ export function AlarmsPanel() {
 
         if (!token) {
           setStreamState("disabled");
-          setStreamLabel("Live stream waiting for login token");
+          setStreamLabel("Le flux attend une session active");
           return;
         }
 
@@ -468,7 +561,7 @@ export function AlarmsPanel() {
           setStreamState((currentState) =>
             currentState === "connected" ? "reconnecting" : "connecting",
           );
-          setStreamLabel("Live alert stream connecting...");
+          setStreamLabel("Connexion au flux des alertes...");
 
           const response = await fetch(buildAlertStreamUrl(), {
             headers: {
@@ -478,13 +571,13 @@ export function AlarmsPanel() {
           });
 
           if (!response.ok || !response.body) {
-            throw new Error("Could not open alert stream");
+            throw new Error("Impossible d'ouvrir le flux des alertes");
           }
 
           if (!isMounted) return;
 
           setStreamState("connected");
-          setStreamLabel("Live alert stream connected");
+          setStreamLabel("Flux des alertes connecte");
 
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
@@ -504,14 +597,14 @@ export function AlarmsPanel() {
 
               if (eventName === "keepalive") {
                 setStreamState("connected");
-                setStreamLabel("Live alert stream connected");
+                setStreamLabel("Flux des alertes connecte");
               }
 
-              if (eventName === "alert" && data) {
+              if ((eventName === "alert" || eventName === "message" || !eventName) && data) {
                 try {
                   addStreamAlert(JSON.parse(data));
                 } catch {
-                  setStreamLabel("Live alert stream received an unreadable event");
+                  setStreamLabel("Le flux a recu un evenement illisible");
                 }
               }
             }
@@ -520,7 +613,7 @@ export function AlarmsPanel() {
           if (!isMounted || abortController.signal.aborted) return;
 
           setStreamState("reconnecting");
-          setStreamLabel("Live alert stream reconnecting...");
+          setStreamLabel("Reconnexion au flux des alertes...");
         }
 
         if (isMounted && !abortController.signal.aborted) {
@@ -549,22 +642,22 @@ export function AlarmsPanel() {
   const metrics = useMemo(
     () => [
       {
-        label: "Critical Alarms",
+        label: "Alarmes critiques",
         value: alarms.filter((alarm) => alarm.severity === "Critical").length,
         icon: Info,
       },
       {
-        label: "Unread Alerts",
+        label: "Alertes non lues",
         value: alarms.filter((alarm) => alarm.status === "Unread").length,
         icon: Bell,
       },
       {
-        label: "Active Investigations",
+        label: "Investigations actives",
         value: alarms.filter((alarm) => alarm.status === "Investigating").length,
         icon: Info,
       },
       {
-        label: "Resolved Today",
+        label: "Resolues aujourd'hui",
         value: alarms.filter((alarm) => alarm.status === "Resolved").length,
         icon: Check,
       },
@@ -574,7 +667,7 @@ export function AlarmsPanel() {
 
   const filteredAlarms = useMemo(() => {
     return alarms.filter((alarm) => {
-      const matchesQuery = `${alarm.device} ${alarm.type} ${alarm.severity} ${alarm.description} ${alarm.status}`
+      const matchesQuery = `${alarm.device} ${alarm.type} ${severityLabel(alarm.severity)} ${alarm.description} ${alarm.status}`
         .toLowerCase()
         .includes(query.trim().toLowerCase());
       const matchesTab =
@@ -598,12 +691,12 @@ export function AlarmsPanel() {
     filteredAlarms.every((alarm) => selectedIds.includes(alarm.id));
   const emptyMessage =
     loadState === "loading"
-      ? "Loading backend alerts..."
+      ? "Chargement des alertes..."
       : loadState === "error"
-        ? "Could not load backend alerts. Check your login token and backend connection."
+        ? "Impossible de charger les alertes. Verifiez votre session et votre connexion."
         : alarms.length === 0
-          ? "No backend alerts returned yet."
-          : "No alarms match your filters.";
+          ? "Aucune alerte retournee pour le moment."
+          : "Aucune alerte ne correspond a vos filtres.";
 
   async function updateAlarmStatus(alarmId: string, status: AlarmStatus) {
     const previousAlarm = alarms.find((alarm) => alarm.id === alarmId);
@@ -615,11 +708,11 @@ export function AlarmsPanel() {
     );
     setOpenMenuId(null);
     setPendingStatusIds((currentIds) => Array.from(new Set([...currentIds, alarmId])));
-    setActionLabel(`Saving ${status.toLowerCase()} status...`);
+    setActionLabel(`Enregistrement du statut ${statusActionLabel(status)}...`);
 
     try {
       await persistAlarmStatus(alarmId, status);
-      setActionLabel(`Alert marked ${status.toLowerCase()} in backend`);
+      setActionLabel(`Alerte marquee ${statusActionLabel(status)}`);
     } catch {
       if (previousAlarm) {
         setAlarms((currentAlarms) =>
@@ -628,7 +721,7 @@ export function AlarmsPanel() {
           ),
         );
       }
-      setActionLabel("Backend did not accept the alert status update");
+      setActionLabel("Le serveur n'a pas accepte la mise a jour de l'alerte");
     } finally {
       setPendingStatusIds((currentIds) => currentIds.filter((id) => id !== alarmId));
     }
@@ -656,7 +749,7 @@ export function AlarmsPanel() {
     const unreadIds = alarms.filter((alarm) => alarm.status === "Unread").map((alarm) => alarm.id);
 
     if (unreadIds.length === 0) {
-      setActionLabel("No unread alerts to update");
+      setActionLabel("Aucune alerte non lue a mettre a jour");
       return;
     }
 
@@ -666,7 +759,7 @@ export function AlarmsPanel() {
       ),
     );
     setPendingStatusIds((currentIds) => Array.from(new Set([...currentIds, ...unreadIds])));
-    setActionLabel("Saving read status for unread alerts...");
+    setActionLabel("Enregistrement du statut lu pour les alertes non lues...");
 
     const results = await Promise.allSettled(
       unreadIds.map((alarmId) => persistAlarmStatus(alarmId, "Read")),
@@ -679,9 +772,9 @@ export function AlarmsPanel() {
           failedIds.includes(alarm.id) ? { ...alarm, status: "Unread" } : alarm,
         ),
       );
-      setActionLabel(`${failedIds.length} alert status update(s) were not accepted by backend`);
+      setActionLabel(`${failedIds.length} mise(s) a jour d'alerte refusee(s) par le serveur`);
     } else {
-      setActionLabel("Unread alerts marked read in backend");
+      setActionLabel("Alertes non lues marquees comme lues");
     }
 
     setPendingStatusIds((currentIds) => currentIds.filter((id) => !unreadIds.includes(id)));
@@ -691,9 +784,9 @@ export function AlarmsPanel() {
     <div className="w-full px-4 py-7 md:px-6">
       <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-start">
         <div>
-          <h1 className="text-[26px] font-bold tracking-normal text-black">Alarm Records</h1>
+          <h1 className="text-[26px] font-bold tracking-normal text-black">Registre des alarmes</h1>
           <p className="mt-2 text-[13px] text-[#64748b]">
-            Monitor and respond to real-time security and operational alerts.
+            Surveillez et traitez les alertes de securite et d'exploitation en temps reel.
           </p>
           <p className="mt-1 text-[11px] text-[#94a3b8]">
             {sourceLabel} - {streamLabel}
@@ -708,10 +801,10 @@ export function AlarmsPanel() {
             }`}
           >
             {streamState === "connected"
-              ? "Live"
+              ? "En direct"
               : streamState === "reconnecting"
-                ? "Reconnecting"
-                : "Stream pending"}
+                ? "Reconnexion"
+                : "Flux en attente"}
           </span>
         </div>
         <button
@@ -720,7 +813,7 @@ export function AlarmsPanel() {
           className="flex h-9 w-fit items-center gap-2 rounded-[6px] bg-[#111111] px-3 text-[12px] font-semibold text-white"
         >
           <Check size={14} />
-          Mark all as read
+          Tout marquer comme lu
         </button>
       </div>
 
@@ -745,7 +838,7 @@ export function AlarmsPanel() {
 
       <div className="mb-4 flex flex-col justify-between gap-3 xl:flex-row xl:items-center">
         <div>
-          <h2 className="text-[14px] font-bold">Alarm Records</h2>
+          <h2 className="text-[14px] font-bold">Liste des alarmes</h2>
           {actionLabel ? <p className="mt-1 text-[11px] font-medium text-[#64748b]">{actionLabel}</p> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -754,7 +847,7 @@ export function AlarmsPanel() {
             className="flex h-9 items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"
           >
             <CalendarDays size={14} />
-            Today, {formatTodayLabel()}
+            Aujourd'hui, {formatTodayLabel()}
           </button>
           <label
             className={`flex h-9 items-center gap-2 rounded-[6px] border bg-white px-3 text-[12px] font-semibold transition ${
@@ -762,7 +855,7 @@ export function AlarmsPanel() {
             }`}
           >
             <select
-              aria-label="Alarm preset range"
+              aria-label="Periode predefinie des alarmes"
               value={rangeFilter}
               onChange={(event) => {
                 setRangeMode("preset");
@@ -789,10 +882,10 @@ export function AlarmsPanel() {
                 rangeMode === "custom" ? "bg-[#e7f8f5] text-[#0f766e]" : "text-[#475569] hover:bg-[#f8fafc]"
               }`}
             >
-              Range
+              Periode
             </button>
             <input
-              aria-label="Alarm custom range start"
+              aria-label="Date de debut des alarmes"
               type="date"
               value={customFrom}
               onChange={(event) => {
@@ -801,9 +894,9 @@ export function AlarmsPanel() {
               }}
               className="h-7 rounded-[5px] border border-[#e2e8f0] px-2 text-[11px] font-medium outline-none focus:border-[#2A9D90]"
             />
-            <span className="text-[10px] font-semibold text-[#94a3b8]">to</span>
+            <span className="text-[10px] font-semibold text-[#94a3b8]">au</span>
             <input
-              aria-label="Alarm custom range end"
+              aria-label="Date de fin des alarmes"
               type="date"
               value={customTo}
               onChange={(event) => {
@@ -828,7 +921,7 @@ export function AlarmsPanel() {
                 tab === item ? "bg-white text-[#111827] shadow-sm" : "hover:text-[#111827]"
               }`}
             >
-              {item}
+              {tabLabel(item)}
             </button>
           ))}
         </div>
@@ -838,7 +931,7 @@ export function AlarmsPanel() {
           className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"
         >
           <Upload size={14} />
-          {exported ? "Exported" : "Export"}
+          {exported ? "Exporte" : "Exporter"}
         </button>
       </div>
 
@@ -849,7 +942,7 @@ export function AlarmsPanel() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
-            placeholder="Search"
+            placeholder="Rechercher"
           />
         </label>
         <select
@@ -858,7 +951,7 @@ export function AlarmsPanel() {
           className="h-9 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-medium outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
         >
           {alarmTypes.map((type) => (
-            <option key={type}>{type}</option>
+            <option key={type} value={type}>{typeOptionLabel(type)}</option>
           ))}
         </select>
         <select
@@ -867,20 +960,20 @@ export function AlarmsPanel() {
           className="h-9 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-medium outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
         >
           {["All Severities", "Low", "Medium", "Critical"].map((severity) => (
-            <option key={severity}>{severity}</option>
+            <option key={severity} value={severity}>{severityOptionLabel(severity)}</option>
           ))}
         </select>
       </div>
 
       <div className="overflow-visible rounded-[7px] border border-[#dfe6ee] bg-white">
         <div className="grid grid-cols-[48px_1fr_1.1fr_90px_1.1fr_2.1fr_100px_70px] border-b border-[#dfe6ee] px-4 py-3 text-[12px] font-medium text-[#496383]">
-          <input checked={allSelected} onChange={toggleAll} type="checkbox" aria-label="Select all alarms" />
-          <span>Device</span>
+          <input checked={allSelected} onChange={toggleAll} type="checkbox" aria-label="Selectionner toutes les alarmes" />
+          <span>Cadenas</span>
           <span>Type</span>
-          <span>Severity</span>
-          <span>Timestamp</span>
+          <span>Severite</span>
+          <span>Date et heure</span>
           <span>Description</span>
-          <span>Status</span>
+          <span>Statut</span>
           <span>Actions</span>
         </div>
 
@@ -891,12 +984,12 @@ export function AlarmsPanel() {
               index === 1 ? "bg-[#f1f1f2]" : "bg-white"
             }`}
           >
-            <input checked={selectedIds.includes(alarm.id)} onChange={() => toggleSelected(alarm.id)} type="checkbox" aria-label={`Select ${alarm.type}`} />
+            <input checked={selectedIds.includes(alarm.id)} onChange={() => toggleSelected(alarm.id)} type="checkbox" aria-label={`Selectionner ${alarm.type}`} />
             <span>{alarm.device}</span>
             <span>{alarm.type}</span>
             <span>
               <span className={`rounded-[5px] px-2 py-1 text-[11px] font-medium ${severityClass(alarm.severity)}`}>
-                {alarm.severity}
+                {severityLabel(alarm.severity)}
               </span>
             </span>
             <span>
@@ -904,30 +997,41 @@ export function AlarmsPanel() {
               <br />
               <span className="text-[#64748b]">{alarm.time}</span>
             </span>
-            <span className="pr-3">{alarm.description}</span>
+            <span className="pr-3">
+              {alarm.latitude !== null && alarm.longitude !== null ? (
+                <button
+                  type="button"
+                  onClick={() => setMapAlarm(alarm)}
+                  className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#dfe6ee] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#2563eb] hover:bg-[#eff6ff]"
+                >
+                  <MapPin size={13} />
+                  Voir sur la carte
+                </button>
+              ) : alarm.description}
+            </span>
             <span>
               <span className={`rounded-[5px] px-2 py-1 text-[11px] font-semibold ${statusClass(alarm.status)}`}>
-                {pendingStatusIds.includes(alarm.id) ? "Saving..." : alarm.status}
+                {pendingStatusIds.includes(alarm.id) ? "Enregistrement..." : statusLabel(alarm.status)}
               </span>
             </span>
             <button
               type="button"
               onClick={() => setOpenMenuId(openMenuId === alarm.id ? null : alarm.id)}
               className="grid size-7 place-items-center rounded-[5px] hover:bg-[#eef4fa]"
-              aria-label={`Open actions for ${alarm.type}`}
+              aria-label={`Ouvrir les actions pour ${alarm.type}`}
             >
               <Ellipsis size={16} />
             </button>
             {openMenuId === alarm.id ? (
               <div className="absolute right-8 top-10 z-10 w-[145px] overflow-hidden rounded-[6px] border border-[#dfe6ee] bg-white py-1 text-[12px] shadow-lg">
                 <button type="button" onClick={() => updateAlarmStatus(alarm.id, "Read")} className="block h-8 w-full px-3 text-left hover:bg-[#eef4fa]">
-                  Mark read
+                  Marquer comme lue
                 </button>
                 <button type="button" onClick={() => updateAlarmStatus(alarm.id, "Investigating")} className="block h-8 w-full px-3 text-left hover:bg-[#eef4fa]">
-                  Investigate
+                  Investigation
                 </button>
                 <button type="button" onClick={() => updateAlarmStatus(alarm.id, "Resolved")} className="block h-8 w-full px-3 text-left hover:bg-[#eef4fa]">
-                  Resolve
+                  Resoudre
                 </button>
               </div>
             ) : null}
@@ -942,6 +1046,25 @@ export function AlarmsPanel() {
       </div>
 
       <Pager selectedCount={selectedIds.length} totalCount={alarms.length} />
+
+      {mapAlarm && mapAlarm.latitude !== null && mapAlarm.longitude !== null ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-[820px] overflow-hidden rounded-[10px] border border-[#dfe6ee] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-[#dfe6ee] px-4 py-3">
+              <div>
+                <h2 className="text-[15px] font-bold text-[#0f172a]">Position de l'alerte</h2>
+                <p className="mt-1 text-[12px] text-[#64748b]">{mapAlarm.device} - {mapAlarm.type}</p>
+              </div>
+              <button type="button" onClick={() => setMapAlarm(null)} className="grid size-8 place-items-center rounded-[6px] hover:bg-[#eef4fa]" aria-label="Fermer la carte">
+                <X size={17} />
+              </button>
+            </div>
+            <div className="relative h-[460px] bg-[#d8eadf]">
+              <AlarmPositionMapShell position={[mapAlarm.latitude, mapAlarm.longitude]} label={mapAlarm.device} />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

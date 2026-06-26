@@ -53,10 +53,10 @@ export default function ConfigurationsPage() {
         <section className="min-w-0">
           <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-[#dfe6ee] bg-white/95 px-4 backdrop-blur md:px-6">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <button type="button" className="grid size-9 place-items-center rounded-[7px] border border-[#dfe6ee] text-[#64748b] lg:hidden" aria-label="Open navigation"><SlidersHorizontal size={17} /></button>
+              <button type="button" className="grid size-9 place-items-center rounded-[7px] border border-[#dfe6ee] text-[#64748b] lg:hidden" aria-label="Ouvrir la navigation"><SlidersHorizontal size={17} /></button>
               <label className="relative block w-full max-w-[390px]">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#718096]" size={17} />
-                <input className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white pl-10 pr-4 text-[13px] outline-none transition placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Search configuration..." type="search" />
+                <input className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white pl-10 pr-4 text-[13px] outline-none transition placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher une configuration..." type="search" />
               </label>
             </div>
             <div className="flex items-center gap-4">

@@ -80,7 +80,7 @@ export default function LiveMapPage() {
               <button
                 type="button"
                 className="grid size-9 place-items-center rounded-[7px] border border-[#dfe6ee] text-[#64748b] lg:hidden"
-                aria-label="Open navigation"
+                aria-label="Ouvrir la navigation"
               >
                 <SlidersHorizontal size={17} />
               </button>

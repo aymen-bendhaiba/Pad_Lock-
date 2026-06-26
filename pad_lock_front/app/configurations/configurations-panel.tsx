@@ -6,6 +6,7 @@ import {
   Clock3,
   Loader2,
   RefreshCw,
+  Phone,
   Router,
   Save,
   Search,
@@ -14,13 +15,18 @@ import {
   Waves,
   Wifi,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, cachedApiJson, clearAppCache } from "../../lib/api";
+import { userFriendlyError } from "../../lib/error-messages";
 
 type ApiRecord = Record<string, unknown>;
 type LoadState = "idle" | "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type SimKey = "sim1" | "sim2";
+
+type PhoneForm = {
+  phoneNumber: string;
+};
 
 type DeviceOption = {
   terminalId: string;
@@ -43,6 +49,7 @@ type ConfigurationForm = {
   trackingUploadIntervalSeconds: string;
   wakeUpIntervalMinutes: string;
   vibrationLevelMg: string;
+  vipPhones: PhoneForm[];
 };
 
 type SyncInfo = {
@@ -59,17 +66,27 @@ type ConfigResponse = {
   trackingUploadIntervalSeconds?: number | null;
   wakeUpIntervalMinutes?: number | null;
   vibrationLevelMg?: number | null;
+  vipPhones?: unknown;
+  vipPhoneNumbers?: unknown;
+  phones?: unknown;
+  phoneNumbers?: unknown;
   sync?: {
     sim1?: SyncInfo;
     sim2?: SyncInfo;
     reporting?: SyncInfo;
     vibration?: SyncInfo;
+    phones?: SyncInfo;
+    vipPhones?: SyncInfo;
   };
   updatedAt?: string;
 };
 
 function emptySim(): SimForm {
   return { ipAddress: "", port: "", apn: "", apnUser: "", apnPassword: "", apnPasswordConfigured: false };
+}
+
+function emptyPhones(): PhoneForm[] {
+  return Array.from({ length: 5 }, () => ({ phoneNumber: "" }));
 }
 
 function defaultForm(): ConfigurationForm {
@@ -79,6 +96,7 @@ function defaultForm(): ConfigurationForm {
     trackingUploadIntervalSeconds: "30",
     wakeUpIntervalMinutes: "30",
     vibrationLevelMg: "126",
+    vipPhones: emptyPhones(),
   };
 }
 
@@ -114,9 +132,37 @@ function normalizeDevice(record: ApiRecord, fallback?: ApiRecord): DeviceOption 
   const terminalId = terminalIdFromRecord(record);
   return {
     terminalId,
-    name: textValue(record.name, record.assetName, record.deviceName, record.label, fallback?.name, fallback?.deviceName) ?? "Device-" + terminalId,
+    name: textValue(record.name, record.assetName, record.deviceName, record.label, fallback?.name, fallback?.deviceName) ?? "Cadenas-" + terminalId,
     imei: textValue(record.imei, fallback?.imei),
   };
+}
+
+function normalizePhoneItem(value: unknown): PhoneForm {
+  if (typeof value === "string" || typeof value === "number") {
+    return { phoneNumber: String(value) };
+  }
+
+  const record = asRecord(value);
+  return {
+    phoneNumber: textValue(record?.phoneNumber, record?.number, record?.value, record?.phone, record?.msisdn) ?? "",
+  };
+}
+
+function phonesFromConfig(config: ConfigResponse | null): PhoneForm[] {
+  const source = config?.vipPhones ?? config?.vipPhoneNumbers ?? config?.phones ?? config?.phoneNumbers;
+  const phones = emptyPhones();
+
+  if (Array.isArray(source)) {
+    source.slice(0, 5).forEach((item, index) => {
+      phones[index] = normalizePhoneItem(item);
+    });
+  } else if (source && typeof source === "object") {
+    Object.values(source as Record<string, unknown>).slice(0, 5).forEach((item, index) => {
+      phones[index] = normalizePhoneItem(item);
+    });
+  }
+
+  return phones;
 }
 
 function simFromResponse(value: unknown): SimForm {
@@ -138,6 +184,7 @@ function formFromConfig(config: ConfigResponse | null): ConfigurationForm {
     trackingUploadIntervalSeconds: textValue(config?.trackingUploadIntervalSeconds) ?? "30",
     wakeUpIntervalMinutes: textValue(config?.wakeUpIntervalMinutes) ?? "30",
     vibrationLevelMg: textValue(config?.vibrationLevelMg) ?? "126",
+    vipPhones: phonesFromConfig(config),
   };
 }
 
@@ -155,14 +202,21 @@ function syncIcon(sync: SyncInfo) {
   return ShieldCheck;
 }
 
+function syncLabel(status?: string | null) {
+  if (status === "synced") return "Synchronise";
+  if (status === "failed") return "Echec";
+  if (status === "pending") return "En attente";
+  return "Non synchronise";
+}
+
 function validateSim(sim: SimForm, label: string) {
   const hasMainValues = Boolean(sim.ipAddress.trim() || sim.port.trim() || sim.apn.trim() || sim.apnUser.trim() || sim.apnPassword.trim());
   if (!hasMainValues) return null;
-  if (!sim.ipAddress.trim() || !sim.port.trim() || !sim.apn.trim()) return label + " needs IP address, port, and APN.";
+  if (!sim.ipAddress.trim() || !sim.port.trim() || !sim.apn.trim()) return label + " doit contenir une adresse IP, un port et un APN.";
   const port = Number(sim.port);
-  if (!Number.isInteger(port) || port < 1 || port > 65530) return label + " port must be between 1 and 65530.";
-  if (/[(),\s]/.test(sim.ipAddress)) return label + " IP/host cannot contain spaces, commas, or parentheses.";
-  if (/[(),]/.test(sim.apn) || /[(),]/.test(sim.apnUser) || /[(),]/.test(sim.apnPassword)) return label + " APN fields cannot contain commas or parentheses.";
+  if (!Number.isInteger(port) || port < 1 || port > 65530) return "Le port " + label + " doit etre compris entre 1 et 65530.";
+  if (/[(),\s]/.test(sim.ipAddress)) return "L'adresse IP ou le nom d'hote " + label + " ne doit pas contenir d'espaces, de virgules ou de parentheses.";
+  if (/[(),]/.test(sim.apn) || /[(),]/.test(sim.apnUser) || /[(),]/.test(sim.apnPassword)) return "Les champs APN " + label + " ne doivent pas contenir de virgules ou de parentheses.";
   return null;
 }
 
@@ -179,26 +233,26 @@ function simPayload(sim: SimForm) {
 
 function validateNumber(value: string, label: string, min: number, max: number, allowZero = false) {
   const number = Number(value);
-  if (!Number.isInteger(number)) return label + " must be a whole number.";
+  if (!Number.isInteger(number)) return label + " doit etre un nombre entier.";
   if (allowZero && number === 0) return null;
-  if (number < min || number > max) return label + " must be between " + min + " and " + max + ".";
+  if (number < min || number > max) return label + " doit etre compris entre " + min + " et " + max + ".";
   return null;
 }
 
 function SectionHeader({ icon: Icon, title, description, sync }: { icon: typeof Router; title: string; description: string; sync?: SyncInfo }) {
   const SyncIcon = syncIcon(sync ?? null);
   return (
-    <div className="flex flex-col gap-3 border-b border-[#e6edf5] px-4 py-4 md:flex-row md:items-start md:justify-between">
+    <div className="flex flex-col gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-5 py-4 md:flex-row md:items-start md:justify-between">
       <div className="flex gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[#0f172a] text-white"><Icon size={18} /></span>
+        <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[#0f172a] text-white shadow-sm"><Icon size={18} /></span>
         <div>
           <h2 className="text-[15px] font-bold text-[#0f172a]">{title}</h2>
-          <p className="mt-1 text-[12px] leading-snug text-[#64748b]">{description}</p>
+          <p className="mt-1 max-w-[620px] text-[12px] leading-snug text-[#64748b]">{description}</p>
         </div>
       </div>
       <span className={"inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold capitalize " + syncTone(sync ?? null)}>
         <SyncIcon size={13} />
-        {sync?.status ?? "not synced"}
+        {syncLabel(sync?.status)}
       </span>
     </div>
   );
@@ -206,10 +260,10 @@ function SectionHeader({ icon: Icon, title, description, sync }: { icon: typeof 
 
 function Field({ label, value, onChange, placeholder, type = "text", suffix }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; suffix?: string }) {
   return (
-    <label className="block">
-      <span className="mb-1.5 flex items-center gap-2 text-[12px] font-bold text-[#0f172a]"><span className="h-4 w-1 rounded-full bg-[#34C759]" />{label}</span>
+    <label className="block min-w-0">
+      <span className="mb-1.5 flex items-center gap-2 text-[12px] font-bold text-[#0f172a]"><span className="h-4 w-1 rounded-full bg-[#2A9D90]" />{label}</span>
       <span className="relative block">
-        <input value={value} onChange={(event) => onChange(event.target.value)} type={type} placeholder={placeholder} className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white px-3 pr-12 text-[12px] outline-none transition placeholder:text-[#9aa8b8] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" />
+        <input value={value} onChange={(event) => onChange(event.target.value)} type={type} placeholder={placeholder} title={value || placeholder} className="h-11 w-full min-w-0 rounded-[7px] border border-[#d8e2ec] bg-white px-3 pr-12 text-[13px] text-[#0f172a] outline-none transition placeholder:text-[#94a3b8] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" />
         {suffix ? <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-[#64748b]">{suffix}</span> : null}
       </span>
     </label>
@@ -247,18 +301,60 @@ function SimCard({ simKey, title, form, sync, onChange, onRead, onSave, saving, 
   }
 
   return (
-    <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white">
-      <SectionHeader icon={Wifi} title={title} description="Network destination and APN profile sent with the JT701D P06 command." sync={sync} />
-      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
-        <Field label="IP Address" value={form.ipAddress} onChange={(value) => update("ipAddress", value)} placeholder="jt701.jointcontrols.com" />
-        <Field label="Port" value={form.port} onChange={(value) => update("port", value)} placeholder="10001" type="number" />
-        <Field label="APN" value={form.apn} onChange={(value) => update("apn", value)} placeholder="internet" />
-        <Field label="APN User" value={form.apnUser} onChange={(value) => update("apnUser", value)} placeholder="Optional" />
-        <Field label="APN Pass" value={form.apnPassword} onChange={(value) => update("apnPassword", value)} placeholder={form.apnPasswordConfigured ? "Saved, leave blank" : "Optional"} />
+    <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
+      <SectionHeader icon={Wifi} title={title} description="Parametres reseau utilises par le cadenas pour joindre la plateforme." sync={sync} />
+      <div className="grid gap-5 p-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div className="rounded-[8px] border border-[#e6edf5] bg-[#fbfdff] p-4">
+          <p className="mb-3 text-[12px] font-bold uppercase tracking-[0.08em] text-[#64748b]">Connexion serveur</p>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_140px]">
+            <Field label="Adresse IP ou domaine" value={form.ipAddress} onChange={(value) => update("ipAddress", value)} placeholder="jt701.jointcontrols.com" />
+            <Field label="Port" value={form.port} onChange={(value) => update("port", value)} placeholder="10001" type="number" />
+          </div>
+          <div className="mt-3">
+            <Field label="APN" value={form.apn} onChange={(value) => update("apn", value)} placeholder="internet" />
+          </div>
+        </div>
+
+        <div className="rounded-[8px] border border-[#e6edf5] bg-[#fbfdff] p-4">
+          <p className="mb-3 text-[12px] font-bold uppercase tracking-[0.08em] text-[#64748b]">Identifiants APN</p>
+          <div className="grid gap-3">
+            <Field label="Utilisateur APN" value={form.apnUser} onChange={(value) => update("apnUser", value)} placeholder="Facultatif" />
+            <Field label="Mot de passe APN" value={form.apnPassword} onChange={(value) => update("apnPassword", value)} placeholder={form.apnPasswordConfigured ? "Mot de passe deja enregistre" : "Facultatif"} />
+          </div>
+          <p className="mt-3 rounded-[7px] bg-white px-3 py-2 text-[11px] leading-snug text-[#64748b]">{form.apnPasswordConfigured ? "Mot de passe chiffre deja enregistre. Laissez vide pour le conserver." : "Aucun mot de passe APN enregistre pour ce canal."}</p>
+        </div>
       </div>
-      <div className="flex flex-col gap-3 border-t border-[#e6edf5] bg-[#fbfdff] px-4 py-3 md:flex-row md:items-center md:justify-between">
-        <p className="text-[11px] text-[#64748b]">{form.apnPasswordConfigured ? "Encrypted password is saved. Leave APN Pass empty to preserve it." : "No saved APN password yet."}</p>
-        <div className="flex gap-2"><ActionButton variant="light" onClick={onRead} loading={reading}>Read</ActionButton><ActionButton onClick={onSave} loading={saving}>Write</ActionButton></div>
+      <div className="flex flex-col gap-3 border-t border-[#e6edf5] bg-white px-5 py-3 md:flex-row md:items-center md:justify-between">
+        <p className="text-[11px] text-[#64748b]">Ecrivez seulement cette section apres modification. Les autres parametres ne sont pas envoyes.</p>
+        <div className="flex gap-2"><ActionButton variant="light" onClick={onRead} loading={reading}>Lire</ActionButton><ActionButton onClick={onSave} loading={saving}>Ecrire</ActionButton></div>
+      </div>
+    </section>
+  );
+}
+
+function PhoneCard({ phones, sync, onChange, onRead, onSave, saving, reading }: {
+  phones: PhoneForm[];
+  sync?: SyncInfo;
+  onChange: (index: number, next: PhoneForm) => void;
+  onRead: () => void;
+  onSave: () => void;
+  saving?: boolean;
+  reading?: boolean;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
+      <SectionHeader icon={Phone} title="Numeros de telephone VIP" description="Renseignez les numeros autorises a recevoir les notifications d'alarme du cadenas." sync={sync} />
+      <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-5">
+        {phones.map((phone, index) => (
+          <div key={index} className="rounded-[8px] border border-[#e6edf5] bg-[#fbfdff] p-3">
+            <Field label={"Telephone " + (index + 1)} value={phone.phoneNumber} onChange={(value) => onChange(index, { ...phone, phoneNumber: value })} placeholder="Ex: +212600000000" type="tel" />
+            <p className="mt-3 rounded-[7px] bg-white px-3 py-2 text-[11px] font-semibold text-[#64748b]">Alarmes envoyees par defaut</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-3 border-t border-[#e6edf5] bg-white px-5 py-3 md:flex-row md:items-center md:justify-between">
+        <p className="text-[11px] text-[#64748b]">Les champs vides sont ignores. Les alarmes sont envoyees par defaut aux numeros enregistres.</p>
+        <div className="flex gap-2"><ActionButton variant="light" onClick={onRead} loading={reading}>Lire</ActionButton><ActionButton onClick={onSave} loading={saving}>Ecrire</ActionButton></div>
       </div>
     </section>
   );
@@ -275,6 +371,9 @@ export function ConfigurationsPanel() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [message, setMessage] = useState("");
   const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [savedPhoneNumbers, setSavedPhoneNumbers] = useState<string[]>(() => Array.from({ length: 5 }, () => ""));
+  const configReadInFlightRef = useRef<string | null>(null);
+  const lastAutoReadTerminalRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -299,7 +398,7 @@ export function ConfigurationsPanel() {
       } catch {
         if (!isMounted) return;
         setDeviceState("error");
-        setMessage("Could not load backend devices.");
+        setMessage("Impossible de charger les cadenas depuis le serveur.");
       }
     }
     loadDevices();
@@ -308,7 +407,12 @@ export function ConfigurationsPanel() {
 
   useEffect(() => {
     if (!selectedTerminalId) return;
-    void readConfiguration();
+
+    const timer = window.setTimeout(() => {
+      void readConfiguration("read", selectedTerminalId, false);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
   }, [selectedTerminalId]);
 
   const selectedDevice = devices.find((device) => device.terminalId === selectedTerminalId);
@@ -317,27 +421,69 @@ export function ConfigurationsPanel() {
     return devices.filter((device) => query ? [device.name, device.terminalId, device.imei].filter(Boolean).some((value) => String(value).toLowerCase().includes(query)) : true);
   }, [deviceQuery, devices]);
 
-  async function readConfiguration(action = "read") {
-    if (!selectedTerminalId) return;
+  async function readConfiguration(action = "read", terminalIdValue = selectedTerminalId, force = true) {
+    if (!terminalIdValue) return;
+    if (configReadInFlightRef.current === terminalIdValue) return;
+    if (!force && lastAutoReadTerminalRef.current === terminalIdValue) return;
+
+    configReadInFlightRef.current = terminalIdValue;
     setConfigState("loading");
     setActiveAction(action);
-    setMessage("Loading saved configuration...");
+    setMessage("Chargement de la configuration enregistree...");
     try {
-      const response = await apiFetch("/locks/" + encodeURIComponent(selectedTerminalId) + "/configuration", { cache: "no-store" });
+      const response = await apiFetch("/locks/" + encodeURIComponent(terminalIdValue) + "/configuration", { cache: "no-store" });
       const payload = await response.json().catch(() => null) as ConfigResponse | { message?: string } | null;
-      if (!response.ok) throw new Error(payload && "message" in payload && payload.message ? payload.message : "Could not read configuration.");
+      if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de lire la configuration."));
       const nextConfig = payload as ConfigResponse;
       setConfig(nextConfig);
       setForm(formFromConfig(nextConfig));
       setConfigState("ready");
       setSaveState("idle");
-      setMessage(nextConfig.configured ? "Configuration loaded from backend." : "No saved configuration yet. Fill the fields and write a section.");
+      lastAutoReadTerminalRef.current = terminalIdValue;
+      void readPhones(terminalIdValue);
+      setMessage(nextConfig.configured ? "Configuration chargee depuis le serveur." : "Aucune configuration enregistree pour ce cadenas. Remplissez les champs puis ecrivez la section voulue.");
     } catch (error) {
       setConfigState("error");
       setSaveState("error");
-      setMessage(error instanceof Error ? error.message : "Could not read configuration.");
+      setMessage(userFriendlyError(error, "Impossible de lire la configuration."));
     } finally {
+      if (configReadInFlightRef.current === terminalIdValue) configReadInFlightRef.current = null;
       setActiveAction(null);
+    }
+  }
+
+  async function readPhones(terminalIdValue = selectedTerminalId, showLoading = false) {
+    if (!terminalIdValue) return;
+
+    if (showLoading) {
+      setActiveAction("phones-read");
+      setMessage("Chargement des numeros de telephone...");
+    }
+
+    try {
+      const response = await apiFetch("/vip/phone?terminalId=" + encodeURIComponent(terminalIdValue), { cache: "no-store" });
+      const payload = await response.json().catch(() => null) as { phones?: unknown } | null;
+      if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de charger les numeros de telephone."));
+
+      const nextPhones = emptyPhones();
+      const nextSaved = Array.from({ length: 5 }, () => "");
+      const rows = Array.isArray(payload?.phones) ? payload.phones : [];
+
+      rows.slice(0, 5).forEach((row, fallbackIndex) => {
+        const record = asRecord(row);
+        const indexValue = Number(record?.index);
+        const index = Number.isInteger(indexValue) && indexValue >= 1 && indexValue <= 5 ? indexValue - 1 : fallbackIndex;
+        const phoneNumber = textValue(record?.phoneNumber, record?.number, record?.value, record?.phone) ?? "";
+        nextPhones[index] = { phoneNumber };
+        nextSaved[index] = phoneNumber;
+      });
+
+      setSavedPhoneNumbers(nextSaved);
+      setForm((current) => ({ ...current, vipPhones: nextPhones }));
+    } catch (error) {
+      setMessage(userFriendlyError(error, "Impossible de charger les numeros de telephone."));
+    } finally {
+      if (showLoading) setActiveAction(null);
     }
   }
 
@@ -345,11 +491,19 @@ export function ConfigurationsPanel() {
     setForm((current) => ({ ...current, [simKey]: next }));
   }
 
+  function updatePhone(index: number, next: PhoneForm) {
+    setForm((current) => {
+      const vipPhones = [...current.vipPhones];
+      vipPhones[index] = next;
+      return { ...current, vipPhones };
+    });
+  }
+
   async function patchConfiguration(action: string, body: Record<string, unknown>) {
     if (!selectedTerminalId) return;
     setActiveAction(action);
     setSaveState("saving");
-    setMessage("Writing configuration to backend...");
+    setMessage("Enregistrement de la configuration...");
     try {
       const response = await apiFetch("/locks/" + encodeURIComponent(selectedTerminalId) + "/configuration", {
         method: "PATCH",
@@ -359,17 +513,17 @@ export function ConfigurationsPanel() {
       const payload = await response.json().catch(() => null) as ConfigResponse | { message?: string | string[]; error?: string } | null;
       if (!response.ok) {
         const rawMessage = payload && "message" in payload ? payload.message : undefined;
-        throw new Error(Array.isArray(rawMessage) ? rawMessage.join(" ") : rawMessage || "Backend did not accept the configuration.");
+        throw new Error(userFriendlyError(rawMessage, "Le serveur a refuse la configuration."));
       }
       const nextConfig = payload as ConfigResponse;
       clearAppCache();
       setConfig(nextConfig);
       setForm(formFromConfig(nextConfig));
       setSaveState("saved");
-      setMessage("Configuration saved. Sync status below shows what the lock acknowledged.");
+      setMessage("Configuration enregistree. Les statuts ci-dessous indiquent ce que le cadenas a confirme.");
     } catch (error) {
       setSaveState("error");
-      setMessage(error instanceof Error ? error.message : "Could not save configuration.");
+      setMessage(userFriendlyError(error, "Impossible d'enregistrer la configuration."));
     } finally {
       setActiveAction(null);
     }
@@ -387,11 +541,11 @@ export function ConfigurationsPanel() {
   }
 
   function saveReporting() {
-    const trackingError = validateNumber(form.trackingUploadIntervalSeconds, "Tracking upload interval", 5, 600);
-    const wakeError = validateNumber(form.wakeUpIntervalMinutes, "Wake up interval", 5, 1440);
+    const trackingError = validateNumber(form.trackingUploadIntervalSeconds, "L'intervalle d'envoi des positions", 5, 600);
+    const wakeError = validateNumber(form.wakeUpIntervalMinutes, "L'intervalle de reveil", 5, 1440);
     if (trackingError || wakeError) {
       setSaveState("error");
-      setMessage(trackingError ?? wakeError ?? "Invalid reporting values.");
+      setMessage(trackingError ?? wakeError ?? "Valeurs de transmission invalides.");
       return;
     }
     patchConfiguration("reporting", {
@@ -401,7 +555,7 @@ export function ConfigurationsPanel() {
   }
 
   function saveVibration() {
-    const vibrationError = validateNumber(form.vibrationLevelMg, "Vibration level", 63, 500, true);
+    const vibrationError = validateNumber(form.vibrationLevelMg, "Le niveau de vibration", 63, 500, true);
     if (vibrationError) {
       setSaveState("error");
       setMessage(vibrationError);
@@ -410,18 +564,66 @@ export function ConfigurationsPanel() {
     patchConfiguration("vibration", { vibrationLevelMg: Number(form.vibrationLevelMg) });
   }
 
+  async function savePhones() {
+    if (!selectedTerminalId) return;
+
+    setActiveAction("phones");
+    setSaveState("saving");
+    setMessage("Enregistrement des numeros de telephone...");
+
+    try {
+      const operations = form.vipPhones.map(async (phone, index) => {
+        const phoneNumber = phone.phoneNumber.trim();
+        const hadSavedNumber = Boolean(savedPhoneNumbers[index]?.trim());
+
+        if (!phoneNumber && !hadSavedNumber) return;
+
+        if (!phoneNumber) {
+          const response = await apiFetch("/vip/phone?terminalId=" + encodeURIComponent(selectedTerminalId) + "&index=" + String(index + 1), { method: "DELETE" });
+          const payload = await response.json().catch(() => null) as { message?: string | string[]; error?: string } | null;
+          if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de supprimer un numero de telephone."));
+          return;
+        }
+
+        const response = await apiFetch("/vip/phone/set", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            terminalId: selectedTerminalId,
+            index: index + 1,
+            phoneNumber,
+          }),
+        });
+        const payload = await response.json().catch(() => null) as { message?: string | string[]; error?: string } | null;
+        if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible d'enregistrer un numero de telephone."));
+      });
+
+      await Promise.all(operations);
+
+      clearAppCache();
+      setSaveState("saved");
+      setMessage("Numeros de telephone enregistres.");
+      void readPhones(selectedTerminalId);
+    } catch (error) {
+      setSaveState("error");
+      setMessage(userFriendlyError(error, "Impossible d'enregistrer les numeros de telephone."));
+    } finally {
+      setActiveAction(null);
+    }
+  }
+
   return (
-    <div className="grid min-h-[calc(100vh-56px)] grid-cols-1 xl:grid-cols-[310px_minmax(0,1fr)]">
+    <div className="grid min-h-[calc(100vh-56px)] grid-cols-1 bg-[#f6f8fb] xl:grid-cols-[310px_minmax(0,1fr)]">
       <aside className="border-r border-[#dfe6ee] bg-white px-4 py-5">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#2A9D90]">Lock setup</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#2A9D90]">Configuration cadenas</p>
           <h1 className="mt-1 text-[24px] font-bold text-black">Configurations</h1>
-          <p className="mt-2 text-[12px] leading-snug text-[#64748b]">Choose a real lock, read its saved backend configuration, then write only the section you changed.</p>
+          <p className="mt-2 text-[12px] leading-snug text-[#64748b]">Selectionnez un cadenas, lisez sa configuration enregistree, puis ecrivez uniquement la section modifiee.</p>
         </div>
 
         <label className="relative mt-5 block">
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} />
-          <input value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Search locks..." />
+          <input value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher un cadenas..." />
         </label>
 
         <div className="mt-4 max-h-[calc(100vh-250px)] space-y-2 overflow-y-auto pr-1">
@@ -431,81 +633,82 @@ export function ConfigurationsPanel() {
               <span className="mt-1 block text-[11px] text-[#64748b]">{device.terminalId}</span>
             </button>
           ))}
-          {deviceState === "loading" ? <p className="rounded-[8px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#64748b]">Loading backend locks...</p> : null}
-          {deviceState === "error" ? <p className="rounded-[8px] bg-red-50 px-3 py-3 text-[12px] text-red-700">Could not load locks.</p> : null}
-          {deviceState === "ready" && filteredDevices.length === 0 ? <p className="rounded-[8px] border border-dashed border-[#cbd5e1] px-3 py-3 text-[12px] text-[#64748b]">No lock matches your search.</p> : null}
+          {deviceState === "loading" ? <p className="rounded-[8px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#64748b]">Chargement des cadenas...</p> : null}
+          {deviceState === "error" ? <p className="rounded-[8px] bg-red-50 px-3 py-3 text-[12px] text-red-700">Impossible de charger les cadenas.</p> : null}
+          {deviceState === "ready" && filteredDevices.length === 0 ? <p className="rounded-[8px] border border-dashed border-[#cbd5e1] px-3 py-3 text-[12px] text-[#64748b]">Aucun cadenas ne correspond a votre recherche.</p> : null}
         </div>
       </aside>
 
       <section className="min-w-0 px-4 py-5 md:px-6">
         <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
           <div>
-            <h2 className="text-[22px] font-bold text-black">{selectedDevice?.name ?? "Select a lock"}</h2>
-            <p className="mt-1 text-[12px] text-[#64748b]">{selectedTerminalId ? "Terminal " + selectedTerminalId : "Pick a lock to manage its SIM, reporting, and vibration configuration."}</p>
+            <h2 className="text-[22px] font-bold text-black">{selectedDevice?.name ?? "Selectionnez un cadenas"}</h2>
+            <p className="mt-1 text-[12px] text-[#64748b]">{selectedTerminalId ? "Terminal " + selectedTerminalId : "Choisissez un cadenas pour gerer sa configuration SIM, transmission et vibration."}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <ActionButton variant="light" onClick={() => readConfiguration()} loading={activeAction === "read" || configState === "loading"}>Read current</ActionButton>
+            <ActionButton variant="light" onClick={() => readConfiguration("read", selectedTerminalId, true)} loading={activeAction === "read" || configState === "loading"}>Lire la configuration</ActionButton>
           </div>
         </div>
 
         <Message state={saveState} text={message} />
 
         <div className="mt-4 grid gap-4">
-          <div className="rounded-[8px] border border-[#dfe6ee] bg-white px-4 py-3">
+          <div className="rounded-[8px] border border-[#dfe6ee] bg-white px-5 py-4 shadow-sm">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-[13px] font-bold text-[#0f172a]">Configuration health</p>
-                <p className="mt-1 text-[12px] text-[#64748b]">{config?.configured ? "Saved configuration exists." : "No saved configuration yet for this lock."}</p>
+                <p className="text-[13px] font-bold text-[#0f172a]">Etat de la configuration</p>
+                <p className="mt-1 text-[12px] text-[#64748b]">{config?.configured ? "Une configuration est deja enregistree." : "Aucune configuration enregistree pour ce cadenas."}</p>
               </div>
               <div className="flex flex-wrap gap-2 text-[11px] font-bold">
-                <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.reporting ?? null)}>Reporting: {config?.sync?.reporting?.status ?? "none"}</span>
-                <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.vibration ?? null)}>Vibration: {config?.sync?.vibration?.status ?? "none"}</span>
-                <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.sim1 ?? null)}>SIM1: {config?.sync?.sim1?.status ?? "none"}</span>
-                <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.sim2 ?? null)}>SIM2: {config?.sync?.sim2?.status ?? "none"}</span>
+                <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.reporting ?? null)}>Transmission : {syncLabel(config?.sync?.reporting?.status)}</span>
+                <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.vibration ?? null)}>Vibration : {syncLabel(config?.sync?.vibration?.status)}</span>
+                <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.sim1 ?? null)}>SIM1 : {syncLabel(config?.sync?.sim1?.status)}</span>
+                <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.sim2 ?? null)}>SIM2 : {syncLabel(config?.sync?.sim2?.status)}</span>
               </div>
             </div>
           </div>
 
-          <div className="grid gap-4 2xl:grid-cols-2">
-            <SimCard simKey="sim1" title="SIM1 data channel" form={form.sim1} sync={config?.sync?.sim1} onChange={updateSim} onRead={() => readConfiguration("sim1-read")} onSave={() => saveSim("sim1")} reading={activeAction === "sim1-read"} saving={activeAction === "sim1"} />
-            <SimCard simKey="sim2" title="SIM2 backup channel" form={form.sim2} sync={config?.sync?.sim2} onChange={updateSim} onRead={() => readConfiguration("sim2-read")} onSave={() => saveSim("sim2")} reading={activeAction === "sim2-read"} saving={activeAction === "sim2"} />
+          <div className="grid gap-4">
+            <SimCard simKey="sim1" title="Canal donnees SIM1" form={form.sim1} sync={config?.sync?.sim1} onChange={updateSim} onRead={() => readConfiguration("sim1-read", selectedTerminalId, true)} onSave={() => saveSim("sim1")} reading={activeAction === "sim1-read"} saving={activeAction === "sim1"} />
+            <SimCard simKey="sim2" title="Canal secours SIM2" form={form.sim2} sync={config?.sync?.sim2} onChange={updateSim} onRead={() => readConfiguration("sim2-read", selectedTerminalId, true)} onSave={() => saveSim("sim2")} reading={activeAction === "sim2-read"} saving={activeAction === "sim2"} />
+            <PhoneCard phones={form.vipPhones} sync={config?.sync?.phones ?? config?.sync?.vipPhones} onChange={updatePhone} onRead={() => readPhones(selectedTerminalId, true)} onSave={savePhones} reading={activeAction === "phones-read"} saving={activeAction === "phones"} />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
-            <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white">
-              <SectionHeader icon={Router} title="Reporting rhythm" description="Tracking upload interval and wake-up interval are sent together with the JT701D P04 command." sync={config?.sync?.reporting} />
-              <div className="grid gap-3 p-4 md:grid-cols-2">
-                <Field label="Tracking Uploading Interval" value={form.trackingUploadIntervalSeconds} onChange={(value) => setForm((current) => ({ ...current, trackingUploadIntervalSeconds: value }))} type="number" suffix="sec" />
-                <Field label="Wake up Interval" value={form.wakeUpIntervalMinutes} onChange={(value) => setForm((current) => ({ ...current, wakeUpIntervalMinutes: value }))} type="number" suffix="min" />
+            <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
+              <SectionHeader icon={Router} title="Rythme de transmission" description="L'intervalle d'envoi des positions et l'intervalle de reveil sont envoyes ensemble avec la commande JT701D P04." sync={config?.sync?.reporting} />
+              <div className="grid gap-3 p-4">
+                <Field label="Intervalle d'envoi des positions" value={form.trackingUploadIntervalSeconds} onChange={(value) => setForm((current) => ({ ...current, trackingUploadIntervalSeconds: value }))} type="number" suffix="sec" />
+                <Field label="Intervalle de reveil" value={form.wakeUpIntervalMinutes} onChange={(value) => setForm((current) => ({ ...current, wakeUpIntervalMinutes: value }))} type="number" suffix="min" />
               </div>
               <div className="flex flex-col gap-3 border-t border-[#e6edf5] bg-[#fbfdff] px-4 py-3 md:flex-row md:items-center md:justify-between">
-                <p className="text-[11px] text-[#64748b]">Allowed ranges: upload 5-600 seconds, wake up 5-1440 minutes.</p>
-                <div className="flex gap-2"><ActionButton variant="light" onClick={() => readConfiguration("reporting-read")} loading={activeAction === "reporting-read"}>Read</ActionButton><ActionButton onClick={saveReporting} loading={activeAction === "reporting"}>Write</ActionButton></div>
+                <p className="text-[11px] text-[#64748b]">Plages autorisees : envoi 5-600 secondes, reveil 5-1440 minutes.</p>
+                <div className="flex gap-2"><ActionButton variant="light" onClick={() => readConfiguration("reporting-read", selectedTerminalId, true)} loading={activeAction === "reporting-read"}>Lire</ActionButton><ActionButton onClick={saveReporting} loading={activeAction === "reporting"}>Ecrire</ActionButton></div>
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white">
-              <SectionHeader icon={Waves} title="Vibration sensitivity" description="Motion detection threshold sent with P37. Use 0 to disable motion detection." sync={config?.sync?.vibration} />
+            <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
+              <SectionHeader icon={Waves} title="Sensibilite aux vibrations" description="Seuil de detection de mouvement envoye avec P37. Utilisez 0 pour desactiver la detection." sync={config?.sync?.vibration} />
               <div className="p-4">
-                <Field label="Vibration Level" value={form.vibrationLevelMg} onChange={(value) => setForm((current) => ({ ...current, vibrationLevelMg: value }))} type="number" suffix="mg" />
+                <Field label="Niveau de vibration" value={form.vibrationLevelMg} onChange={(value) => setForm((current) => ({ ...current, vibrationLevelMg: value }))} type="number" suffix="mg" />
                 <div className="mt-4 rounded-[8px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#64748b]">
-                  <p className="font-semibold text-[#0f172a]">Suggested defaults</p>
-                  <p className="mt-1">126 mg is the backend default. Lower non-zero values are more sensitive.</p>
+                  <p className="font-semibold text-[#0f172a]">Valeurs conseillees</p>
+                  <p className="mt-1">126 mg est la valeur par defaut. Une valeur non nulle plus basse rend la detection plus sensible.</p>
                 </div>
               </div>
               <div className="flex flex-col gap-3 border-t border-[#e6edf5] bg-[#fbfdff] px-4 py-3 md:flex-row md:items-center md:justify-between">
-                <p className="text-[11px] text-[#64748b]">Allowed: 0, or 63-500 mg.</p>
-                <div className="flex gap-2"><ActionButton variant="light" onClick={() => readConfiguration("vibration-read")} loading={activeAction === "vibration-read"}>Read</ActionButton><ActionButton onClick={saveVibration} loading={activeAction === "vibration"}>Write</ActionButton></div>
+                <p className="text-[11px] text-[#64748b]">Autorise : 0, ou 63-500 mg.</p>
+                <div className="flex gap-2"><ActionButton variant="light" onClick={() => readConfiguration("vibration-read", selectedTerminalId, true)} loading={activeAction === "vibration-read"}>Lire</ActionButton><ActionButton onClick={saveVibration} loading={activeAction === "vibration"}>Ecrire</ActionButton></div>
               </div>
             </section>
           </div>
 
-          <section className="rounded-[8px] border border-[#dfe6ee] bg-white px-4 py-4">
+          <section className="rounded-[8px] border border-[#dfe6ee] bg-white px-5 py-4 shadow-sm">
             <div className="flex gap-3">
               <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[#ecfdf5] text-[#047857]"><ShieldCheck size={18} /></span>
               <div>
-                <h3 className="text-[14px] font-bold text-[#0f172a]">Backend sync behavior</h3>
-                <p className="mt-1 text-[12px] leading-snug text-[#64748b]">A successful write saves desired values even when the physical lock is offline. Pending or failed sections can be retried by writing again, and the backend also retries when the lock reconnects.</p>
+                <h3 className="text-[14px] font-bold text-[#0f172a]">Synchronisation avec le cadenas</h3>
+                <p className="mt-1 text-[12px] leading-snug text-[#64748b]">Une ecriture reussie enregistre les valeurs demandees meme si le cadenas est hors ligne. Les sections en attente ou en echec peuvent etre renvoyees, et le serveur reessaie aussi lorsque le cadenas se reconnecte.</p>
               </div>
             </div>
           </section>

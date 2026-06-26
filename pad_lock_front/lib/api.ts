@@ -241,7 +241,7 @@ export async function loginWithCredentials(email: string, password: string) {
         : undefined;
 
   if (!accessToken) {
-    throw new Error("Login succeeded, but the API did not return a token.");
+    throw new Error("Connexion impossible. Le serveur n'a pas retourne de session valide.");
   }
 
   storeAccessToken(accessToken, payload && "user" in payload ? payload.user : undefined, email);
@@ -311,7 +311,7 @@ export async function cachedApiJson<T = unknown>(path: string, force = false) {
     }
 
     if (!response.ok) {
-      throw new Error(`Request failed for ${path}`);
+      throw new Error("Le service est momentanement indisponible. Reessayez dans quelques instants.");
     }
 
     const data = (await response.json()) as T;
@@ -374,7 +374,7 @@ export async function getGeoBoundaryById<T = unknown>(id: string) {
   const response = await apiFetch(`/geo-boundaries/${encodeURIComponent(id)}`);
 
   if (!response.ok) {
-    throw new Error(`Request failed for /geo-boundaries/${id}`);
+    throw new Error("Impossible de charger cette zone geographique. Reessayez dans quelques instants.");
   }
 
   return (await response.json()) as T;

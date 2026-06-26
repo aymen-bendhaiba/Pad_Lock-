@@ -27,6 +27,39 @@ const markerIconCache = new globalThis.Map<string, DivIcon>();
 
 const reverseGeocodeMemory = new globalThis.Map<string, string>();
 
+function statusLabel(status: LiveMapAsset["status"]) {
+  return status === "Moving"
+    ? "En mouvement"
+    : status === "Idle"
+      ? "A l'arret"
+      : status === "Offline"
+        ? "Hors ligne"
+        : "Alarme";
+}
+
+function detailLabel(label: string) {
+  const labels: Record<string, string> = {
+    Location: "Lieu",
+    "Terminal ID": "ID terminal",
+    Device: "Cadenas",
+    Status: "Statut",
+    Battery: "Batterie",
+    Locked: "Verrouillage",
+    Online: "En ligne",
+    Speed: "Vitesse",
+  };
+
+  return labels[label] ?? label;
+}
+
+function detailValue(label: string, value: string) {
+  if (value === "Yes") return "Oui";
+  if (value === "No") return "Non";
+  if (label === "Status") return value === "Moving" ? "En mouvement" : value === "Idle" ? "A l'arret" : value === "Offline" ? "Hors ligne" : value === "Alarm" ? "Alarme" : value;
+  if (label === "Locked") return value === "Locked" ? "Verrouille" : value === "Unlocked" ? "Deverrouille" : value;
+  return value;
+}
+
 function reverseGeocodeKey(position: [number, number]) {
   return position.map((value) => value.toFixed(5)).join(",");
 }
@@ -220,8 +253,8 @@ function MapControls() {
           type="button"
           onClick={() => map.zoomIn()}
           className="grid size-10 place-items-center text-[#111827] transition hover:bg-[#f3f7fa] focus:bg-[#f3f7fa] focus:outline-none disabled:cursor-not-allowed disabled:text-[#cbd5e1]"
-          aria-label="Zoom in"
-          title="Zoom in"
+          aria-label="Zoom avant"
+          title="Zoom avant"
           disabled={map.getZoom() >= map.getMaxZoom()}
         >
           <Plus size={18} strokeWidth={2.3} />
@@ -231,8 +264,8 @@ function MapControls() {
           type="button"
           onClick={() => map.zoomOut()}
           className="grid size-10 place-items-center text-[#111827] transition hover:bg-[#f3f7fa] focus:bg-[#f3f7fa] focus:outline-none disabled:cursor-not-allowed disabled:text-[#cbd5e1]"
-          aria-label="Zoom out"
-          title="Zoom out"
+          aria-label="Zoom arriere"
+          title="Zoom arriere"
           disabled={map.getZoom() <= MIN_MAP_ZOOM}
         >
           <Minus size={18} strokeWidth={2.3} />
@@ -293,7 +326,7 @@ function PlaybackOverlay({
       >
         <Popup closeButton={false} className="fleet-asset-popup">
           <div className="rounded-[8px] bg-white px-3 py-2 text-[12px] font-semibold text-[#111827]">
-            {activePoint?.placeName ?? "Playback position"}
+            {activePoint?.placeName ?? "Position de playback"}
           </div>
         </Popup>
       </Marker>
@@ -305,7 +338,7 @@ function AssetPopupContent({ asset, shouldResolveLocation }: { asset: LiveMapAss
   const rawBackendLocation = asset.deviceDetails.find((detail) => detail.label === "Location")?.value;
   const backendLocation = isDeviceNameLocation(rawBackendLocation, asset) ? undefined : rawBackendLocation;
   const { place, isResolving } = useReverseGeocode(asset.position, shouldResolveLocation && !backendLocation);
-  const locationValue = place ?? backendLocation ?? (isResolving ? "Resolving location..." : "Place name unavailable");
+  const locationValue = place ?? backendLocation ?? (isResolving ? "Recherche du lieu..." : "Lieu indisponible");
   const details = [
     { label: "Location", value: locationValue },
     ...asset.deviceDetails.filter((detail) => detail.label !== "Location"),
@@ -318,18 +351,18 @@ function AssetPopupContent({ asset, shouldResolveLocation }: { asset: LiveMapAss
           <p className="truncate text-[14px] font-bold leading-tight">{asset.name}</p>
           <p className="mt-1 truncate text-[11px] font-medium text-[#64748b]">{asset.code}</p>
         </div>
-        <span className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white" style={{ backgroundColor: asset.color }}>{asset.status}</span>
+        <span className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white" style={{ backgroundColor: asset.color }}>{statusLabel(asset.status)}</span>
       </div>
       <div className="max-h-[180px] space-y-1 overflow-y-auto bg-white px-3 py-3 text-[11px]">
         {details.slice(0, 8).map((detail) => (
           <div key={asset.id + "-" + detail.label} className="flex items-center justify-between gap-3 rounded-[6px] bg-[#f8fafc] px-2.5 py-2">
-            <span className="min-w-0 truncate font-semibold text-[#64748b]">{detail.label}</span>
-            <span className="max-w-[150px] truncate text-right font-bold text-[#111827]" title={detail.value}>{detail.value}</span>
+            <span className="min-w-0 truncate font-semibold text-[#64748b]">{detailLabel(detail.label)}</span>
+            <span className="max-w-[150px] truncate text-right font-bold text-[#111827]" title={detailValue(detail.label, detail.value)}>{detailValue(detail.label, detail.value)}</span>
           </div>
         ))}
       </div>
       <div className="border-t border-[#e6edf5] bg-white px-3 py-2 text-[10px] font-medium text-[#94a3b8]">
-        {backendLocation ? "GET /api/devices" : "Reverse geocoded from GPS"}
+        {backendLocation ? "Lieu fourni par le serveur" : "Lieu estime depuis le GPS"}
       </div>
     </div>
   );

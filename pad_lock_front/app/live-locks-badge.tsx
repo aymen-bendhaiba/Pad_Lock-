@@ -43,7 +43,7 @@ export function LiveLocksBadge({ compact = false }: { compact?: boolean }) {
   return (
     <>
       <span className="mr-1.5 size-2 rounded-full bg-[#34C759]" />
-      {count === null ? "-- Locks" : count + " Locks"}
+      {count === null ? "-- cadenas" : count + " cadenas"}
     </>
   );
 }

@@ -3,6 +3,20 @@
 import { BatteryFull, BatteryLow, BatteryMedium, Lock, MapPinOff, Unlock } from "lucide-react";
 import type { LiveMapAsset } from "./live-map-data";
 
+function statusLabel(status: LiveMapAsset["status"]) {
+  return status === "Moving"
+    ? "En mouvement"
+    : status === "Idle"
+      ? "A l'arret"
+      : status === "Offline"
+        ? "Hors ligne"
+        : "Alarme";
+}
+
+function lockLabel(lock: LiveMapAsset["lock"]) {
+  return lock === "Locked" ? "Verrouille" : lock === "Unlocked" ? "Deverrouille" : "Inconnu";
+}
+
 type AssetCardProps = {
   asset: LiveMapAsset;
   isSelected?: boolean;
@@ -81,7 +95,7 @@ export function AssetCard({ asset, isSelected = false, onSelect }: AssetCardProp
                   : "bg-[#ecfdf5] text-[#16883f]"
           }`}
         >
-          {asset.status}
+          {statusLabel(asset.status)}
         </span>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-semibold text-[#64748b]">
@@ -98,7 +112,7 @@ export function AssetCard({ asset, isSelected = false, onSelect }: AssetCardProp
           ) : (
             <Lock size={14} className="text-[#94a3b8]" />
           )}
-          {asset.lock}
+          {lockLabel(asset.lock)}
         </span>
       </div>
     </button>

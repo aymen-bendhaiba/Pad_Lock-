@@ -18,10 +18,12 @@ import {
   Unlock,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, cachedApiJson } from "../../lib/api";
+import { userFriendlyError } from "../../lib/error-messages";
 
 const tabs = ["Device Status", "Unlock Devices", "Low Battery", "Sleep Mode", "Password", "Phone Number", "Add RFID"] as const;
+const emptyPhoneSlots = () => Array.from({ length: 5 }, () => ({ phoneNumber: "" }));
 
 type Tab = (typeof tabs)[number];
 type ApiRecord = Record<string, unknown>;
@@ -38,6 +40,7 @@ type CommandDevice = {
 };
 
 type CommandResult = { state: CommandState; message: string };
+type PhoneSlot = { phoneNumber: string };
 type RfidCard = { cardNumber: string; label?: string; role?: string; isAdmin?: boolean };
 
 function rowsFromPayload(payload: unknown): ApiRecord[] {
@@ -157,7 +160,7 @@ function normalizeSignal(record: ApiRecord, lock?: ApiRecord) {
   const value = readNumber(record, ["rssi", "signalStrength"])
     ?? readNumber(lock, ["rssi", "signalStrength"]);
 
-  if (value === undefined) return "Unknown";
+  if (value === undefined) return "Inconnu";
   return value >= 70 ? "Excellent" : value >= 40 ? "Moyen" : "Faible";
 }
 
@@ -197,7 +200,7 @@ function normalizeDevice(record: ApiRecord, lock?: ApiRecord): CommandDevice {
     terminalId: id,
     name: readString(record, ["name", "assetName", "deviceName", "label"])
       ?? readString(lock, ["name", "assetName", "deviceName", "label"])
-      ?? "Device-" + id,
+      ?? "Cadenas-" + id,
     battery: battery.label,
     batteryValue: battery.value,
     signal: normalizeSignal(record, lock),
@@ -394,7 +397,10 @@ export function CommandsPanel() {
   const [sleepValues, setSleepValues] = useState<Record<string, string>>({});
   const [sleepEnabled, setSleepEnabled] = useState<Record<string, boolean>>({});
   const [passwordValues, setPasswordValues] = useState<Record<string, { current: string; next: string }>>({});
-  const [phoneValues, setPhoneValues] = useState<Record<string, string[]>>({});
+  const [unlockPasswords, setUnlockPasswords] = useState<Record<string, string>>({});
+  const [phoneValues, setPhoneValues] = useState<Record<string, PhoneSlot[]>>({});
+  const [phoneLoaded, setPhoneLoaded] = useState<Record<string, boolean>>({});
+  const phoneLoadingRef = useRef<Set<string>>(new Set());
   const [expandedRfid, setExpandedRfid] = useState<string | null>(null);
   const [rfidCards, setRfidCards] = useState<Record<string, RfidCard[]>>({});
   const [rfidInputs, setRfidInputs] = useState<Record<string, string>>({});
@@ -470,6 +476,17 @@ export function CommandsPanel() {
   const currentPage = Math.min(page, pageCount);
   const pagedDevices = filteredDevices.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
+  useEffect(() => {
+    if (activeTab !== "Phone Number") return;
+
+    pagedDevices.forEach((device) => {
+      if (!phoneLoaded[device.terminalId]) {
+        void loadPhoneNumbers(device.terminalId);
+      }
+    });
+  }, [activeTab, pagedDevices, phoneLoaded]);
+
+
   function resultKey(action: string, terminalIdValue: string) {
     return action + ":" + terminalIdValue;
   }
@@ -495,17 +512,17 @@ export function CommandsPanel() {
       const payload = await response.json().catch(() => null) as { message?: string; error?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? payload?.error ?? "La commande n'a pas pu etre executee.");
+        throw new Error(userFriendlyError(payload, "La commande n'a pas pu etre executee."));
       }
 
       setResults((current) => ({
         ...current,
-        [key]: { state: "success", message: payload?.message ?? successMessage },
+        [key]: { state: "success", message: successMessage },
       }));
     } catch (error) {
       setResults((current) => ({
         ...current,
-        [key]: { state: "error", message: error instanceof Error ? error.message : "La commande n'a pas pu etre executee." },
+        [key]: { state: "error", message: userFriendlyError(error, "La commande n'a pas pu etre executee.") },
       }));
     }
   }
@@ -523,7 +540,7 @@ export function CommandsPanel() {
     } catch (error) {
       setResults((current) => ({
         ...current,
-        [key]: { state: "error", message: error instanceof Error ? error.message : "Impossible de charger les badges RFID." },
+        [key]: { state: "error", message: userFriendlyError(error, "Impossible de charger les badges RFID.") },
       }));
     }
   }
@@ -569,22 +586,95 @@ export function CommandsPanel() {
     } catch (error) {
       setResults((current) => ({
         ...current,
-        [key]: { state: "error", message: error instanceof Error ? error.message : "Impossible de supprimer le badge RFID." },
+        [key]: { state: "error", message: userFriendlyError(error, "Impossible de supprimer le badge RFID.") },
       }));
     }
   }
 
-  function updatePhone(id: string, index: number, value: string) {
+  async function loadPhoneNumbers(terminalIdValue: string, force = false) {
+    if (!force && phoneLoaded[terminalIdValue]) return;
+    if (phoneLoadingRef.current.has(terminalIdValue)) return;
+
+    phoneLoadingRef.current.add(terminalIdValue);
+    const key = resultKey("phone-load", terminalIdValue);
+    setResults((current) => ({ ...current, [key]: { state: "loading", message: "Chargement des numeros..." } }));
+
+    try {
+      const response = await apiFetch("/vip/phone?terminalId=" + encodeURIComponent(terminalIdValue), { cache: "no-store" });
+      const payload = await response.json().catch(() => null) as { phones?: unknown } | null;
+      if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de charger les numeros de telephone."));
+
+      const next = emptyPhoneSlots();
+      const rows = Array.isArray(payload?.phones) ? payload.phones : [];
+      rows.slice(0, 5).forEach((row, fallbackIndex) => {
+        const record = row && typeof row === "object" ? row as ApiRecord : null;
+        const rawIndex = Number(record?.index);
+        const index = Number.isInteger(rawIndex) && rawIndex >= 1 && rawIndex <= 5 ? rawIndex - 1 : fallbackIndex;
+        const phoneNumber = readString(record, ["phoneNumber", "number", "phone", "value"]) ?? "";
+        next[index] = { phoneNumber };
+      });
+
+      setPhoneValues((current) => ({ ...current, [terminalIdValue]: next }));
+      setPhoneLoaded((current) => ({ ...current, [terminalIdValue]: true }));
+      setResults((current) => ({ ...current, [key]: { state: "success", message: "Numeros charges." } }));
+    } catch (error) {
+      setPhoneLoaded((current) => ({ ...current, [terminalIdValue]: true }));
+      setResults((current) => ({
+        ...current,
+        [key]: { state: "error", message: userFriendlyError(error, "Impossible de charger les numeros de telephone.") },
+      }));
+    } finally {
+      phoneLoadingRef.current.delete(terminalIdValue);
+    }
+  }
+
+  function updatePhone(id: string, index: number, nextSlot: PhoneSlot) {
     setPhoneValues((current) => {
-      const next = [...(current[id] ?? ["", "", "", "", ""])] ;
-      next[index] = value;
+      const next = [...(current[id] ?? emptyPhoneSlots())];
+      next[index] = nextSlot;
       return { ...current, [id]: next };
     });
   }
 
+  async function deletePhoneNumber(terminalIdValue: string, index: number) {
+    const key = resultKey("phone-delete-" + index, terminalIdValue);
+    setResults((current) => ({ ...current, [key]: { state: "loading", message: "Suppression du numero..." } }));
+
+    try {
+      const response = await apiFetch("/vip/phone?terminalId=" + encodeURIComponent(terminalIdValue) + "&index=" + String(index + 1), { method: "DELETE" });
+      const payload = await response.json().catch(() => null) as { message?: string; error?: string } | null;
+      if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de supprimer ce numero."));
+
+      setPhoneValues((current) => {
+        const next = [...(current[terminalIdValue] ?? emptyPhoneSlots())];
+        next[index] = { phoneNumber: "" };
+        return { ...current, [terminalIdValue]: next };
+      });
+      setPhoneLoaded((current) => ({ ...current, [terminalIdValue]: true }));
+      setResults((current) => ({ ...current, [key]: { state: "success", message: "Numero supprime." } }));
+    } catch (error) {
+      setResults((current) => ({
+        ...current,
+        [key]: { state: "error", message: userFriendlyError(error, "Impossible de supprimer ce numero.") },
+      }));
+    }
+  }
+
+  function unlockDevice(device: CommandDevice) {
+    const password = unlockPasswords[device.terminalId]?.trim();
+    if (!password) {
+      setResults((current) => ({
+        ...current,
+        [resultKey("remote-unlock", device.terminalId)]: { state: "error", message: "Le mot de passe de deverrouillage est obligatoire." },
+      }));
+      return;
+    }
+    runCommand("remote-unlock", device.terminalId, "/unlock", { terminalId: device.terminalId, password }, "Commande de deverrouillage envoyee.");
+  }
+
   const titles: Record<Tab, [string, string]> = {
     "Device Status": ["Etat des equipements", "Consultez les equipements connectes et envoyez des commandes de redemarrage."],
-    "Unlock Devices": ["Deverrouillage a distance", "Verrouillez ou deverrouillez un cadenas a distance."],
+    "Unlock Devices": ["Deverrouillage a distance", "Deverrouillez un cadenas a distance."],
     "Low Battery": ["Seuil de batterie faible", "Definissez le seuil de batterie faible des cadenas connectes."],
     "Sleep Mode": ["Mode veille", "Activez la veille profonde et definissez le seuil de declenchement."],
     Password: ["Gestion du mot de passe", "Modifiez les mots de passe statiques de deverrouillage."],
@@ -594,7 +684,7 @@ export function CommandsPanel() {
 
   const tabLabels: Record<Tab, string> = {
     "Device Status": "Etat",
-    "Unlock Devices": "Verrouillage",
+    "Unlock Devices": "Deverrouillage",
     "Low Battery": "Batterie",
     "Sleep Mode": "Veille",
     Password: "Mot de passe",
@@ -698,14 +788,26 @@ export function CommandsPanel() {
 
             if (activeTab === "Unlock Devices") {
               return (
-                <div key={device.terminalId} className="flex flex-col gap-3 rounded-[6px] bg-white px-3 py-3 text-[12px] font-medium xl:flex-row xl:items-center">
+                <form
+                  key={device.terminalId}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    unlockDevice(device);
+                  }}
+                  className="flex flex-col gap-3 rounded-[6px] bg-white px-3 py-3 text-[12px] font-medium xl:flex-row xl:items-center"
+                >
                   <DeviceIdentity device={device} />
                   <DeviceMeta device={device} />
-                  <span className="w-[120px] shrink-0 font-semibold text-[#64748b]">{lockLabel(device.lock)}</span>
+                  <input
+                    value={unlockPasswords[device.terminalId] ?? ""}
+                    onChange={(event) => setUnlockPasswords((current) => ({ ...current, [device.terminalId]: event.target.value }))}
+                    className="h-8 w-full max-w-[240px] rounded-[6px] border border-[#dfe6ee] px-3 text-[12px] outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
+                    placeholder="Mot de passe de deverrouillage"
+                    type="password"
+                  />
                   <div className="flex flex-wrap gap-2 xl:ml-auto">
                     <button
-                      type="button"
-                      onClick={() => runCommand("remote-unlock", device.terminalId, "/unlock", { terminalId: device.terminalId }, "Commande de deverrouillage envoyee.")}
+                      type="submit"
                       disabled={commandLoading("remote-unlock", device.terminalId)}
                       className="flex h-8 items-center gap-1.5 rounded-[6px] bg-[#111111] px-3 text-[12px] font-semibold text-white disabled:opacity-60"
                     >
@@ -714,7 +816,7 @@ export function CommandsPanel() {
                     </button>
                   </div>
                   <StatusMessage result={getResult("remote-unlock", device.terminalId)} />
-                </div>
+                </form>
               );
             }
 
@@ -806,7 +908,7 @@ export function CommandsPanel() {
             }
 
             if (activeTab === "Phone Number") {
-              const values = phoneValues[device.terminalId] ?? ["", "", "", "", ""];
+              const values = phoneValues[device.terminalId] ?? emptyPhoneSlots();
 
               return (
                 <div key={device.terminalId} className="rounded-[6px] bg-white p-3 text-[12px]">
@@ -818,24 +920,34 @@ export function CommandsPanel() {
                     {Array.from({ length: 5 }, (_, index) => (
                       <form
                         key={index}
-                        onSubmit={(event) => {
+                        onSubmit={async (event) => {
                           event.preventDefault();
-                          const phoneNumber = values[index]?.trim();
+                          const phoneNumber = values[index]?.phoneNumber.trim();
                           if (!phoneNumber) {
                             setResults((current) => ({ ...current, [resultKey("phone-" + index, device.terminalId)]: { state: "error", message: "Le numero de telephone est obligatoire." } }));
                             return;
                           }
-                          runCommand("phone-" + index, device.terminalId, "/vip/phone/set", { terminalId: device.terminalId, index: index + 1, phoneNumber }, "Numero VIP enregistre.");
+                          await runCommand("phone-" + index, device.terminalId, "/vip/phone/set", { terminalId: device.terminalId, index: index + 1, phoneNumber }, "Numero VIP enregistre.");
+                          setPhoneLoaded((current) => ({ ...current, [device.terminalId]: true }));
                         }}
                         className="flex gap-2"
                       >
-                        <input value={values[index] ?? ""} onChange={(event) => updatePhone(device.terminalId, index, event.target.value)} className="h-8 min-w-0 flex-1 rounded-[6px] border border-[#dfe6ee] px-3 text-[12px]" placeholder={"VIP " + (index + 1)} />
-                        <SaveButton loading={commandLoading("phone-" + index, device.terminalId)}>Definir</SaveButton>
+                        <div className="flex min-w-0 flex-1 flex-col gap-1">
+                          <input value={values[index]?.phoneNumber ?? ""} onChange={(event) => updatePhone(device.terminalId, index, { ...(values[index] ?? { phoneNumber: "" }), phoneNumber: event.target.value })} className="h-8 min-w-0 rounded-[6px] border border-[#dfe6ee] px-3 text-[12px]" placeholder={"VIP " + (index + 1)} />
+                          <span className="text-[10px] font-semibold text-[#64748b]">Alarmes envoyees par defaut</span>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <SaveButton loading={commandLoading("phone-" + index, device.terminalId)}>Definir</SaveButton>
+                          <button type="button" onClick={() => deletePhoneNumber(device.terminalId, index)} disabled={commandLoading("phone-delete-" + index, device.terminalId) || !values[index]?.phoneNumber.trim()} className="grid size-8 place-items-center rounded-[6px] border border-red-100 bg-red-50 text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40" aria-label={"Supprimer VIP " + (index + 1)}>
+                            {commandLoading("phone-delete-" + index, device.terminalId) ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                          </button>
+                        </div>
                       </form>
                     ))}
                   </div>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                    {Array.from({ length: 5 }, (_, index) => <StatusMessage key={index} result={getResult("phone-" + index, device.terminalId)} />)}
+                    <StatusMessage result={getResult("phone-load", device.terminalId)} />
+                    {Array.from({ length: 5 }, (_, index) => <div key={index} className="space-y-1"><StatusMessage result={getResult("phone-" + index, device.terminalId)} /><StatusMessage result={getResult("phone-delete-" + index, device.terminalId)} /></div>)}
                   </div>
                 </div>
               );

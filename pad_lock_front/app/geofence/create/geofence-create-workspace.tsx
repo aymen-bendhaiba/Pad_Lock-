@@ -19,6 +19,67 @@ function coordinatesFromPoints(points: LatLngTuple[]) {
   return points.map(([lat, lng]) => ({ lat, lng }));
 }
 
+
+function geofencePayload({
+  name,
+  selectedLockId,
+  shapeMode,
+  draftPoints,
+  radiusMeters,
+  lockAccessAllowed,
+}: {
+  name: string;
+  selectedLockId: string;
+  shapeMode: FormeMode;
+  draftPoints: LatLngTuple[];
+  radiusMeters: number;
+  lockAccessAllowed: boolean;
+}) {
+  const accessMode = lockAccessAllowed ? "allow_inside" : "allow_outside";
+  const rules = {
+    lockAccessAllowed,
+    rfidAllowed: true,
+    smsAllowed: true,
+    gprsAllowed: true,
+    serialAllowed: true,
+    bluetoothAllowed: true,
+  };
+  const terminalIds = [selectedLockId];
+
+  if (shapeMode === "circle") {
+    return {
+      name,
+      shapeType: "circle",
+      coordinates: coordinatesFromPoints(draftPoints.slice(0, 1)),
+      radiusMeters,
+      accessMode,
+      rules,
+      terminalIds,
+    };
+  }
+
+  if (shapeMode === "route") {
+    return {
+      name,
+      shapeType: "route",
+      coordinates: coordinatesFromPoints(draftPoints),
+      radiusMeters: 100,
+      accessMode,
+      rules,
+      terminalIds,
+    };
+  }
+
+  return {
+    name,
+    shapeType: "polygon",
+    coordinates: coordinatesFromPoints(draftPoints),
+    accessMode,
+    rules,
+    terminalIds,
+  };
+}
+
 function rowsFromPayload(payload: unknown): Record<string, unknown>[] {
   if (Array.isArray(payload)) {
     return payload.filter((row): row is Record<string, unknown> => !!row && typeof row === "object");
@@ -236,24 +297,14 @@ export function GeofenceCreateWorkspace() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
+      body: JSON.stringify(geofencePayload({
         name: trimmedName,
-        terminalId: selectedLockId,
-        shapeType: shapeMode,
-        coordinates: coordinatesFromPoints(
-          shapeMode === "circle" ? draftPoints.slice(0, 1) : draftPoints,
-        ),
-        radiusMeters: shapeMode === "circle" ? cercleRayonMeters : undefined,
-        accessMode: "allow_inside",
-        rules: {
-          smsAllowed: true,
-          gprsAllowed: true,
-          rfidAllowed: true,
-          serialAllowed: true,
-          bluetoothAllowed: true,
-          lockAccessAllowed: lockAccessAllowed,
-        },
-      }),
+        selectedLockId,
+        shapeMode,
+        draftPoints,
+        radiusMeters: cercleRayonMeters,
+        lockAccessAllowed,
+      })),
     });
 
     if (!response.ok) {

@@ -21,6 +21,7 @@ import {
   getGeoBoundaries,
   getGeoBoundaryById,
 } from "../../lib/api";
+import { userFriendlyError } from "../../lib/error-messages";
 import { GeofenceMapShell } from "./geofence-map-shell";
 import type { BoundarySummary, GeofenceAccessMode, LatLngTuple, LockMapAsset, SavedGeofence } from "./geofence-types";
 
@@ -834,7 +835,7 @@ function normalizeGeofences(payload: unknown): SavedGeofence[] {
     const shapeType =
       record.shapeType === "circle"
         ? "circle"
-        : record.shapeType === "route"
+        : (record.shapeType === "route" || record.shapeType === "line")
           ? "route"
           : "polygon";
     const geometry = geometryFromRecord(record);
@@ -1176,20 +1177,24 @@ export function GeofenceWorkspace() {
     setMessage("Mise a jour de la geofence...");
 
     try {
+      const nextAccessMode: GeofenceAccessMode = draftLockAccessAllowed ? "allow_inside" : "allow_outside";
       const response = await apiFetch("/geofences/" + encodeURIComponent(geofence.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rules: { lockAccessAllowed: draftLockAccessAllowed } }),
+        body: JSON.stringify({
+          accessMode: nextAccessMode,
+          rules: { lockAccessAllowed: draftLockAccessAllowed },
+        }),
       });
 
       if (!response.ok) throw new Error("La modification n'a pas ete acceptee.");
 
-      setGeofences((current) => current.map((item) => item.id === geofence.id ? { ...item, lockAccessAllowed: draftLockAccessAllowed } : item));
+      setGeofences((current) => current.map((item) => item.id === geofence.id ? { ...item, accessMode: nextAccessMode, lockAccessAllowed: draftLockAccessAllowed } : item));
       clearAppCache();
       setEditingGeofenceId(null);
       setMessage("Geofence mise a jour.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Impossible de modifier cette geofence.");
+      setMessage(userFriendlyError(error, "Impossible de modifier cette geofence."));
     } finally {
       setSavingGeofenceId(null);
     }
@@ -1211,7 +1216,7 @@ export function GeofenceWorkspace() {
       clearAppCache();
       setMessage("Geofence supprimee.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Impossible de supprimer cette geofence.");
+      setMessage(userFriendlyError(error, "Impossible de supprimer cette geofence."));
     } finally {
       setDeletingGeofenceId(null);
     }

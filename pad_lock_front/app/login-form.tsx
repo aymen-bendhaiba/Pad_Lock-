@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { loginWithCredentials } from "../lib/api";
+import { userFriendlyError } from "../lib/error-messages";
 
 export function LoginForm() {
   const router = useRouter();
@@ -21,24 +22,20 @@ export function LoginForm() {
       await loginWithCredentials(email, password);
       router.push("/dashboard");
     } catch (loginError) {
-      setError(
-        loginError instanceof Error
-          ? loginError.message
-          : "Connexion impossible. Verifiez vos identifiants et reessayez.",
-      );
+      setError(userFriendlyError(loginError, "Connexion impossible. Verifiez vos identifiants et reessayez."));
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <form className="mt-8" aria-label="Login form" onSubmit={handleSubmit}>
+    <form className="mt-8" aria-label="Formulaire de connexion" onSubmit={handleSubmit}>
       <div>
         <h3 className="text-[16px] font-semibold leading-none text-[#17171c]">
-          Log in
+          Connexion
         </h3>
         <p className="mt-3 text-[12px] leading-none text-[#777781]">
-          Enter your email below to log in your account
+          Saisissez votre email pour acceder a votre compte
         </p>
       </div>
 
@@ -69,13 +66,13 @@ export function LoginForm() {
               htmlFor="password"
               className="block text-[11px] font-medium leading-none text-[#1d1d22]"
             >
-              Password
+              Mot de passe
             </label>
             <Link
               href="#"
               className="text-[11px] font-normal leading-none text-[#1d1d22] underline underline-offset-2"
             >
-              Forgot your password?
+              Mot de passe oublie ?
             </Link>
           </div>
           <input
@@ -104,14 +101,14 @@ export function LoginForm() {
           disabled={isSubmitting}
           className="h-9 w-full rounded-[4px] bg-[#1c1c21] text-[12px] font-medium text-white transition hover:bg-[#0C4E71] focus:outline-none focus:ring-2 focus:ring-[#1E9ADA]/35 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {isSubmitting ? "Logging in..." : "Login"}
+          {isSubmitting ? "Connexion..." : "Se connecter"}
         </button>
       </div>
 
       <p className="mt-5 text-center text-[12px] leading-none text-[#1d1d22]">
-        Don&apos;t have an account?{" "}
+        Vous n&apos;avez pas encore de compte ?{" "}
         <Link href="#" className="underline underline-offset-2">
-          Sign up
+          Creer un compte
         </Link>
       </p>
     </form>
