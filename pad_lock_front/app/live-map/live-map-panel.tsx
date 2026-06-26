@@ -491,26 +491,6 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
   };
 }
 
-function latestPositionFromHistory(payload: unknown) {
-  const rows = rowsFromPayload(payload);
-  const candidates = rows
-    .map((row) => ({
-      row,
-      position: extractPosition(row),
-      timestamp: readString(row, ["timestamp", "createdAt", "updatedAt", "recordedAt", "time"]),
-    }))
-    .filter((entry): entry is { row: ApiRecord; position: [number, number]; timestamp: string | undefined } => Boolean(entry.position));
-
-  candidates.sort((left, right) => {
-    const leftTime = left.timestamp ? Date.parse(left.timestamp) : 0;
-    const rightTime = right.timestamp ? Date.parse(right.timestamp) : 0;
-
-    return rightTime - leftTime;
-  });
-
-  return candidates[0]?.position;
-}
-
 async function loadLiveAssets(force = false) {
   const [devicesPayload, locksPayload, alertsPayload] = await Promise.all([
     cachedApiJson("/devices", force),
@@ -529,14 +509,6 @@ async function loadLiveAssets(force = false) {
   return assets;
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
-  return Promise.race<T>([
-    promise,
-    new Promise<T>((_, reject) => {
-      window.setTimeout(() => reject(new Error(message)), timeoutMs);
-    }),
-  ]);
-}
 function defaultPlaybackFromDate() {
   const date = new Date();
   date.setDate(1);
@@ -761,10 +733,7 @@ export function LiveMapPanel() {
   const [playbackTo, setPlaybackTo] = useState(defaultPlaybackToDate);
 
   useEffect(() => {
-    if (isPlaybackOpen) {
-      setIsLoading(false);
-      return;
-    }
+    if (isPlaybackOpen) return;
 
     let isMounted = true;
 
@@ -882,6 +851,8 @@ export function LiveMapPanel() {
     setPlaybackAsset(null);
     setPlaybackError(null);
   }
+  const displayIsLoading = isPlaybackOpen ? false : isLoading;
+
   const stats = useMemo(() => ({
     all: assets.length,
     moving: assets.filter((asset) => asset.status === "Moving").length,
@@ -903,7 +874,7 @@ export function LiveMapPanel() {
           isPlaybackOpen={isPlaybackOpen && playbackPoints.length > 0}
         />
 
-        {isLoading ? (
+        {displayIsLoading ? (
           <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-full border border-[#dfe6ee] bg-white/95 px-4 py-2 text-[12px] font-semibold text-[#475569] shadow-sm">
             Chargement des cadenas en direct...
           </div>
@@ -978,7 +949,7 @@ export function LiveMapPanel() {
           >
             <option value="all">Tous</option>
             <option value="moving">En mouvement</option>
-            <option value="idle">A l'arret</option>
+            <option value="idle">A l&apos;arret</option>
             <option value="alarm">Alarme</option>
             <option value="offline">Hors ligne</option>
             <option value="locked">Verrouille</option>
@@ -1003,7 +974,7 @@ export function LiveMapPanel() {
             ))
           ) : (
             <div className="mx-2 rounded-[8px] border border-dashed border-[#d5e0ea] p-4 text-[13px] text-[#64748b]">
-              {isLoading ? "Chargement des cadenas..." : "Aucun cadenas ne correspond a cette vue."}
+              {displayIsLoading ? "Chargement des cadenas..." : "Aucun cadenas ne correspond a cette vue."}
             </div>
           )}
         </div>

@@ -102,11 +102,19 @@ function useReverseGeocode(position: [number, number] | undefined, enabled: bool
     const storageValue = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
 
     if (memoryValue || storageValue) {
-      setPlace(memoryValue ?? storageValue ?? undefined);
-      return;
+      const cachedPlace = memoryValue ?? storageValue ?? undefined;
+      const timer = window.setTimeout(() => {
+        if (isMounted) setPlace(cachedPlace);
+      }, 0);
+      return () => {
+        isMounted = false;
+        window.clearTimeout(timer);
+      };
     }
 
-    setIsResolving(true);
+    const resolvingTimer = window.setTimeout(() => {
+      if (isMounted) setIsResolving(true);
+    }, 0);
     const params = new URLSearchParams({
       format: "jsonv2",
       lat: String(position[0]),
@@ -135,6 +143,7 @@ function useReverseGeocode(position: [number, number] | undefined, enabled: bool
 
     return () => {
       isMounted = false;
+      window.clearTimeout(resolvingTimer);
     };
   }, [enabled, position]);
 

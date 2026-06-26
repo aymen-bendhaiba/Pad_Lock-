@@ -195,13 +195,6 @@ function syncTone(sync: SyncInfo) {
   return "border-[#dfe6ee] bg-white text-[#64748b]";
 }
 
-function syncIcon(sync: SyncInfo) {
-  if (sync?.status === "synced") return CheckCircle2;
-  if (sync?.status === "failed") return CircleAlert;
-  if (sync?.status === "pending") return Clock3;
-  return ShieldCheck;
-}
-
 function syncLabel(status?: string | null) {
   if (status === "synced") return "Synchronise";
   if (status === "failed") return "Echec";
@@ -240,7 +233,6 @@ function validateNumber(value: string, label: string, min: number, max: number, 
 }
 
 function SectionHeader({ icon: Icon, title, description, sync }: { icon: typeof Router; title: string; description: string; sync?: SyncInfo }) {
-  const SyncIcon = syncIcon(sync ?? null);
   return (
     <div className="flex flex-col gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-5 py-4 md:flex-row md:items-start md:justify-between">
       <div className="flex gap-3">
@@ -251,7 +243,7 @@ function SectionHeader({ icon: Icon, title, description, sync }: { icon: typeof 
         </div>
       </div>
       <span className={"inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold capitalize " + syncTone(sync ?? null)}>
-        <SyncIcon size={13} />
+        {sync?.status === "synced" ? <CheckCircle2 size={13} /> : sync?.status === "failed" ? <CircleAlert size={13} /> : sync?.status === "pending" ? <Clock3 size={13} /> : <ShieldCheck size={13} />}
         {syncLabel(sync?.status)}
       </span>
     </div>

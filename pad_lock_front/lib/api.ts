@@ -380,44 +380,6 @@ export async function getGeoBoundaryById<T = unknown>(id: string) {
   return (await response.json()) as T;
 }
 
-function rowsFromPayload(payload: unknown) {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-
-  if (payload && typeof payload === "object") {
-    const record = payload as Record<string, unknown>;
-
-    if (Array.isArray(record.data)) {
-      return record.data;
-    }
-
-    if (Array.isArray(record.items)) {
-      return record.items;
-    }
-
-    if (Array.isArray(record.results)) {
-      return record.results;
-    }
-  }
-
-  return [];
-}
-
-function terminalIdsFromDevices(payload: unknown) {
-  return rowsFromPayload(payload)
-    .map((row) => {
-      if (!row || typeof row !== "object") {
-        return null;
-      }
-
-      const record = row as Record<string, unknown>;
-      return record.terminalId ?? record.id ?? record.deviceId;
-    })
-    .filter((value): value is string => typeof value === "string")
-    .slice(0, 8);
-}
-
 export async function warmAppCache() {
   const token = getStoredAccessToken();
 

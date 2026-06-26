@@ -758,7 +758,7 @@ function UnlockPermissionStatus({
         ) : null}
       </div>
       <p className="mt-1 text-[11px] leading-snug text-[#63758d]">
-        Choisissez si le cadenas peut etre deverrouille lorsqu'il se trouve dans cette geofence.
+        Choisissez si le cadenas peut etre deverrouille lorsqu&apos;il se trouve dans cette geofence.
       </p>
       <div className="mt-2 space-y-2 text-[12px] text-[#0f172a]">
         <label className="flex items-start gap-2 rounded-[7px] bg-white px-3 py-2 ring-1 ring-[#e3e9f0]">

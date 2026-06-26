@@ -236,12 +236,6 @@ function signalColor(value: string) {
   return "text-[#94a3b8]";
 }
 
-function lockLabel(value: CommandDevice["lock"]) {
-  if (value === "Locked") return "Verrouille";
-  if (value === "Unlocked") return "Deverrouille";
-  return "Inconnu";
-}
-
 function statusLabel(value: CommandDevice["status"]) {
   if (value === "Moving") return "En mouvement";
   if (value === "Idle") return "À l'arret";

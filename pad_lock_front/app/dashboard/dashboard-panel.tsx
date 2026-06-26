@@ -28,14 +28,6 @@ type Metric = {
   icon: typeof Database;
 };
 
-type ActivityPoint = {
-  label: string;
-  moving: number;
-  idle: number;
-  alerts: number;
-  locks: number;
-};
-
 type NamedCount = {
   label: string;
   value: number;
@@ -270,37 +262,6 @@ function dashboardPath(from: Date, to: Date) {
   return `/dashboard/summary?${params.toString()}`;
 }
 
-function normalizeActivity(summary: SummaryRecord): ActivityPoint[] {
-  const rows = rowsFromValue(summary.lockActivity ?? summary.activity ?? summary.fleetActivity);
-  const normalized = rows
-    .map((row, index): ActivityPoint | null => {
-      const record = asRecord(row);
-      if (!record) return null;
-
-      return {
-        label:
-          textValue(record.label, record.day, record.date, record.name) ??
-          `P${index + 1}`,
-        moving: numberValue(record.moving, record.active, record.movement, record.movements) ?? 0,
-        idle: numberValue(record.idle, record.inactive, record.stopped) ?? 0,
-        alerts: numberValue(record.alerts, record.alarms, record.alertCount) ?? 0,
-        locks: numberValue(record.locks, record.lockEvents, record.locked, record.unlocks) ?? 0,
-      };
-    })
-    .filter((row): row is ActivityPoint => Boolean(row))
-    .slice(-7);
-
-  if (normalized.length > 0) return normalized;
-
-  return ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"].map((label) => ({
-    label,
-    moving: 0,
-    idle: 0,
-    alerts: 0,
-    locks: 0,
-  }));
-}
-
 function normalizeNamedCounts(value: unknown, fallbackLabel = "Item") {
   const record = asRecord(value);
 
@@ -321,20 +282,6 @@ function normalizeNamedCounts(value: unknown, fallbackLabel = "Item") {
       };
     })
     .filter((item): item is NamedCount => Boolean(item));
-}
-
-function normalizeTopAlarms(summary: SummaryRecord) {
-  return normalizeNamedCounts(summary.topAlarms ?? summary.alarmsByType, "Alarme").slice(0, 5);
-}
-
-function normalizeDistribution(summary: SummaryRecord) {
-  const distribution =
-    summary.assetDistribution ??
-    summary.regionDistribution ??
-    summary.lockStateDistribution ??
-    summary.rfidSyncStatus;
-
-  return normalizeNamedCounts(distribution, "Groupe").slice(0, 7);
 }
 
 function normalizeLockActivities(summary: SummaryRecord) {
@@ -366,7 +313,7 @@ function normalizeLockActivities(summary: SummaryRecord) {
   ].filter((item) => item.value > 0);
 }
 
-function normalizeRfidUsage(_summary: SummaryRecord) {
+function normalizeRfidUsage() {
   return [
     { label: "RFID 80344-1842", value: 86 },
     { label: "RFID 80344-0291", value: 72 },
@@ -377,7 +324,7 @@ function normalizeRfidUsage(_summary: SummaryRecord) {
   ];
 }
 
-function normalizeHeatMapTracks(_summary: SummaryRecord) {
+function normalizeHeatMapTracks() {
   return [
     { label: "Casablanca", value: 92 },
     { label: "Rabat", value: 78 },
@@ -460,25 +407,6 @@ function barHeight(value: number, max: number, min = 14) {
   return Math.max(min, Math.round((value / max) * 100));
 }
 
-function totalMovements(activity: ActivityPoint[]) {
-  return activity.reduce((total, item) => total + item.moving + item.idle, 0);
-}
-
-function pulsePercentages(activity: ActivityPoint[]) {
-  const moving = activity.reduce((total, item) => total + item.moving, 0);
-  const idle = activity.reduce((total, item) => total + item.idle, 0);
-  const alerts = activity.reduce((total, item) => total + item.alerts, 0);
-  const total = moving + idle + alerts;
-
-  if (total <= 0) return { moving: 0, idle: 0, alerts: 0 };
-
-  return {
-    moving: Math.round((moving / total) * 100),
-    idle: Math.round((idle / total) * 100),
-    alerts: Math.round((alerts / total) * 100),
-  };
-}
-
 export function DashboardPanel() {
   const defaultRange = useMemo(() => dateRange("last30"), []);
   const [rangeMode, setRangeMode] = useState<DashboardRangeMode>("preset");
@@ -527,8 +455,8 @@ export function DashboardPanel() {
   const metrics = useMemo(() => buildMetrics(summary), [summary]);
   const connection = useMemo(() => connectionValues(summary), [summary]);
   const lockActivities = useMemo(() => normalizeLockActivities(summary), [summary]);
-  const rfidUsage = useMemo(() => normalizeRfidUsage(summary), [summary]);
-  const heatMapTracks = useMemo(() => normalizeHeatMapTracks(summary), [summary]);
+  const rfidUsage = useMemo(() => normalizeRfidUsage(), []);
+  const heatMapTracks = useMemo(() => normalizeHeatMapTracks(), []);
   const maxLockActivity = Math.max(...lockActivities.map((item) => item.value), 0);
   const maxRfidUsage = Math.max(...rfidUsage.map((item) => item.value), 0);
   const maxHeatMapTrack = Math.max(...heatMapTracks.map((item) => item.value), 0);

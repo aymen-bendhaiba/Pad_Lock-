@@ -786,7 +786,7 @@ export function AlarmsPanel() {
         <div>
           <h1 className="text-[26px] font-bold tracking-normal text-black">Registre des alarmes</h1>
           <p className="mt-2 text-[13px] text-[#64748b]">
-            Surveillez et traitez les alertes de securite et d'exploitation en temps reel.
+            Surveillez et traitez les alertes de securite et d&apos;exploitation en temps reel.
           </p>
           <p className="mt-1 text-[11px] text-[#94a3b8]">
             {sourceLabel} - {streamLabel}
@@ -847,7 +847,7 @@ export function AlarmsPanel() {
             className="flex h-9 items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"
           >
             <CalendarDays size={14} />
-            Aujourd'hui, {formatTodayLabel()}
+            Aujourd&apos;hui, {formatTodayLabel()}
           </button>
           <label
             className={`flex h-9 items-center gap-2 rounded-[6px] border bg-white px-3 text-[12px] font-semibold transition ${
@@ -1052,7 +1052,7 @@ export function AlarmsPanel() {
           <div className="w-full max-w-[820px] overflow-hidden rounded-[10px] border border-[#dfe6ee] bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-[#dfe6ee] px-4 py-3">
               <div>
-                <h2 className="text-[15px] font-bold text-[#0f172a]">Position de l'alerte</h2>
+                <h2 className="text-[15px] font-bold text-[#0f172a]">Position de l&apos;alerte</h2>
                 <p className="mt-1 text-[12px] text-[#64748b]">{mapAlarm.device} - {mapAlarm.type}</p>
               </div>
               <button type="button" onClick={() => setMapAlarm(null)} className="grid size-8 place-items-center rounded-[6px] hover:bg-[#eef4fa]" aria-label="Fermer la carte">

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -22,7 +21,6 @@ import { apiFetch, cachedApiJson } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
 
 type ApiRecord = Record<string, unknown>;
-type LoadState = "idle" | "loading" | "ready" | "error";
 type ReportStatut = "Ready" | "Processing" | "Error";
 type GroupBy = "day" | "week" | "month";
 type ReportKind = "alerts" | "geofences" | "unlocks" | "mileage" | "battery";
