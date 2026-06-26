@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,12 +27,17 @@ import {
   GeofenceShapeType,
 } from './geofence.entity';
 import {
+  geofenceBlocksLimitedRfidAccess,
+  isLimitedRfidAllowedByGeofences,
   isLockAccessAllowedByGeofence,
   isPointInGeofence,
+  normalizeGeofenceRules,
 } from './geofence-geometry';
 
 @Injectable()
 export class GeofencesService {
+  private readonly logger = new Logger(GeofencesService.name);
+
   constructor(
     @InjectRepository(Geofence)
     private readonly geofencesRepository: Repository<Geofence>,
@@ -94,8 +100,11 @@ export class GeofencesService {
         radiusMeters: dto.radiusMeters ?? null,
         applyInside:
           dto.applyInside ?? dto.accessMode === GeofenceAccessMode.AllowInside,
+        rules: normalizeGeofenceRules(dto.rules),
       }),
     );
+    await this.applyCurrentRulesForLocks(geofence.terminalIds);
+
     return { success: true, id: geofence.id };
   }
 
@@ -115,9 +124,10 @@ export class GeofencesService {
         radiusMeters: null,
         applyInside: dto.accessMode === GeofenceAccessMode.AllowInside,
         accessMode: dto.accessMode,
-        rules: dto.rules,
+        rules: normalizeGeofenceRules(dto.rules),
       }),
     );
+    await this.applyCurrentRulesForLocks(geofence.terminalIds);
 
     return { success: true, id: geofence.id };
   }
@@ -132,6 +142,8 @@ export class GeofencesService {
     if (!geofence) {
       throw new NotFoundException('Geofence not found');
     }
+
+    const previousTerminalIds = [...geofence.terminalIds];
 
     if (dto.name !== undefined) {
       geofence.name = dto.name;
@@ -154,22 +166,36 @@ export class GeofencesService {
     }
     if (dto.rules !== undefined) {
       geofence.rules = {
-        ...geofence.rules,
+        ...normalizeGeofenceRules(geofence.rules),
         ...dto.rules,
       };
     }
 
     this.assertGeofenceShape(geofence);
 
-    return this.geofencesRepository.save(geofence);
+    const updated = await this.geofencesRepository.save(geofence);
+    await this.applyCurrentRulesForLocks([
+      ...previousTerminalIds,
+      ...updated.terminalIds,
+    ]);
+
+    return updated;
   }
 
   async delete(id: string) {
+    const geofence = await this.geofencesRepository.findOneBy({ id });
+
+    if (!geofence) {
+      throw new NotFoundException('Geofence not found');
+    }
+
     const result = await this.geofencesRepository.delete({ id });
 
     if (!result.affected) {
       throw new NotFoundException('Geofence not found');
     }
+
+    await this.applyCurrentRulesForLocks(geofence.terminalIds);
 
     return { success: true, message: 'Geofence deleted successfully.' };
   }
@@ -248,34 +274,30 @@ export class GeofencesService {
         latestPosition.longitude,
         geofence,
       );
-      const accessModeAllows = this.isAccessModeAllowed(
-        latestPosition.latitude,
-        latestPosition.longitude,
-        geofence,
-        inShape,
-      );
-      const activeRuleBlocks =
-        inShape &&
-        (geofence.rules.lockAccessAllowed === false ||
-          geofence.rules.rfidAllowed === false);
 
       evaluatedGeofences.push({
         geofence,
         inShape,
-        blocksAccess: !accessModeAllows || activeRuleBlocks,
+        blocksAccess: geofenceBlocksLimitedRfidAccess(geofence, inShape),
       });
     }
     const activeGeofences = evaluatedGeofences.filter((item) => item.inShape);
-    const blockingGeofences = evaluatedGeofences.filter(
-      (item) => item.blocksAccess,
-    );
+    const limitedRfidAllowed =
+      isLimitedRfidAllowedByGeofences(evaluatedGeofences);
+    const blockingGeofences = limitedRfidAllowed
+      ? []
+      : evaluatedGeofences.filter(
+          (item) =>
+            item.blocksAccess ||
+            (item.geofence.accessMode === GeofenceAccessMode.AllowInside &&
+              !item.inShape),
+        );
 
     return {
-      allowed: blockingGeofences.length === 0,
-      reason:
-        blockingGeofences.length === 0
-          ? 'limited_card_allowed'
-          : 'blocked_by_geofence',
+      allowed: limitedRfidAllowed,
+      reason: limitedRfidAllowed
+        ? 'limited_card_allowed'
+        : 'blocked_by_geofence',
       cardRole: card.role,
       position: {
         lat: latestPosition.latitude,
@@ -284,8 +306,9 @@ export class GeofencesService {
       activeGeofences: activeGeofences.map(({ geofence }) => ({
         id: geofence.id,
         name: geofence.name,
-        lockAccessAllowed: geofence.rules.lockAccessAllowed,
-        rfidAllowed: geofence.rules.rfidAllowed,
+        lockAccessAllowed: normalizeGeofenceRules(geofence.rules)
+          .lockAccessAllowed,
+        rfidAllowed: normalizeGeofenceRules(geofence.rules).rfidAllowed,
         accessMode: geofence.accessMode,
         shapeType: geofence.shapeType,
         geoBoundaryId: geofence.geoBoundaryId,
@@ -352,6 +375,24 @@ export class GeofencesService {
     }
 
     return normalized;
+  }
+
+  private async applyCurrentRulesForLocks(
+    terminalIds: string[],
+  ): Promise<void> {
+    const uniqueTerminalIds = [...new Set(terminalIds)];
+
+    for (const terminalId of uniqueTerminalIds) {
+      try {
+        await this.tcpGatewayService.applyCurrentGeofenceState(terminalId);
+      } catch (error) {
+        this.logger.warn(
+          `Could not apply current geofence RFID state for ${terminalId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
   }
 
   private async isPositionInGeofence(

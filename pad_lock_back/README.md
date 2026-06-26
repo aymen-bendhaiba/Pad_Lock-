@@ -84,6 +84,7 @@ Protected lock-management routes require `Authorization: Bearer <accessToken>`:
 - `PATCH /api/locks/:terminalId/configuration`
 - `GET /api/locks/:terminalId/rfid-cards`
 - `POST /api/locks/:terminalId/rfid-cards`
+- `POST /api/locks/:terminalId/rfid-cards/sync`
 - `PUT /api/locks/:terminalId/rfid-cards/:cardNumber/role`
 - `DELETE /api/locks/:terminalId/rfid-cards`
 - `DELETE /api/locks/:terminalId/rfid-cards/all`
@@ -114,6 +115,8 @@ Protected lock-management routes require `Authorization: Bearer <accessToken>`:
 - `POST /api/deepsleep/set`
 - `GET /api/deepsleep/query/:terminalId`
 - `POST /api/vip/phone/set`
+- `GET /api/vip/phone`
+- `DELETE /api/vip/phone`
 - `GET /api/vip/phone/query/:terminalId/:index`
 - `POST /api/vip/sms/set`
 - `GET /api/vip/sms/query/:terminalId`
@@ -146,6 +149,64 @@ RFID card commands follow JT701D `P41`:
 
 Querying an RFID group also syncs returned cards into the local database, so cards added directly on the physical lock can appear in the API.
 
+Static password commands follow JT701D `P44`:
+
+- Query current static password: `(P44,1)` through `GET /api/password/query/:terminalId`.
+- Modify static password: `(P44,newPassword,currentPassword)` through `POST /api/password/modify`.
+
+Example password modify request:
+
+```json
+{
+  "terminalId": "8034400004",
+  "currentPassword": "888888",
+  "newPassword": "123456"
+}
+```
+
+VIP phone query:
+
+When adding a VIP phone with `POST /api/vip/phone/set`, the backend also enables SMS alarm delivery for that slot by querying `P12,0` and then sending `P12,1,...` with the matching VIP flag set to `1`.
+
+```http
+GET /api/vip/phone?terminalId=8034400004
+Authorization: Bearer <accessToken>
+```
+
+Returns all five VIP phone slots by sending `P11` queries sequentially:
+
+```json
+{
+  "success": true,
+  "terminalId": "8034400004",
+  "phones": [
+    { "success": true, "index": 1, "phoneNumber": "+212600000001" },
+    { "success": true, "index": 2, "phoneNumber": "" }
+  ]
+}
+```
+
+To query one slot:
+
+```http
+GET /api/vip/phone?terminalId=8034400004&index=3
+```
+
+To delete one VIP phone slot:
+
+```http
+DELETE /api/vip/phone?terminalId=8034400004&index=3
+Authorization: Bearer <accessToken>
+```
+
+This clears the slot on the physical lock by sending:
+
+```text
+(P11,1,3,)
+```
+
+It also disables SMS alarm delivery for that slot with `P12`.
+
 ### Lock Configuration Endpoints
 
 Both endpoints require:
@@ -154,11 +215,11 @@ Both endpoints require:
 - Header `Authorization: Bearer <accessToken>`.
 - The lock must exist in `lock_devices`; otherwise the API returns `404`.
 
-The API never returns an APN password. It returns `apnPasswordConfigured` to indicate whether an encrypted password is stored.
+The API never returns an APN password. If the lock returns an APN password during a physical `P06` query, the API encrypts and stores it, then returns `apnPasswordConfigured` to indicate whether a password is configured.
 
 #### GET /api/locks/:terminalId/configuration
 
-Loads the configuration currently saved by the backend. It does not send a query command to the physical lock.
+Loads the configuration saved by the backend. If the lock is connected over TCP, the API first queries the physical lock for SIM settings with `P06,0` for SIM1 and `P06,2` for SIM2, saves the returned IP address, port, APN, and APN user, then returns the refreshed configuration.
 
 Request:
 
@@ -568,6 +629,7 @@ RFID card roles:
 - `POST /api/locks/:terminalId/rfid-cards` defaults to `limited` when `role` is omitted.
 - Include `role: "admin"` only when intentionally assigning the one admin card.
 - Use `PUT /api/locks/:terminalId/rfid-cards/:cardNumber/role` to promote or demote a card.
+- Use `POST /api/locks/:terminalId/rfid-cards/sync` to immediately recalculate geofence access from the latest saved lock position and push needed `P41 add/delete` changes.
 - Card responses include physical sync state: `installedOnLock`, `lastSyncStatus`, `lastSyncError`, and `lastSyncedAt`.
 - Physical geofence enforcement uses JT701D `P41`: blocked limited cards are temporarily removed from the lock whitelist, then restored when allowed again.
 - Admin cards are never removed by geofence automation.
@@ -681,14 +743,15 @@ Content-Type: application/json
 
 Every PATCH field is optional, but at least one field must be sent. Supported fields are `name`, `terminalIds`, `shapeType`, `coordinates`, `radiusMeters`, `accessMode`, and any subset of `rules`. `terminalIds` must contain at least one existing lock terminal ID. Omitted rule booleans retain their current values. The response is the complete updated geofence object.
 
-The updated rule is enforced on the next positioned GPS report from a lock. Admin cards continue to bypass geofence restrictions; limited cards are physically removed from or restored to the lock through `P41` according to the new result.
+The updated rule is enforced immediately from the latest saved positioned GPS point, then again on each new positioned GPS report from the lock. Admin cards continue to bypass geofence restrictions; limited cards are physically removed from or restored to the lock through `P41` according to the new result.
 
-Geofence rules include `lockAccessAllowed`. The frontend checkbox should write this boolean to `rules.lockAccessAllowed`. For limited cards, access is blocked when the `accessMode` rule does not match the lock position, or when `rules.lockAccessAllowed` or `rules.rfidAllowed` is `false` in a geofence that currently contains the lock. Admin cards bypass these backend restrictions.
+Geofence rules include `lockAccessAllowed`. The frontend checkbox should write this boolean to `rules.lockAccessAllowed`. For limited cards, `allow_outside` geofences block when the lock is inside that geofence, and `allow_inside` geofences allow access when the lock is inside at least one assigned allowed zone. A geofence also blocks inside its shape when `rules.lockAccessAllowed` or `rules.rfidAllowed` is `false`. Admin cards bypass these backend restrictions.
 
 Physical RFID swipe enforcement:
 
 - The API database keeps every card and role as the source of truth.
 - When a lock reports GPS, the backend evaluates geofences for limited cards.
+- When a geofence is created, updated, deleted, or manually synced, the backend also evaluates the latest saved lock position.
 - If limited cards are blocked and installed on the lock, the backend sends `P41 delete` for those cards only.
 - If limited cards become allowed again and are not installed on the lock, the backend sends `P41 add`.
 - Failed/offline syncs are kept as `pending_add`, `pending_delete`, or `failed` and retried on later GPS reports.

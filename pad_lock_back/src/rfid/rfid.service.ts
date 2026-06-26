@@ -133,6 +133,28 @@ export class RfidService {
     }
   }
 
+  async syncCurrentGeofenceState(terminalId: string): Promise<{
+    success: true;
+    terminalId: string;
+    applied: boolean;
+    message: string;
+  }> {
+    const lockDevice =
+      await this.locksService.findByTerminalIdOrFail(terminalId);
+    const applied = await this.tcpGatewayService.applyCurrentGeofenceState(
+      lockDevice.terminalId,
+    );
+
+    return {
+      success: true,
+      terminalId: lockDevice.terminalId,
+      applied,
+      message: applied
+        ? 'RFID geofence state synchronized from the latest lock position.'
+        : 'RFID geofence state was not synchronized because the lock has no positioned GPS point yet.',
+    };
+  }
+
   async deleteCards(
     terminalId: string,
     dto: RfidCardsDto,

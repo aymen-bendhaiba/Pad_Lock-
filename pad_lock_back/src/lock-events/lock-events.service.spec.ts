@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { firstValueFrom, filter, take } from 'rxjs';
 import { LocksService } from '../locks/locks.service';
+import { PositionsService } from '../positions/positions.service';
 import { LockEventsService } from './lock-events.service';
 import {
   LockEvent,
@@ -69,6 +70,16 @@ describe('LockEventsService', () => {
       }),
     ),
   };
+  const positionsService = {
+    findLatestForLock: jest.fn(() =>
+      Promise.resolve({
+        terminalId: '8034400004',
+        latitude: 33.959875,
+        longitude: -6.863942,
+        isPositioned: true,
+      }),
+    ),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -83,6 +94,10 @@ describe('LockEventsService', () => {
         {
           provide: LocksService,
           useValue: locksService,
+        },
+        {
+          provide: PositionsService,
+          useValue: positionsService,
         },
       ],
     }).compile();
@@ -109,6 +124,8 @@ describe('LockEventsService', () => {
     });
     expect(saved.severity).toBe(LockEventSeverity.Critical);
     expect(saved.status).toBe(LockEventStatus.Unread);
+    expect(saved.latitude).toBe(33.959875);
+    expect(saved.longitude).toBe(-6.863942);
   });
 
   it('emits TCP alerts after saving them', async () => {
@@ -131,6 +148,20 @@ describe('LockEventsService', () => {
     });
     expect(saved.severity).toBe(LockEventSeverity.Warning);
     expect(saved.status).toBe(LockEventStatus.Unread);
+    expect(saved.latitude).toBe(33.959875);
+    expect(saved.longitude).toBe(-6.863942);
+  });
+
+  it('keeps explicit TCP alert coordinates instead of replacing them', async () => {
+    const saved = await service.recordFromTcp('8034400004', {
+      type: LockEventType.Vibration,
+      latitude: 34.1,
+      longitude: -7.2,
+      occurredAt: new Date('2026-06-23T10:00:00.000Z'),
+    });
+
+    expect(saved.latitude).toBe(34.1);
+    expect(saved.longitude).toBe(-7.2);
   });
 
   it('filters streamed alerts by terminal id', async () => {

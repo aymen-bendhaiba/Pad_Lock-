@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   forwardRef,
   Inject,
   GatewayTimeoutException,
@@ -23,8 +24,10 @@ import {
   GeofenceTransitionType,
 } from '../geofences/geofence-transition.entity';
 import {
+  isLimitedRfidAllowedByGeofences,
   isLockAccessAllowedByGeofence,
   isPointInGeofence,
+  normalizeGeofenceRules,
 } from '../geofences/geofence-geometry';
 import { LockEventType } from '../lock-events/lock-event.entity';
 import { LockEventsService } from '../lock-events/lock-events.service';
@@ -181,6 +184,28 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async applyCurrentGeofenceState(terminalId: string): Promise<boolean> {
+    const latestPosition =
+      await this.positionsService.findLatestForLock(terminalId);
+
+    if (!latestPosition?.isPositioned) {
+      return false;
+    }
+
+    await this.applyGeofenceRules(
+      terminalId,
+      latestPosition.latitude,
+      latestPosition.longitude,
+    );
+    await this.applyRfidGeofenceEnforcement(
+      terminalId,
+      latestPosition.latitude,
+      latestPosition.longitude,
+    );
+
+    return true;
+  }
+
   sendCommand<T>(
     terminalId: string,
     commandWord: string,
@@ -196,16 +221,15 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
 
     const timeoutMs = this.config.getOrThrow<number>('TCP_COMMAND_TIMEOUT_MS');
     const key = this.pendingKey(normalizedTerminalId, commandWord);
+    const previous = this.pendingCommandRequests.get(key);
+
+    if (previous) {
+      throw new ConflictException(
+        `${commandWord} command is already waiting for a response from lock ${normalizedTerminalId}`,
+      );
+    }
 
     return new Promise((resolve, reject) => {
-      const previous = this.pendingCommandRequests.get(key);
-      if (previous) {
-        clearTimeout(previous.timeout);
-        previous.reject(
-          new Error(`Superseded by a newer ${commandWord} request`),
-        );
-      }
-
       const timeout = setTimeout(() => {
         this.pendingCommandRequests.delete(key);
         reject(
@@ -716,16 +740,17 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
         geofence,
         inShape,
       );
+      const rules = normalizeGeofenceRules(geofence.rules);
 
       if (inShape) {
-        mergedRules.smsAllowed &&= geofence.rules.smsAllowed;
-        mergedRules.gprsAllowed &&= geofence.rules.gprsAllowed;
-        mergedRules.serialAllowed &&= geofence.rules.serialAllowed;
-        mergedRules.bluetoothAllowed &&= geofence.rules.bluetoothAllowed;
+        mergedRules.smsAllowed &&= rules.smsAllowed;
+        mergedRules.gprsAllowed &&= rules.gprsAllowed;
+        mergedRules.serialAllowed &&= rules.serialAllowed;
+        mergedRules.bluetoothAllowed &&= rules.bluetoothAllowed;
       }
 
       mergedRules.lockAccessAllowed &&=
-        lockAccessAllowed && geofence.rules.lockAccessAllowed;
+        lockAccessAllowed && rules.lockAccessAllowed;
     }
 
     const normalizedTerminalId = terminalId.toUpperCase();
@@ -809,6 +834,8 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     longitude: number,
   ): Promise<boolean> {
     const geofences = await this.findGeofencesForLock(terminalId);
+    const evaluatedGeofences: Array<{ geofence: Geofence; inShape: boolean }> =
+      [];
 
     for (const geofence of geofences) {
       const inShape = await this.isPositionInGeofence(
@@ -816,23 +843,10 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
         longitude,
         geofence,
       );
-      const accessModeAllows = this.isAccessModeAllowed(
-        latitude,
-        longitude,
-        geofence,
-        inShape,
-      );
-      const activeRuleBlocks =
-        inShape &&
-        (geofence.rules.lockAccessAllowed === false ||
-          geofence.rules.rfidAllowed === false);
-
-      if (!accessModeAllows || activeRuleBlocks) {
-        return false;
-      }
+      evaluatedGeofences.push({ geofence, inShape });
     }
 
-    return true;
+    return isLimitedRfidAllowedByGeofences(evaluatedGeofences);
   }
 
   private async findGeofencesForLock(terminalId: string): Promise<Geofence[]> {

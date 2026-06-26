@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsInt,
   IsPhoneNumber,
+  IsOptional,
   IsString,
   Matches,
   Max,
@@ -55,6 +56,21 @@ export class VipPhoneDto extends TerminalIdDto {
 
   @IsPhoneNumber()
   phoneNumber: string;
+}
+
+export class VipPhoneQueryDto extends TerminalIdDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  index?: number;
+}
+
+export class VipPhoneDeleteDto extends TerminalIdDto {
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  index: number;
 }
 
 export class VipSmsDto extends TerminalIdDto {

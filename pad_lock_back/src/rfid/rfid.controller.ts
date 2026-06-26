@@ -33,6 +33,11 @@ export class RfidController {
     return this.rfidService.addCards(terminalId, dto);
   }
 
+  @Post('sync')
+  syncCurrentGeofenceState(@Param('terminalId') terminalId: string) {
+    return this.rfidService.syncCurrentGeofenceState(terminalId);
+  }
+
   @Delete()
   deleteCards(
     @Param('terminalId') terminalId: string,

@@ -23,7 +23,7 @@ export function buildRfidQueryCommand(group: number): string {
 }
 
 export function buildStaticUnlockCommand(password: string): string {
-  return `(P43,${password})`;
+  return `(P43,${password.trim()})`;
 }
 
 export function buildClearCacheCommand(): string {
@@ -46,11 +46,11 @@ export function buildStaticPasswordModifyCommand(
   currentPassword: string,
   newPassword: string,
 ): string {
-  return `(P44,1,${currentPassword},${newPassword})`;
+  return `(P44,${newPassword},${currentPassword})`;
 }
 
 export function buildStaticPasswordQueryCommand(): string {
-  return '(P44,0)';
+  return '(P44,1)';
 }
 
 export function buildDeepSleepSetCommand(
@@ -111,6 +111,10 @@ export function buildSimConfigurationSetCommand(
 ): string {
   const operation = sim === 1 ? 1 : 3;
   return `(P06,${operation},${input.ipAddress},${input.port},${input.apn},${input.apnUser},${input.apnPassword})`;
+}
+
+export function buildSimConfigurationQueryCommand(sim: 1 | 2): string {
+  return `(P06,${sim === 1 ? 0 : 2})`;
 }
 
 export function buildReportingIntervalsSetCommand(

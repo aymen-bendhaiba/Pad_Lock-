@@ -35,20 +35,29 @@ function fixture(existing: Geofence | null = geofence()) {
     findOneBy: jest.fn().mockResolvedValue(existing),
     create: jest.fn((value: Geofence) => value),
     save: jest.fn((value: Geofence) => Promise.resolve(value)),
+    delete: jest.fn().mockResolvedValue({ affected: existing ? 1 : 0 }),
   };
   const locksRepository = {
-    find: jest.fn().mockResolvedValue([{ terminalId: '8034400004' }]),
+    find: jest
+      .fn()
+      .mockResolvedValue([
+        { terminalId: '8034400004' },
+        { terminalId: '8034400005' },
+      ]),
+  };
+  const tcpGatewayService = {
+    applyCurrentGeofenceState: jest.fn().mockResolvedValue(true),
   };
   const service = new GeofencesService(
     repository as never,
     {} as never,
     locksRepository as never,
     {} as never,
-    {} as never,
+    tcpGatewayService as never,
     {} as never,
   );
 
-  return { service, repository };
+  return { service, repository, tcpGatewayService };
 }
 
 describe('GeofencesService update', () => {
@@ -77,7 +86,7 @@ describe('GeofencesService update', () => {
   });
 
   it('updates access mode and keeps legacy applyInside aligned', async () => {
-    const { service } = fixture();
+    const { service, tcpGatewayService } = fixture();
 
     const updated = await service.update('geofence-1', {
       accessMode: GeofenceAccessMode.AllowOutside,
@@ -85,6 +94,9 @@ describe('GeofencesService update', () => {
 
     expect(updated.accessMode).toBe(GeofenceAccessMode.AllowOutside);
     expect(updated.applyInside).toBe(false);
+    expect(tcpGatewayService.applyCurrentGeofenceState).toHaveBeenCalledWith(
+      '8034400004',
+    );
   });
 
   it('merges partial checkbox rules without resetting other rules', async () => {
@@ -107,13 +119,19 @@ describe('GeofencesService update', () => {
   });
 
   it('reassigns a geofence to validated lock terminal IDs', async () => {
-    const { service } = fixture();
+    const { service, tcpGatewayService } = fixture();
 
     const updated = await service.update('geofence-1', {
-      terminalIds: ['8034400004'],
+      terminalIds: ['8034400005'],
     });
 
-    expect(updated.terminalIds).toEqual(['8034400004']);
+    expect(updated.terminalIds).toEqual(['8034400005']);
+    expect(tcpGatewayService.applyCurrentGeofenceState).toHaveBeenCalledWith(
+      '8034400004',
+    );
+    expect(tcpGatewayService.applyCurrentGeofenceState).toHaveBeenCalledWith(
+      '8034400005',
+    );
   });
 
   it('validates the final shape after partial geometry updates', async () => {
