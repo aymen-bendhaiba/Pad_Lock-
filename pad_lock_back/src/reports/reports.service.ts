@@ -649,40 +649,35 @@ export class ReportsService {
       : [context.from, context.to];
     const cte = mileageCte(hasTerminalId);
 
-    const [
-      alertRows,
-      unlockRows,
-      geoRows,
-      batteryRows,
-      mileageRows,
-    ] = await Promise.all([
-      this.dataSource.query<
-        Array<{
-          total: string;
-          unresolved: string;
-          critical: string;
-          affectedLocks: string;
-        }>
-      >(
-        `SELECT
+    const [alertRows, unlockRows, geoRows, batteryRows, mileageRows] =
+      await Promise.all([
+        this.dataSource.query<
+          Array<{
+            total: string;
+            unresolved: string;
+            critical: string;
+            affectedLocks: string;
+          }>
+        >(
+          `SELECT
            COUNT(*)::text AS total,
            COUNT(*) FILTER (WHERE status <> 'resolve')::text AS unresolved,
            COUNT(*) FILTER (WHERE severity = 'critical')::text AS critical,
            COUNT(DISTINCT "terminalId")::text AS "affectedLocks"
          FROM lock_events
          WHERE ${alertWhere}`,
-        alertFilter.parameters,
-      ),
-      this.dataSource.query<
-        Array<{
-          total: string;
-          insideSite: string;
-          byCard: string;
-          byPassword: string;
-          affectedLocks: string;
-        }>
-      >(
-        `SELECT
+          alertFilter.parameters,
+        ),
+        this.dataSource.query<
+          Array<{
+            total: string;
+            insideSite: string;
+            byCard: string;
+            byPassword: string;
+            affectedLocks: string;
+          }>
+        >(
+          `SELECT
            COUNT(*)::text AS total,
            COUNT(*) FILTER (WHERE jsonb_array_length(geofences) > 0)::text AS "insideSite",
            COUNT(*) FILTER (WHERE ${unlockMethodSql('source')} = 'rfid')::text AS "byCard",
@@ -690,18 +685,18 @@ export class ReportsService {
            COUNT(DISTINCT "terminalId")::text AS "affectedLocks"
          FROM lock_events
          WHERE ${unlockWhere}`,
-        unlockFilter.parameters,
-      ),
-      this.dataSource.query<
-        Array<{
-          totalGeofences: string;
-          entries: string;
-          exits: string;
-          unlocksInside: string;
-          affectedLocks: string;
-        }>
-      >(
-        `SELECT
+          unlockFilter.parameters,
+        ),
+        this.dataSource.query<
+          Array<{
+            totalGeofences: string;
+            entries: string;
+            exits: string;
+            unlocksInside: string;
+            affectedLocks: string;
+          }>
+        >(
+          `SELECT
            (SELECT COUNT(*) FROM geofences)::text AS "totalGeofences",
            COUNT(*) FILTER (WHERE t.type = 'enter')::text AS entries,
            COUNT(*) FILTER (WHERE t.type = 'exit')::text AS exits,
@@ -709,20 +704,20 @@ export class ReportsService {
            COUNT(DISTINCT t."terminalId")::text AS "affectedLocks"
          FROM geofence_transitions t
          WHERE ${transitionWhere}`,
-        geoBaseParams,
-      ),
-      this.dataSource.query<
-        Array<{
-          samples: string;
-          average: string | null;
-          minimum: string | null;
-          maximum: string | null;
-          lowSamples: string;
-          chargingSamples: string;
-          affectedLocks: string;
-        }>
-      >(
-        `SELECT
+          geoBaseParams,
+        ),
+        this.dataSource.query<
+          Array<{
+            samples: string;
+            average: string | null;
+            minimum: string | null;
+            maximum: string | null;
+            lowSamples: string;
+            chargingSamples: string;
+            affectedLocks: string;
+          }>
+        >(
+          `SELECT
            COUNT(*)::text AS samples,
            ROUND(AVG("batteryPercentage"), 2)::text AS average,
            MIN("batteryPercentage")::text AS minimum,
@@ -732,40 +727,58 @@ export class ReportsService {
            COUNT(DISTINCT "terminalId")::text AS "affectedLocks"
          FROM lock_positions
          WHERE ${batteryWhere}`,
-        batteryFilter.parameters,
-      ),
-      this.dataSource.query<
-        Array<{
-          totalKilometers: string;
-          affectedLocks: string;
-          movingSamples: string;
-        }>
-      >(
-        `${cte}
+          batteryFilter.parameters,
+        ),
+        this.dataSource.query<
+          Array<{
+            totalKilometers: string;
+            affectedLocks: string;
+            movingSamples: string;
+          }>
+        >(
+          `${cte}
          SELECT
            COALESCE(SUM(delta), 0)::text AS "totalKilometers",
            COUNT(DISTINCT "terminalId") FILTER (WHERE delta > 0)::text AS "affectedLocks",
            COUNT(*) FILTER (WHERE delta > 0)::text AS "movingSamples"
          FROM deltas`,
-        milParams,
-      ),
-    ]);
+          milParams,
+        ),
+      ]);
 
     const alerts = alertRows[0] ?? {
-      total: '0', unresolved: '0', critical: '0', affectedLocks: '0',
+      total: '0',
+      unresolved: '0',
+      critical: '0',
+      affectedLocks: '0',
     };
     const unlocks = unlockRows[0] ?? {
-      total: '0', insideSite: '0', byCard: '0', byPassword: '0', affectedLocks: '0',
+      total: '0',
+      insideSite: '0',
+      byCard: '0',
+      byPassword: '0',
+      affectedLocks: '0',
     };
     const geo = geoRows[0] ?? {
-      totalGeofences: '0', entries: '0', exits: '0', unlocksInside: '0', affectedLocks: '0',
+      totalGeofences: '0',
+      entries: '0',
+      exits: '0',
+      unlocksInside: '0',
+      affectedLocks: '0',
     };
     const battery = batteryRows[0] ?? {
-      samples: '0', average: null, minimum: null, maximum: null,
-      lowSamples: '0', chargingSamples: '0', affectedLocks: '0',
+      samples: '0',
+      average: null,
+      minimum: null,
+      maximum: null,
+      lowSamples: '0',
+      chargingSamples: '0',
+      affectedLocks: '0',
     };
     const mileage = mileageRows[0] ?? {
-      totalKilometers: '0', affectedLocks: '0', movingSamples: '0',
+      totalKilometers: '0',
+      affectedLocks: '0',
+      movingSamples: '0',
     };
 
     return {
@@ -798,9 +811,12 @@ export class ReportsService {
         },
         battery: {
           samples: Number(battery.samples),
-          averagePercentage: battery.average === null ? null : Number(battery.average),
-          minimumPercentage: battery.minimum === null ? null : Number(battery.minimum),
-          maximumPercentage: battery.maximum === null ? null : Number(battery.maximum),
+          averagePercentage:
+            battery.average === null ? null : Number(battery.average),
+          minimumPercentage:
+            battery.minimum === null ? null : Number(battery.minimum),
+          maximumPercentage:
+            battery.maximum === null ? null : Number(battery.maximum),
           lowSamples: Number(battery.lowSamples),
           chargingSamples: Number(battery.chargingSamples),
           affectedLocks: Number(battery.affectedLocks),

@@ -25,18 +25,26 @@ import {
   VipSmsDto,
 } from './dto/lock-command.dto';
 
+type VipPhoneResponse = {
+  success: boolean;
+  index: number;
+  phoneNumber: string;
+};
+
 @Injectable()
 export class CommandsService {
   constructor(private readonly tcpGatewayService: TcpGatewayService) {}
 
   unlock(dto: UnlockDto) {
+    const command = buildStaticUnlockCommand(dto.password);
+
     return this.tcpGatewayService.sendCommand(
       dto.terminalId,
       'P43',
-      buildStaticUnlockCommand(dto.password),
+      command,
       (parts) => ({
-        success: parts[2] === '1',
-        errors: parts[3] ?? '0',
+        command,
+        ...parseStaticUnlock(parts),
       }),
     );
   }
@@ -121,13 +129,20 @@ export class CommandsService {
     );
   }
 
-  setVipPhone(dto: VipPhoneDto) {
-    return this.tcpGatewayService.sendCommand(
+  async setVipPhone(dto: VipPhoneDto) {
+    const response = await this.tcpGatewayService.sendCommand(
       dto.terminalId,
       'P11',
       buildVipPhoneSetCommand(dto.index, dto.phoneNumber),
       parseVipPhone,
     );
+    const smsAlerts = await this.setVipSmsSlot(dto.terminalId, dto.index, 1);
+
+    return {
+      ...response,
+      smsAlertEnabled: true,
+      smsAlerts,
+    };
   }
 
   queryVipPhone(terminalId: string, index: number) {
@@ -137,6 +152,42 @@ export class CommandsService {
       buildVipPhoneQueryCommand(index),
       parseVipPhone,
     );
+  }
+
+  async queryVipPhones(terminalId: string, index?: number) {
+    if (index !== undefined) {
+      return this.queryVipPhone(terminalId, index);
+    }
+
+    const phones: VipPhoneResponse[] = [];
+
+    for (const slot of [1, 2, 3, 4, 5]) {
+      phones.push(await this.queryVipPhone(terminalId, slot));
+    }
+
+    return {
+      success: true,
+      terminalId: terminalId.toUpperCase(),
+      phones,
+    };
+  }
+
+  async deleteVipPhone(terminalId: string, index: number) {
+    const response = await this.tcpGatewayService.sendCommand(
+      terminalId,
+      'P11',
+      buildVipPhoneSetCommand(index, ''),
+      parseVipPhone,
+    );
+    const smsAlerts = await this.setVipSmsSlot(terminalId, index, 0);
+
+    return {
+      ...response,
+      deleted: true,
+      phoneNumber: '',
+      smsAlertEnabled: false,
+      smsAlerts,
+    };
   }
 
   setVipSms(dto: VipSmsDto) {
@@ -156,6 +207,50 @@ export class CommandsService {
       parseVipSms,
     );
   }
+
+  private async setVipSmsSlot(terminalId: string, index: number, value: 0 | 1) {
+    const current = await this.queryVipSms(terminalId);
+    const flags: [number, number, number, number, number] = [
+      current.vip1,
+      current.vip2,
+      current.vip3,
+      current.vip4,
+      current.vip5,
+    ];
+    flags[index - 1] = value;
+
+    return this.tcpGatewayService.sendCommand(
+      terminalId,
+      'P12',
+      buildVipSmsSetCommand(flags),
+      parseVipSms,
+    );
+  }
+}
+
+function parseStaticUnlock(parts: string[]) {
+  const resultCode = parts[2] ?? parts[1] ?? '0';
+  const errorCode = parts[3] ?? null;
+  const success = resultCode === '1';
+
+  return {
+    success,
+    resultCode,
+    errorCode,
+    message: success
+      ? 'Unlock command accepted by the lock.'
+      : unlockFailureMessage(resultCode, errorCode),
+  };
+}
+
+function unlockFailureMessage(resultCode: string, errorCode: string | null) {
+  if (resultCode === '0') {
+    return 'Unlock command was rejected or failed on the lock. Check the static password, lock state, and whether lock access is currently blocked by device settings.';
+  }
+
+  return errorCode
+    ? `Unlock command failed with result ${resultCode} and error ${errorCode}.`
+    : `Unlock command failed with result ${resultCode}.`;
 }
 
 function parseBatteryThreshold(parts: string[]) {

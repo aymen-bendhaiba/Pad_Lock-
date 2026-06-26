@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
   Geofence,
   GeofenceAccessMode,
@@ -7,18 +7,21 @@ import {
 import { RfidCardRole, RfidCardSyncStatus } from '../rfid/rfid-card.entity';
 import { TcpGatewayService } from './tcp-gateway.service';
 
-function geofence(accessMode: GeofenceAccessMode): Geofence {
+function geofence(
+  accessMode: GeofenceAccessMode,
+  overrides: Partial<Geofence> = {},
+): Geofence {
   return {
-    id: 'geofence-1',
+    id: overrides.id ?? 'geofence-1',
     name: 'Test geofence',
     terminalIds: ['8034400004'],
     geoBoundaryId: null,
     shapeType: GeofenceShapeType.Circle,
-    coordinates: [{ lat: 33, lng: -7 }],
-    radiusMeters: 100,
+    coordinates: overrides.coordinates ?? [{ lat: 33, lng: -7 }],
+    radiusMeters: overrides.radiusMeters ?? 100,
     applyInside: accessMode === GeofenceAccessMode.AllowInside,
     accessMode,
-    rules: {
+    rules: overrides.rules ?? {
       smsAllowed: true,
       gprsAllowed: true,
       rfidAllowed: true,
@@ -55,7 +58,7 @@ function serviceFixture(input: {
     find: jest.fn().mockResolvedValue(input.geofences ?? []),
   };
   const service = new TcpGatewayService(
-    { getOrThrow: jest.fn() },
+    { getOrThrow: jest.fn().mockReturnValue(5000) },
     {} as never,
     {} as never,
     {
@@ -91,6 +94,23 @@ function serviceFixture(input: {
 }
 
 describe('TcpGatewayService RFID geofence enforcement', () => {
+  it('defaults missing geofence rule channels to allowed when applying P59', async () => {
+    const partialRulesGeofence = geofence(GeofenceAccessMode.AllowInside, {
+      rules: { lockAccessAllowed: true } as Geofence['rules'],
+    });
+    const { service } = serviceFixture({
+      geofences: [partialRulesGeofence],
+    });
+    const socket = {
+      write: jest.fn(),
+    };
+    service['connectedDevices'].set('8034400004', socket as never);
+
+    await service['applyGeofenceRules']('8034400004', 33, -7);
+
+    expect(socket.write).toHaveBeenCalledWith('(P59,1,1,1,1,1,1)');
+  });
+
   it('removes installed limited cards when access is blocked inside allow_outside geofence', async () => {
     const { service, rfidCardsRepository, sendRfidCommandMock } =
       serviceFixture({
@@ -116,6 +136,26 @@ describe('TcpGatewayService RFID geofence enforcement', () => {
   it('restores limited cards when access becomes allowed again', async () => {
     const { service, sendRfidCommandMock } = serviceFixture({
       geofences: [geofence(GeofenceAccessMode.AllowInside)],
+      cards: [{ cardNumber: '1234567890', installedOnLock: false }],
+    });
+
+    await service['applyRfidGeofenceEnforcement']('8034400004', 33, -7);
+
+    expect(sendRfidCommandMock).toHaveBeenCalledWith(
+      '8034400004',
+      '(P41,1,1,1,1234567890)',
+    );
+  });
+
+  it('restores limited cards when inside one of several allow_inside geofences', async () => {
+    const { service, sendRfidCommandMock } = serviceFixture({
+      geofences: [
+        geofence(GeofenceAccessMode.AllowInside, { id: 'inside-zone' }),
+        geofence(GeofenceAccessMode.AllowInside, {
+          id: 'other-zone',
+          coordinates: [{ lat: 34, lng: -7 }],
+        }),
+      ],
       cards: [{ cardNumber: '1234567890', installedOnLock: false }],
     });
 
@@ -167,5 +207,38 @@ describe('TcpGatewayService RFID geofence enforcement', () => {
     await service['applyRfidGeofenceEnforcement']('8034400004', 33, -7);
 
     expect(sendRfidCommandMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('TcpGatewayService command requests', () => {
+  it('rejects duplicate pending commands with a conflict instead of superseding the first request', async () => {
+    const { service } = serviceFixture({});
+    const socket = {
+      write: jest.fn(),
+    };
+    service['connectedDevices'].set('8034400004', socket as never);
+
+    const first = service.sendCommand(
+      '8034400004',
+      'P43',
+      '(P43,888888)',
+      () => ({ success: true }),
+    );
+
+    expect(() =>
+      service.sendCommand('8034400004', 'P43', '(P43,888888)', () => ({
+        success: true,
+      })),
+    ).toThrow(ConflictException);
+
+    expect(socket.write).toHaveBeenCalledTimes(1);
+
+    const pending = service['pendingCommandRequests'].get('8034400004:P43');
+    expect(pending).toBeDefined();
+    clearTimeout(pending?.timeout);
+    service['pendingCommandRequests'].delete('8034400004:P43');
+    pending?.resolve({ success: true });
+
+    await expect(first).resolves.toEqual({ success: true });
   });
 });
