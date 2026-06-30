@@ -1,36 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pad Lock Frontend
 
-## Getting Started
+Frontend web pour la supervision et la gestion des cadenas connectes Pad Lock.
 
-First, run the development server:
+## Demarrage
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Par defaut, l'application utilise l'API definie par `NEXT_PUBLIC_API_BASE_URL`. Si la variable n'est pas definie, le fallback actuel est dans `lib/api.ts`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Documentation
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- [Documentation frontend](docs/FRONTEND_DOCUMENTATION.md)
+- [Pourquoi on utilise chaque element](docs/WHY_WE_USE_THIS.md)
 
-## Learn More
+## Commandes utiles
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Les dossiers/fichiers generes comme `.next` et `tsconfig.tsbuildinfo` ne doivent pas etre gardes dans le projet. Ils sont recrees automatiquement par Next.js et TypeScript.

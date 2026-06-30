@@ -370,16 +370,6 @@ export async function getGeoBoundaries<T = unknown>(
   return cachedApiJson<T>(buildGeoBoundaryPath(query), force);
 }
 
-export async function getGeoBoundaryById<T = unknown>(id: string) {
-  const response = await apiFetch(`/geo-boundaries/${encodeURIComponent(id)}`);
-
-  if (!response.ok) {
-    throw new Error("Impossible de charger cette zone geographique. Reessayez dans quelques instants.");
-  }
-
-  return (await response.json()) as T;
-}
-
 export async function warmAppCache() {
   const token = getStoredAccessToken();
 

@@ -14,6 +14,13 @@ import {
 import "leaflet/dist/leaflet.css";
 import type { LiveMapAsset, LiveMapPlaybackPoint } from "./live-map-data";
 
+const STREET_LAYER = {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxNativeZoom: 19,
+  maxZoom: 19,
+  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+};
+
 const SATELLITE_LAYER = {
   attribution: "Tiles &copy; Esri",
   maxNativeZoom: 17,
@@ -22,6 +29,7 @@ const SATELLITE_LAYER = {
 };
 
 const MIN_MAP_ZOOM = 3;
+type MapLayerMode = "street" | "satellite";
 
 const markerIconCache = new globalThis.Map<string, DivIcon>();
 
@@ -244,6 +252,25 @@ function FitVisibleAssets({ assets }: { assets: LiveMapAsset[] }) {
   return null;
 }
 
+function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerMode; onLayerChange: (layer: MapLayerMode) => void }) {
+  return (
+    <div className="leaflet-top leaflet-right">
+      <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
+        {[{ key: "street" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onLayerChange(item.key)}
+            className={"h-8 rounded-[6px] px-3 transition " + (activeLayer === item.key ? "bg-[#111827] text-white" : "text-[#475569] hover:bg-[#f3f7fa]")}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MapControls() {
   const map = useMap();
 
@@ -420,25 +447,28 @@ type LiveMapViewProps = {
 
 export function LiveMapView({ assets, playbackPoints, playbackIndex, playbackAsset, isPlaybackOpen }: LiveMapViewProps) {
   const positionedAssets = useMemo(() => assets.filter((asset) => asset.position), [assets]);
+  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("satellite");
+  const tileLayer = activeLayer === "street" ? STREET_LAYER : SATELLITE_LAYER;
 
   return (
     <MapContainer
       center={[31.7917, -7.0926]}
       zoom={6}
       minZoom={MIN_MAP_ZOOM}
-      maxZoom={SATELLITE_LAYER.maxZoom}
+      maxZoom={tileLayer.maxZoom}
       scrollWheelZoom
       zoomControl={false}
       className="absolute inset-0 z-0"
       worldCopyJump
     >
       <TileLayer
-        attribution={SATELLITE_LAYER.attribution}
-        maxNativeZoom={SATELLITE_LAYER.maxNativeZoom}
-        maxZoom={SATELLITE_LAYER.maxZoom}
-        url={SATELLITE_LAYER.url}
+        attribution={tileLayer.attribution}
+        maxNativeZoom={tileLayer.maxNativeZoom}
+        maxZoom={tileLayer.maxZoom}
+        url={tileLayer.url}
       />
       <MapControls />
+      <MapLayerSwitch activeLayer={activeLayer} onLayerChange={setActiveLayer} />
       {!playbackPoints.length ? <FitVisibleAssets assets={assets} /> : null}
       <AssetFocusHandler />
       <PlaybackOverlay points={playbackPoints} index={playbackIndex} playbackAsset={playbackAsset} />
