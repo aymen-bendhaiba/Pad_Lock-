@@ -436,9 +436,7 @@ Common error responses:
 ```json
 {
   "statusCode": 400,
-  "message": [
-    "trackingUploadIntervalSeconds must not be less than 5"
-  ],
+  "message": ["trackingUploadIntervalSeconds must not be less than 5"],
   "error": "Bad Request"
 }
 ```
@@ -527,16 +525,27 @@ Dashboard summary:
 
 - `GET /api/dashboard/summary` returns KPI cards and chart-ready data for the dashboard.
 - Optional query params: `from`, `to`, and `terminalId`.
-- Date range filtering applies to position-derived KPIs, lock activity, alarm count, and top alarms.
+- Date range filtering applies to position-derived KPIs, lock activity, alarm count, top alarms, RFID usage, and trip heatmap rows.
 - `terminalId` scopes every dashboard metric, including lock status and RFID synchronization.
 - `totalAssets`, `online`, `offline`, and `connectionStatus` are current snapshot values.
-- The response includes `kpis`, `connectionStatus`, `lockActivity`, `topAlarms`, `lockStateDistribution`, and `rfidSyncStatus`.
+- The response includes `kpis`, `connectionStatus`, `lockActivity`, `topAlarms`, `lockStateDistribution`, `rfidSyncStatus`, `topRfidCards`, `tripHeatmap`, and `heatMapTracks`.
+- `lockActivity.summary` contains alert, stopped/locked, and unlocked counts for the period; `lockActivity.ranking` gives the most common event types.
+- `topRfidCards` gives the most-used card numbers with label/role when known.
+- `tripHeatmap` groups lock/unlock activity by the geofence name stored on each event, with `Outside geofences` as the fallback.
+- `heatMapTracks` is the frontend-friendly heatmap list. Each item includes compatible aliases: `location/value`, `city/count`, `place/activity`, and `name/events`.
 
 Example:
 
 ```http
 GET /api/dashboard/summary?terminalId=8034400004&from=2026-06-01T00:00:00.000Z&to=2026-06-22T23:59:59.999Z
 ```
+
+Dashboard demo data:
+
+- Run `npm run seed:dashboard` to create dynamic demo data for the dashboard in the configured database.
+- The seed creates demo locks `DEMOLOCK001` through `DEMOLOCK008`, 30 days of positions, lock/unlock events, alerts, RFID cards, and demo geofences.
+- Rerunning the command refreshes only this demo dataset; it deletes and recreates records owned by the `DEMOLOCK` terminal IDs and geofences named `Demo ...`.
+- The frontend can test global metrics with `GET /api/dashboard/summary` or one lock with `GET /api/dashboard/summary?terminalId=DEMOLOCK001`.
 
 Realtime alerts:
 

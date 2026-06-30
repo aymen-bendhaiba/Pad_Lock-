@@ -23,13 +23,32 @@ describe('DashboardService', () => {
           { terminalId: '8034400004', speedKmh: 10, isLocked: true },
         ],
         alarmCount: '2',
+        stoppedCount: '1',
+        unlockedCount: '1',
+        totalActivities: '4',
         activityRows: [{ day: '2026-06-01', moving: '1', idle: '0' }],
+        eventTypeRows: [
+          { type: 'low_battery', count: '2' },
+          { type: 'locked', count: '1' },
+          { type: 'unlocked', count: '1' },
+        ],
         topAlarms: [{ type: 'low_battery', count: '2' }],
         syncRows: [{ status: 'synced', count: '1' }],
+        topRfidCards: [
+          {
+            cardNumber: '0006950824',
+            label: 'Admin card',
+            role: 'admin',
+            uses: '8',
+          },
+        ],
+        tripHeatmapRows: [
+          { name: 'Casablanca', locked: '2', unlocked: '3', total: '5' },
+        ],
       },
     ]);
 
-    await service.summary({
+    const response = await service.summary({
       from: '2026-06-01T00:00:00.000Z',
       to: '2026-06-02T00:00:00.000Z',
     });
@@ -42,6 +61,34 @@ describe('DashboardService', () => {
       [from, to],
     );
     expect(dataSource.query).toHaveBeenCalledTimes(1);
+    expect(response.lockActivity.summary).toEqual({
+      alarms: 2,
+      stopped: 1,
+      unlocked: 1,
+    });
+    expect(response.topRfidCards).toEqual([
+      {
+        cardNumber: '0006950824',
+        label: 'Admin card',
+        role: 'admin',
+        uses: 8,
+      },
+    ]);
+    expect(response.tripHeatmap).toEqual([
+      { name: 'Casablanca', locked: 2, unlocked: 3, total: 5 },
+    ]);
+    expect(response.heatMapTracks).toEqual([
+      {
+        location: 'Casablanca',
+        value: 5,
+        city: 'Casablanca',
+        count: 5,
+        place: 'Casablanca',
+        activity: 5,
+        name: 'Casablanca',
+        events: 5,
+      },
+    ]);
   });
 
   it('pushes the terminal filter into every dashboard data source', async () => {
@@ -53,9 +100,15 @@ describe('DashboardService', () => {
         unknown: '0',
         latestPositions: [],
         alarmCount: '0',
+        stoppedCount: '0',
+        unlockedCount: '0',
+        totalActivities: '0',
         activityRows: [],
+        eventTypeRows: [],
         topAlarms: [],
         syncRows: [],
+        topRfidCards: [],
+        tripHeatmapRows: [],
       },
     ]);
 

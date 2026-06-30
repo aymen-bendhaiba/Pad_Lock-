@@ -33,10 +33,10 @@ export class GeoBoundary {
   @Column({ type: 'varchar', length: 160, nullable: true })
   continent: string | null;
 
-  @Column({ type: 'jsonb' })
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
   bbox: number[];
 
-  @Column({ type: 'jsonb' })
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
   metadata: Record<string, unknown>;
 
   @Column({
