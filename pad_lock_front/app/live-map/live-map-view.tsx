@@ -14,11 +14,11 @@ import {
 import "leaflet/dist/leaflet.css";
 import type { LiveMapAsset, LiveMapPlaybackPoint } from "./live-map-data";
 
-const STREET_LAYER = {
-  attribution: '&copy; OpenStreetMap contributors',
-  maxNativeZoom: 19,
-  maxZoom: 19,
-  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+const PLAN_LAYER = {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  maxNativeZoom: 20,
+  maxZoom: 20,
+  url: "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
 };
 
 const SATELLITE_LAYER = {
@@ -29,7 +29,7 @@ const SATELLITE_LAYER = {
 };
 
 const MIN_MAP_ZOOM = 3;
-type MapLayerMode = "street" | "satellite";
+type MapLayerMode = "plan" | "satellite";
 
 const markerIconCache = new globalThis.Map<string, DivIcon>();
 
@@ -256,7 +256,7 @@ function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerM
   return (
     <div className="leaflet-top leaflet-right">
       <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
-        {[{ key: "street" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
+        {[{ key: "plan" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
           <button
             key={item.key}
             type="button"
@@ -323,20 +323,31 @@ function PlaybackOverlay({
   const map = useMap();
   const positions = useMemo(() => points.map((point) => point.position), [points]);
   const activePoint = points[index];
+  const displayPosition = activePoint?.position ?? positions[0] ?? playbackAsset?.position;
   const fittedRouteKey = useRef("");
-  const routeKey = useMemo(() => positions.map((position) => position.join(",")).join("|"), [positions]);
+  const routeKey = useMemo(
+    () => positions.length ? positions.map((position) => position.join(",")).join("|") : playbackAsset?.id ?? "",
+    [playbackAsset?.id, positions],
+  );
 
   useEffect(() => {
-    if (positions.length > 1 && fittedRouteKey.current !== routeKey) {
-      fittedRouteKey.current = routeKey;
-      const bounds = new LatLngBounds(positions);
-      map.fitBounds(bounds, { padding: [70, 70], maxZoom: Math.min(map.getZoom() || 15, 15) });
+    if (fittedRouteKey.current === routeKey) {
+      return;
     }
 
-    if (!positions.length) {
-      fittedRouteKey.current = "";
+    fittedRouteKey.current = routeKey;
+
+    if (positions.length > 1) {
+      map.fitBounds(new LatLngBounds(positions), { padding: [70, 70], maxZoom: 15 });
+      return;
     }
-  }, [map, positions, routeKey]);
+
+    const target = positions[0] ?? playbackAsset?.position;
+
+    if (target) {
+      map.flyTo(target, Math.max(map.getZoom(), 15), { animate: true, duration: 0.8 });
+    }
+  }, [map, playbackAsset?.position, positions, routeKey]);
 
   useEffect(() => {
     if (activePoint) {
@@ -344,7 +355,7 @@ function PlaybackOverlay({
     }
   }, [activePoint, map]);
 
-  if (!positions.length) {
+  if (!displayPosition) {
     return null;
   }
 
@@ -357,19 +368,18 @@ function PlaybackOverlay({
         />
       ) : null}
       <Marker
-        position={activePoint?.position ?? positions[0]}
+        position={displayPosition}
         icon={markerIcon(playbackAsset?.color ?? "#2563eb", playbackAsset?.lock ?? "Locked")}
       >
         <Popup closeButton={false} className="fleet-asset-popup">
           <div className="rounded-[8px] bg-white px-3 py-2 text-[12px] font-semibold text-[#111827]">
-            {activePoint?.placeName ?? "Position de playback"}
+            {activePoint?.placeName ?? playbackAsset?.name ?? "Position de playback"}
           </div>
         </Popup>
       </Marker>
     </>
   );
 }
-
 function AssetPopupContent({ asset, shouldResolveLocation }: { asset: LiveMapAsset; shouldResolveLocation: boolean }) {
   const rawBackendLocation = asset.deviceDetails.find((detail) => detail.label === "Location")?.value;
   const backendLocation = isDeviceNameLocation(rawBackendLocation, asset) ? undefined : rawBackendLocation;
@@ -447,8 +457,8 @@ type LiveMapViewProps = {
 
 export function LiveMapView({ assets, playbackPoints, playbackIndex, playbackAsset, isPlaybackOpen }: LiveMapViewProps) {
   const positionedAssets = useMemo(() => assets.filter((asset) => asset.position), [assets]);
-  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("satellite");
-  const tileLayer = activeLayer === "street" ? STREET_LAYER : SATELLITE_LAYER;
+  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("plan");
+  const tileLayer = activeLayer === "plan" ? PLAN_LAYER : SATELLITE_LAYER;
 
   return (
     <MapContainer
@@ -472,7 +482,7 @@ export function LiveMapView({ assets, playbackPoints, playbackIndex, playbackAss
       {!playbackPoints.length ? <FitVisibleAssets assets={assets} /> : null}
       <AssetFocusHandler />
       <PlaybackOverlay points={playbackPoints} index={playbackIndex} playbackAsset={playbackAsset} />
-      <AssetMarkers assets={positionedAssets} hiddenAssetId={isPlaybackOpen && playbackPoints.length ? playbackAsset?.id : undefined} />
+      <AssetMarkers assets={isPlaybackOpen ? [] : positionedAssets} />
     </MapContainer>
   );
 }

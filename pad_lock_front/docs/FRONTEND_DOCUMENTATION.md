@@ -23,7 +23,7 @@ npm install
 npm run dev
 ```
 
-Build et verification:
+Build et verification:x1
 
 ```bash
 npm run build

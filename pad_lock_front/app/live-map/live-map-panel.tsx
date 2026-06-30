@@ -304,13 +304,17 @@ function formatBatteryDetail(value: string) {
   return `${Math.max(0, Math.min(100, Math.round(Number(value))))}%`;
 }
 
-function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord) {
+function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)) {
   const details: { label: string; value: string }[] = [];
   const usedKeys = new Set<string>(["lat", "latitude", "lng", "lon", "long", "longitude", "gpsLat", "gpsLatitude", "gpsLng", "gpsLon", "gpsLongitude", "x", "y", "coordinates", "coords"]);
   const locationName = extractPlaceName(record) ?? (lock ? extractPlaceName(lock) : undefined);
 
   if (locationName) {
     details.push({ label: "Location", value: locationName });
+  }
+
+  if (!telemetryAvailable) {
+    details.push({ label: "Connexion", value: "Hors ligne" });
   }
   const preferredFields: { label: string; keys: string[] }[] = [
     { label: "Terminal ID", keys: ["terminalId", "terminalID", "deviceId", "lockId", "id"] },
@@ -323,8 +327,12 @@ function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord) {
   ];
 
   for (const field of preferredFields) {
-    const detail = readDeviceDetailValue(record, field.keys);
+    if (!telemetryAvailable && ["Status", "Battery", "Locked", "Speed"].includes(field.label)) {
+      field.keys.forEach((fieldKey) => usedKeys.add(fieldKey));
+      continue;
+    }
 
+    const detail = readDeviceDetailValue(record, field.keys);
     if (detail) {
       details.push({
         label: field.label,
@@ -370,8 +378,30 @@ function hasActiveAlert(terminalId: string, alerts: ApiRecord[]) {
     return alertTerminalId(alert) === terminalId && !["read", "resolved", "closed"].includes(status ?? "");
   });
 }
+function isTelemetryAvailable(record: ApiRecord | null | undefined, lock?: ApiRecord | null) {
+  const telemetryFlag = readNestedBoolean(record, ["telemetryAvailable"])
+    ?? readNestedBoolean(lock, ["telemetryAvailable"]);
 
-function normalizeBattery(record: ApiRecord, lock?: ApiRecord) {
+  if (telemetryFlag === false) {
+    return false;
+  }
+
+  const connectionStatus = (readNestedString(record, ["connectionStatus"])
+    ?? readNestedString(lock, ["connectionStatus"]))?.toLowerCase();
+
+  if (connectionStatus && ["not_connected_over_tcp", "offline", "disconnected"].includes(connectionStatus)) {
+    return false;
+  }
+
+  const online = readNestedBoolean(record, ["online", "isOnline", "connected"])
+    ?? readNestedBoolean(lock, ["online", "isOnline", "connected"]);
+
+  return online !== false;
+}
+function normalizeBattery(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)) {
+  if (!telemetryAvailable) {
+    return "--";
+  }
   const raw = readNestedString(record, ["battery", "batteryLevel", "power", "batteryPercent"])
     ?? readNestedString(lock, ["battery", "batteryLevel", "power", "batteryPercent"]);
 
@@ -411,7 +441,10 @@ function normalizeSignal(record: ApiRecord, lock?: ApiRecord) {
   return value >= 70 ? "Excellent" : value >= 40 ? "Moyen" : "Faible";
 }
 
-function normalizeLockState(record: ApiRecord, lock?: ApiRecord): LiveMapLockState {
+function normalizeLockState(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)): LiveMapLockState {
+  if (!telemetryAvailable) {
+    return "Unknown";
+  }
   const raw = readNestedString(record, ["lock", "lockState", "locked", "statusLock"])
     ?? readNestedString(lock, ["lock", "lockState", "locked", "statusLock"]);
   const bool = readNestedBoolean(record, ["locked", "isLocked"])
@@ -428,7 +461,11 @@ function normalizeLockState(record: ApiRecord, lock?: ApiRecord): LiveMapLockSta
   return "Unknown";
 }
 
-function normalizeStatus(record: ApiRecord, activeAlert: boolean): LiveMapStatus {
+function normalizeStatus(record: ApiRecord, activeAlert: boolean, telemetryAvailable = isTelemetryAvailable(record)): LiveMapStatus {
+  if (!telemetryAvailable) {
+    return "Offline";
+  }
+
   if (activeAlert) {
     return "Alarm";
   }
@@ -467,12 +504,13 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
   const terminalId = getTerminalId(record);
   const lock = locksByTerminal.get(terminalId);
   const activeAlert = hasActiveAlert(terminalId, alerts);
-  const status = normalizeStatus(record, activeAlert);
+  const telemetryAvailable = isTelemetryAvailable(record, lock);
+  const status = normalizeStatus(record, activeAlert, telemetryAvailable);
   const name = readString(record, ["name", "assetName", "deviceName", "label"])
     ?? readString(lock, ["name", "assetName", "deviceName", "label"])
     ?? `Cadenas-${terminalId}`;
 
-  const deviceDetails = buildDeviceDetails(record, lock);
+  const deviceDetails = buildDeviceDetails(record, lock, telemetryAvailable);
   const batteryFromDevice = deviceDetails.find((detail) => detail.label === "Battery")?.value;
 
   return {
@@ -482,9 +520,9 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
     code: terminalId,
     status,
     color: LIVE_MAP_COLORS[status],
-    battery: batteryFromDevice ?? normalizeBattery(record, lock),
+    battery: batteryFromDevice ?? normalizeBattery(record, lock, telemetryAvailable),
     signal: normalizeSignal(record, lock),
-    lock: normalizeLockState(record, lock),
+    lock: normalizeLockState(record, lock, telemetryAvailable),
     position: extractPosition(record) ?? (lock ? extractPosition(lock) : undefined),
     updatedAt: readString(record, ["updatedAt", "lastSeenAt", "timestamp", "createdAt"]),
     deviceDetails,

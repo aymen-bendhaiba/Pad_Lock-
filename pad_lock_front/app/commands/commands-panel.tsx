@@ -135,7 +135,31 @@ function keyByTerminal(rows: ApiRecord[]) {
   return new Map(rows.map((row) => [terminalId(row), row]));
 }
 
-function normalizeBattery(record: ApiRecord, lock?: ApiRecord) {
+
+function isTelemetryAvailable(record: ApiRecord | null | undefined, lock?: ApiRecord | null) {
+  const telemetryFlag = readBoolean(record, ["telemetryAvailable"])
+    ?? readBoolean(lock, ["telemetryAvailable"]);
+
+  if (telemetryFlag === false) {
+    return false;
+  }
+
+  const connectionStatus = (readString(record, ["connectionStatus"])
+    ?? readString(lock, ["connectionStatus"]))?.toLowerCase();
+
+  if (connectionStatus && ["not_connected_over_tcp", "offline", "disconnected"].includes(connectionStatus)) {
+    return false;
+  }
+
+  const online = readBoolean(record, ["online", "isOnline", "connected"])
+    ?? readBoolean(lock, ["online", "isOnline", "connected"]);
+
+  return online !== false;
+}
+function normalizeBattery(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)) {
+  if (!telemetryAvailable) {
+    return { label: "--", value: null };
+  }
   const raw = readString(record, ["battery", "batteryLevel", "power", "batteryPercent"])
     ?? readString(lock, ["battery", "batteryLevel", "power", "batteryPercent"]);
   const matchValue = raw?.match(/\d+(?:\.\d+)?/)?.[0];
@@ -149,7 +173,10 @@ function normalizeBattery(record: ApiRecord, lock?: ApiRecord) {
   return { label: String(normalized).padStart(2, "0") + "%", value: normalized };
 }
 
-function normalizeLock(record: ApiRecord, lock?: ApiRecord): CommandDevice["lock"] {
+function normalizeLock(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)): CommandDevice["lock"] {
+  if (!telemetryAvailable) {
+    return "Unknown";
+  }
   const raw = readString(record, ["lock", "lockState", "locked", "statusLock"])
     ?? readString(lock, ["lock", "lockState", "locked", "statusLock"]);
   const locked = readBoolean(record, ["locked", "isLocked"])
@@ -160,7 +187,10 @@ function normalizeLock(record: ApiRecord, lock?: ApiRecord): CommandDevice["lock
   return "Unknown";
 }
 
-function normalizeStatus(record: ApiRecord, lock?: ApiRecord): CommandDevice["status"] {
+function normalizeStatus(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)): CommandDevice["status"] {
+  if (!telemetryAvailable) {
+    return "Offline";
+  }
   const raw = readString(record, ["status", "state", "movementStatus", "motion", "online"])
     ?? readString(lock, ["status", "state", "movementStatus", "motion", "online"]);
   const online = readBoolean(record, ["online", "isOnline", "connected"])
@@ -179,7 +209,8 @@ function normalizeStatus(record: ApiRecord, lock?: ApiRecord): CommandDevice["st
 
 function normalizeDevice(record: ApiRecord, lock?: ApiRecord): CommandDevice {
   const id = terminalId(record);
-  const battery = normalizeBattery(record, lock);
+  const telemetryAvailable = isTelemetryAvailable(record, lock);
+  const battery = normalizeBattery(record, lock, telemetryAvailable);
 
   return {
     terminalId: id,
@@ -188,8 +219,8 @@ function normalizeDevice(record: ApiRecord, lock?: ApiRecord): CommandDevice {
       ?? "Cadenas-" + id,
     battery: battery.label,
     batteryValue: battery.value,
-    status: normalizeStatus(record, lock),
-    lock: normalizeLock(record, lock),
+    status: normalizeStatus(record, lock, telemetryAvailable),
+    lock: normalizeLock(record, lock, telemetryAvailable),
   };
 }
 

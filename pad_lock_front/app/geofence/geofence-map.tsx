@@ -18,13 +18,13 @@ import type { LatLngTuple, LockMapAsset, SavedGeofence } from "./geofence-types"
 
 const moroccoCenter: LatLngExpression = [31.7917, -7.0926];
 
-type MapLayerMode = "street" | "satellite";
+type MapLayerMode = "plan" | "satellite";
 
-const STREET_LAYER = {
-  attribution: "&copy; OpenStreetMap contributors",
-  maxNativeZoom: 19,
-  maxZoom: 19,
-  url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+const PLAN_LAYER = {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  maxNativeZoom: 20,
+  maxZoom: 20,
+  url: "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
 };
 
 const SATELLITE_LAYER = {
@@ -115,7 +115,7 @@ function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerM
   return (
     <div className="leaflet-top leaflet-right">
       <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
-        {[{ key: "street" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
+        {[{ key: "plan" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
           <button
             key={item.key}
             type="button"
@@ -145,8 +145,8 @@ export function GeofenceMap({
   countryRings,
   lockAssets,
 }: GeofenceMapProps) {
-  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("satellite");
-  const tileLayer = activeLayer === "street" ? STREET_LAYER : SATELLITE_LAYER;
+  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("plan");
+  const tileLayer = activeLayer === "plan" ? PLAN_LAYER : SATELLITE_LAYER;
 
   return (
     <MapContainer
@@ -243,8 +243,8 @@ export function GeofenceMap({
               key={`saved-ring-${geofence.id}-${index}`}
               positions={ring}
               pathOptions={{
-                color: geofence.id === selectedGeofenceId ? "#0f766e" : "#2563eb",
-                fillColor: geofence.id === selectedGeofenceId ? "#2A9D90" : "#60a5fa",
+                color: geofence.id === selectedGeofenceId ? "#7c3aed" : "#f97316",
+                fillColor: geofence.id === selectedGeofenceId ? "#8b5cf6" : "#fb923c",
                 fillOpacity: 0.16,
                 weight: geofence.id === selectedGeofenceId ? 3 : 2,
               }}
@@ -256,8 +256,8 @@ export function GeofenceMap({
             center={geofence.points[0]}
             radius={geofence.radiusMeters}
             pathOptions={{
-              color: geofence.id === selectedGeofenceId ? "#0f766e" : "#2563eb",
-              fillColor: geofence.id === selectedGeofenceId ? "#2A9D90" : "#60a5fa",
+              color: geofence.id === selectedGeofenceId ? "#7c3aed" : "#f97316",
+              fillColor: geofence.id === selectedGeofenceId ? "#8b5cf6" : "#fb923c",
               fillOpacity: 0.16,
               weight: geofence.id === selectedGeofenceId ? 3 : 2,
             }}
@@ -267,7 +267,7 @@ export function GeofenceMap({
             key={`saved-route-${geofence.id}`}
             positions={geofence.points}
             pathOptions={{
-              color: geofence.id === selectedGeofenceId ? "#0f766e" : "#2563eb",
+              color: geofence.id === selectedGeofenceId ? "#7c3aed" : "#f97316",
               weight: geofence.id === selectedGeofenceId ? 5 : 3,
             }}
           />
@@ -276,8 +276,8 @@ export function GeofenceMap({
             key={`saved-polygon-${geofence.id}`}
             positions={geofence.points}
             pathOptions={{
-              color: geofence.id === selectedGeofenceId ? "#0f766e" : "#2563eb",
-              fillColor: geofence.id === selectedGeofenceId ? "#2A9D90" : "#60a5fa",
+              color: geofence.id === selectedGeofenceId ? "#7c3aed" : "#f97316",
+              fillColor: geofence.id === selectedGeofenceId ? "#8b5cf6" : "#fb923c",
               fillOpacity: 0.16,
               weight: geofence.id === selectedGeofenceId ? 3 : 2,
             }}
