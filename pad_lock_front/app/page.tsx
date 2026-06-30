@@ -3,6 +3,7 @@ import loginBg from "../public/images/loginBg.png";
 import logoHarmony from "../public/images/logoHarmony.png";
 import logo from "../public/images/logo.png";
 import { LoginForm } from "./login-form";
+import { ThemeToggle } from "./theme-toggle";
 
 const stats = [
   { value: "5,200+", label: "Vehicles Connected" },
@@ -13,7 +14,7 @@ const stats = [
 
 export default function Home() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-white text-[#19191f]">
+    <main className="login-page relative min-h-screen overflow-hidden bg-white text-[#19191f]">
       <Image
         src={loginBg}
         alt=""
@@ -22,6 +23,8 @@ export default function Home() {
         sizes="100vw"
         className="object-cover"
       />
+
+      <div className="login-overlay absolute inset-0 z-[1]" />
 
       <section className="relative z-10 mx-auto grid min-h-screen w-full max-w-[1500px] grid-cols-1 px-6 py-5 md:grid-cols-[minmax(0,1fr)_430px] md:items-center md:gap-16 md:px-[66px] md:py-0 lg:gap-24">
         <div className="flex flex-col md:min-h-[548px] md:justify-center">
@@ -73,7 +76,11 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mx-auto mt-10 w-full max-w-[430px] rounded-[8px] bg-white px-[36px] py-[35px] shadow-[0_1px_2px_rgba(0,0,0,0.18)] md:mt-0 md:min-h-[548px] md:w-full">
+        <div className="login-card relative mx-auto mt-10 w-full max-w-[430px] rounded-[8px] bg-white px-[36px] py-[35px] shadow-[0_1px_2px_rgba(0,0,0,0.18)] md:mt-0 md:min-h-[548px] md:w-full">
+          <div className="absolute right-4 top-4">
+            <ThemeToggle />
+          </div>
+
           <div className="pt-0">
             <h2 className="text-[25px] font-bold leading-tight tracking-normal text-black">
               Welcome back
