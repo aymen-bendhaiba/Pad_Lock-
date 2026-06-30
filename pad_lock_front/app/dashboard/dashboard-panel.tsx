@@ -56,10 +56,16 @@ function rowsFromValue(value: unknown) {
 function unwrapPayload(payload: unknown) {
   const record = asRecord(payload);
 
-  if (record?.data && asRecord(record.data)) return record.data as SummaryRecord;
-  if (record?.summary && asRecord(record.summary)) return record.summary as SummaryRecord;
+  if (!record) return {};
 
-  return record ?? {};
+  const data = asRecord(record.data);
+  const summary = asRecord(record.summary);
+
+  if (data) {
+    return summary ? { ...data, summary, ...summary } : data;
+  }
+
+  return summary ? { ...record, ...summary } : record;
 }
 
 function textValue(...values: unknown[]) {
@@ -117,7 +123,42 @@ function numberFromRecord(record: SummaryRecord | undefined, keys: string[]) {
 }
 
 function getSection(summary: SummaryRecord, key: string) {
-  return asRecord(summary[key]);
+  const direct = asRecord(summary[key]);
+  if (direct) return direct;
+
+  const nested = findDashboardValue(summary, [key]);
+  return asRecord(nested);
+}
+
+function findDashboardValue(value: unknown, keys: string[], depth = 0): unknown {
+  if (depth > 4) return undefined;
+
+  const record = asRecord(value);
+  if (!record) return undefined;
+
+  for (const key of keys) {
+    if (record[key] !== undefined) return record[key];
+  }
+
+  for (const [recordKey, recordValue] of Object.entries(record)) {
+    if (["data", "summary", "dashboard", "analytics", "charts", "reports", "stats", "statistics"].includes(recordKey)) {
+      const found = findDashboardValue(recordValue, keys, depth + 1);
+      if (found !== undefined) return found;
+    }
+  }
+
+  for (const recordValue of Object.values(record)) {
+    if (Array.isArray(recordValue)) continue;
+
+    const found = findDashboardValue(recordValue, keys, depth + 1);
+    if (found !== undefined) return found;
+  }
+
+  return undefined;
+}
+
+function numberFromDashboard(summary: SummaryRecord, keys: string[]) {
+  return numberValue(findDashboardValue(summary, keys));
 }
 
 function findKpiValue(kpis: unknown, labels: string[]) {
@@ -149,6 +190,7 @@ function getMetricValue(
   return (
     numberFromRecord(kpiRecord, objectKeys) ??
     numberFromRecord(summary, objectKeys) ??
+    numberFromDashboard(summary, objectKeys) ??
     findKpiValue(kpis, labels) ??
     0
   );
@@ -277,19 +319,50 @@ function normalizeNamedCounts(value: unknown, fallbackLabel = "Item") {
       if (!item) return null;
 
       return {
-        label: translateDashboardLabel(textValue(item.label, item.name, item.type, item.status, item.key) ?? `${fallbackLabel} ${index + 1}`),
-        value: numberValue(item.value, item.count, item.total, item.assets) ?? 0,
+        label: translateDashboardLabel(
+          textValue(
+            item.label,
+            item.name,
+            item.title,
+            item.cardId,
+            item.rfid,
+            item.rfidCard,
+            item.cardNumber,
+            item.uid,
+            item.location,
+            item.city,
+            item.place,
+            item.type,
+            item.status,
+            item.key,
+            item.terminalId,
+          ) ?? `${fallbackLabel} ${index + 1}`,
+        ),
+        value:
+          numberValue(
+            item.value,
+            item.count,
+            item.total,
+            item.assets,
+            item.usage,
+            item.uses,
+            item.openings,
+            item.unlocks,
+            item.events,
+            item.samples,
+            item.visits,
+            item.points,
+            item.activity,
+          ) ?? 0,
       };
     })
     .filter((item): item is NamedCount => Boolean(item));
 }
 
 function normalizeLockActivities(summary: SummaryRecord) {
-  const direct = normalizeNamedCounts(
-    summary.lockActivities ??
-      summary.lockActivityByType ??
-      summary.activityByType ??
-      summary.lockStatusBreakdown,
+  const direct = firstNamedCounts(
+    summary,
+    ["lockActivities", "lockActivityByType", "activityByType", "lockStatusBreakdown", "activities", "eventsByType"],
     "Activite",
   );
 
@@ -313,32 +386,59 @@ function normalizeLockActivities(summary: SummaryRecord) {
   ].filter((item) => item.value > 0);
 }
 
-function normalizeRfidUsage() {
-  return [
-    { label: "RFID 80344-1842", value: 86 },
-    { label: "RFID 80344-0291", value: 72 },
-    { label: "RFID 80344-7750", value: 61 },
-    { label: "RFID 80344-4108", value: 48 },
-    { label: "RFID 80344-6673", value: 33 },
-    { label: "RFID 80344-2905", value: 21 },
-  ];
+function firstNamedCounts(summary: SummaryRecord, keys: string[], fallbackLabel: string) {
+  for (const key of keys) {
+    const rows = normalizeNamedCounts(findDashboardValue(summary, [key]), fallbackLabel);
+    if (rows.length > 0) return rows;
+  }
+
+  return [];
 }
 
-function normalizeHeatMapTracks() {
-  return [
-    { label: "Casablanca", value: 92 },
-    { label: "Rabat", value: 78 },
-    { label: "Marrakech", value: 64 },
-    { label: "Tanger", value: 58 },
-    { label: "Fes", value: 43 },
-    { label: "Agadir", value: 38 },
-    { label: "Meknes", value: 32 },
-    { label: "Oujda", value: 25 },
-    { label: "Safi", value: 19 },
-    { label: "Tetouan", value: 14 },
-    { label: "Kenitra", value: 11 },
-    { label: "El Jadida", value: 8 },
-  ];
+function normalizeRfidUsage(summary: SummaryRecord) {
+  const rows = firstNamedCounts(
+    summary,
+    [
+      "rfidUsage",
+      "topRfidCards",
+      "rfidCards",
+      "mostUsedRfids",
+      "mostUsedRfidCards",
+      "rfidUsageRanking",
+      "topCards",
+      "cardUsage",
+      "rfid",
+      "rfids",
+      "cards",
+    ],
+    "Carte RFID",
+  );
+
+  return rows.slice(0, 8);
+}
+
+function normalizeHeatMapTracks(summary: SummaryRecord) {
+  const rows = firstNamedCounts(
+    summary,
+    [
+      "heatMapTracks",
+      "trackHeatMap",
+      "tracksHeatMap",
+      "lockHeatMap",
+      "locationHeatMap",
+      "locationsHeatMap",
+      "topLocations",
+      "locations",
+      "cityActivity",
+      "heatmap",
+      "heatMap",
+      "tracks",
+      "places",
+    ],
+    "Lieu",
+  );
+
+  return rows.slice(0, 12);
 }
 
 function connectionValues(summary: SummaryRecord) {
@@ -455,8 +555,8 @@ export function DashboardPanel() {
   const metrics = useMemo(() => buildMetrics(summary), [summary]);
   const connection = useMemo(() => connectionValues(summary), [summary]);
   const lockActivities = useMemo(() => normalizeLockActivities(summary), [summary]);
-  const rfidUsage = useMemo(() => normalizeRfidUsage(), []);
-  const heatMapTracks = useMemo(() => normalizeHeatMapTracks(), []);
+  const rfidUsage = useMemo(() => normalizeRfidUsage(summary), [summary]);
+  const heatMapTracks = useMemo(() => normalizeHeatMapTracks(summary), [summary]);
   const maxLockActivity = Math.max(...lockActivities.map((item) => item.value), 0);
   const maxRfidUsage = Math.max(...rfidUsage.map((item) => item.value), 0);
   const maxHeatMapTrack = Math.max(...heatMapTracks.map((item) => item.value), 0);
@@ -466,8 +566,8 @@ export function DashboardPanel() {
     loadState === "loading"
       ? "Chargement du tableau de bord..."
       : loadState === "error"
-        ? "Resume du tableau de bord indisponible"
-        : "Donnees du tableau de bord chargees";
+        ? "Impossible de charger les donnees du tableau de bord"
+        : "Donnees du tableau de bord chargees depuis le serveur";
 
   return (
     <div className="w-full px-4 py-7 md:px-5 xl:px-6">
@@ -616,7 +716,7 @@ export function DashboardPanel() {
                     const colors = ["#ef4444", "#2A9D90", "#f97316", "#a16207", "#34C759", "#94a3b8"];
                     const percent = maxLockActivity > 0 ? Math.round((item.value / maxLockActivity) * 100) : 0;
                     return (
-                      <div key={item.label} className="rounded-[8px] border border-[#e2e8f0] bg-white p-3 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
+                      <div key={`${item.label}-${index}`} className="rounded-[8px] border border-[#e2e8f0] bg-white p-3 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
                         <div className="flex items-center justify-between gap-2">
                           <span className="size-2.5 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
                           <span className="text-[10px] font-bold uppercase text-[#94a3b8]">{percent}%</span>
@@ -638,7 +738,7 @@ export function DashboardPanel() {
                     {[...lockActivities].sort((a, b) => b.value - a.value).slice(0, 5).map((item, index) => {
                       const percent = maxLockActivity > 0 ? Math.round((item.value / maxLockActivity) * 100) : 0;
                       return (
-                        <div key={item.label} className="grid grid-cols-[24px_92px_1fr_48px] items-center gap-3 text-[12px]">
+                        <div key={`${item.label}-${index}`} className="grid grid-cols-[24px_92px_1fr_48px] items-center gap-3 text-[12px]">
                           <span className="grid size-6 place-items-center rounded-full bg-[#f1f5f9] text-[10px] font-bold text-[#475569]">{index + 1}</span>
                           <span className="truncate font-semibold text-[#111827]">{item.label}</span>
                           <div className="h-2 overflow-hidden rounded-full bg-[#e2e8f0]"><div className="h-full rounded-full bg-[#2A9D90]" style={{ width: String(percent) + "%" }} /></div>
@@ -686,13 +786,13 @@ export function DashboardPanel() {
       <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,1fr)]">
         <article className="rounded-[8px] border border-[#dfe6ee] bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="mb-5 flex items-start justify-between">
-            <div><h2 className="text-[15px] font-bold">Cartes RFID les plus utilisees</h2><p className="mt-1 text-[12px] text-[#718096]">Exemple statique en attendant le classement des cartes</p></div>
+            <div><h2 className="text-[15px] font-bold">Cartes RFID les plus utilisees</h2><p className="mt-1 text-[12px] text-[#718096]">Classement calcule depuis les donnees du serveur</p></div>
             <button type="button" className="flex h-9 items-center gap-2 rounded-[7px] bg-[#111827] px-3 text-[12px] font-medium text-white">Rapports<ChartNoAxesColumn size={14} /></button>
           </div>
           {rfidUsage.length > 0 ? (
             <div className="space-y-4">
               {rfidUsage.map((card, index) => (
-                <div key={card.label} className="grid grid-cols-[34px_1fr_50px] items-center gap-3">
+                <div key={`${card.label}-${index}`} className="grid grid-cols-[34px_1fr_50px] items-center gap-3">
                   <span className="grid size-8 place-items-center rounded-full bg-[#ecfdf5] text-[11px] font-bold text-[#047857]">#{index + 1}</span>
                   <div className="h-9 rounded-[4px] bg-[#eef4f7]"><div className="flex h-full items-center rounded-[4px] bg-[#2A9D90] px-3 text-[12px] font-medium text-white" style={{ width: String(barHeight(card.value, maxRfidUsage, 8)) + "%" }}>{card.label}</div></div>
                   <span className="text-[12px] font-medium text-[#1f2937]">{formatNumber(card.value)}</span>
@@ -706,16 +806,16 @@ export function DashboardPanel() {
 
         <article className="rounded-[8px] border border-[#dfe6ee] bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="mb-5 flex items-start justify-between gap-3">
-            <div><h2 className="text-[15px] font-bold">Carte de chaleur des trajets</h2><p className="mt-1 text-[12px] text-[#718096]">Exemple statique en attendant la carte de chaleur dynamique</p></div>
+            <div><h2 className="text-[15px] font-bold">Carte de chaleur des trajets</h2><p className="mt-1 text-[12px] text-[#718096]">Intensite des trajets calculee depuis les donnees du serveur</p></div>
             <button type="button" className="flex h-9 items-center gap-2 rounded-[7px] border border-[#dfe6ee] px-3 text-[12px] font-medium"><Globe2 size={14} />Vue globale</button>
           </div>
           <div className="rounded-[10px] border border-[#e6edf4] bg-[#fbfdff] p-4">
             {heatMapTracks.length > 0 ? (
               <div className="grid h-[220px] grid-cols-4 gap-2 sm:grid-cols-6">
-                {heatMapTracks.map((item) => {
+                {heatMapTracks.map((item, index) => {
                   const intensity = barHeight(item.value, maxHeatMapTrack, 12);
                   return (
-                    <div key={item.label} className="flex flex-col justify-end overflow-hidden rounded-[8px] border border-[#e2e8f0] bg-white">
+                    <div key={`${item.label}-${index}`} className="flex flex-col justify-end overflow-hidden rounded-[8px] border border-[#e2e8f0] bg-white">
                       <div className="grid flex-1 place-items-center px-2 text-center text-[10px] font-semibold text-[#0f172a]">{item.label}</div>
                       <div className="px-2 pb-2"><div className="h-2 rounded-full bg-[#e2e8f0]"><div className="h-full rounded-full bg-[#ef4444]" style={{ width: String(intensity) + "%" }} /></div><p className="mt-1 text-center text-[10px] text-[#64748b]">{formatNumber(item.value)}</p></div>
                     </div>

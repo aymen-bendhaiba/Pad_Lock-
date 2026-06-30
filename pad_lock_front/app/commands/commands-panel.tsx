@@ -13,7 +13,6 @@ import {
   Loader2,
   RefreshCw,
   Search,
-  SignalHigh,
   Truck,
   Unlock,
   X,
@@ -34,7 +33,6 @@ type CommandDevice = {
   name: string;
   battery: string;
   batteryValue: number | null;
-  signal: string;
   status: "Moving" | "Idle" | "Offline" | "Alarm";
   lock: "Locked" | "Unlocked" | "Unknown";
 };
@@ -151,19 +149,6 @@ function normalizeBattery(record: ApiRecord, lock?: ApiRecord) {
   return { label: String(normalized).padStart(2, "0") + "%", value: normalized };
 }
 
-function normalizeSignal(record: ApiRecord, lock?: ApiRecord) {
-  const raw = readString(record, ["signal", "signalQuality", "networkQuality", "quality"])
-    ?? readString(lock, ["signal", "signalQuality", "networkQuality", "quality"]);
-
-  if (raw) return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
-
-  const value = readNumber(record, ["rssi", "signalStrength"])
-    ?? readNumber(lock, ["rssi", "signalStrength"]);
-
-  if (value === undefined) return "Inconnu";
-  return value >= 70 ? "Excellent" : value >= 40 ? "Moyen" : "Faible";
-}
-
 function normalizeLock(record: ApiRecord, lock?: ApiRecord): CommandDevice["lock"] {
   const raw = readString(record, ["lock", "lockState", "locked", "statusLock"])
     ?? readString(lock, ["lock", "lockState", "locked", "statusLock"]);
@@ -203,7 +188,6 @@ function normalizeDevice(record: ApiRecord, lock?: ApiRecord): CommandDevice {
       ?? "Cadenas-" + id,
     battery: battery.label,
     batteryValue: battery.value,
-    signal: normalizeSignal(record, lock),
     status: normalizeStatus(record, lock),
     lock: normalizeLock(record, lock),
   };
@@ -230,15 +214,9 @@ function batteryColor(value: number | null) {
   return "text-[#059669]";
 }
 
-function signalColor(value: string) {
-  if (value === "Poor" || value === "Faible") return "text-[#ef4444]";
-  if (value === "Excellent") return "text-[#2A9D90]";
-  return "text-[#94a3b8]";
-}
-
 function statusLabel(value: CommandDevice["status"]) {
   if (value === "Moving") return "En mouvement";
-  if (value === "Idle") return "À l'arret";
+  if (value === "Idle") return "Ã€ l'arret";
   if (value === "Offline") return "Hors ligne";
   return "Alerte";
 }
@@ -262,14 +240,10 @@ function resultClass(state: CommandState) {
 
 function DeviceMeta({ device }: { device: CommandDevice }) {
   return (
-    <div className="flex w-[230px] shrink-0 items-center gap-4">
+    <div className="flex w-[110px] shrink-0 items-center gap-4">
       <span className={"flex items-center gap-1.5 " + batteryColor(device.batteryValue)}>
         <BatteryMedium size={13} />
         {device.battery}
-      </span>
-      <span className={"flex items-center gap-1.5 " + signalColor(device.signal)}>
-        <SignalHigh size={13} />
-        {device.signal}
       </span>
     </div>
   );

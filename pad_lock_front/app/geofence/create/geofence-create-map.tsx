@@ -1,6 +1,7 @@
 "use client";
 
 import { DivIcon, LatLngExpression, Marker as LeafletMarker } from "leaflet";
+import { useState } from "react";
 import {
   Circle,
   MapContainer,
@@ -16,6 +17,41 @@ import "leaflet/dist/leaflet.css";
 import type { LatLngTuple } from "../geofence-types";
 
 const moroccoCenter: LatLngExpression = [31.7917, -7.0926];
+
+type MapLayerMode = "street" | "satellite";
+
+const STREET_LAYER = {
+  attribution: "&copy; OpenStreetMap contributors",
+  maxNativeZoom: 19,
+  maxZoom: 19,
+  url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+};
+
+const SATELLITE_LAYER = {
+  attribution: "Tiles &copy; Esri",
+  maxNativeZoom: 17,
+  maxZoom: 17,
+  url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+};
+
+function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerMode; onLayerChange: (layer: MapLayerMode) => void }) {
+  return (
+    <div className="leaflet-top leaflet-right">
+      <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
+        {[{ key: "street" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onLayerChange(item.key)}
+            className={"h-8 rounded-[6px] px-3 transition " + (activeLayer === item.key ? "bg-[#111827] text-white" : "text-[#475569] hover:bg-[#f3f7fa]")}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function redPinIcon(label?: string) {
   return new DivIcon({
@@ -87,6 +123,8 @@ export function GeofenceCreateMap({
   onDraftPointsChange,
 }: GeofenceCreateMapProps) {
   const circleCenter = draftPoints[0];
+  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("satellite");
+  const tileLayer = activeLayer === "street" ? STREET_LAYER : SATELLITE_LAYER;
 
   function movePoint(index: number, marker: LeafletMarker) {
     const position = marker.getLatLng();
@@ -109,12 +147,13 @@ export function GeofenceCreateMap({
       worldCopyJump
     >
       <TileLayer
-        attribution="Tiles &copy; Esri"
-        maxNativeZoom={17}
-        maxZoom={17}
-        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        attribution={tileLayer.attribution}
+        maxNativeZoom={tileLayer.maxNativeZoom}
+        maxZoom={tileLayer.maxZoom}
+        url={tileLayer.url}
       />
       <ZoomControl position="topleft" />
+      <MapLayerSwitch activeLayer={activeLayer} onLayerChange={setActiveLayer} />
       <DrawingEvents
         draftPoints={draftPoints}
         shapeMode={shapeMode}

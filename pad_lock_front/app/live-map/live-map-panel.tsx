@@ -864,8 +864,8 @@ export function LiveMapPanel() {
   }), [assets]);
 
   return (
-    <div className="grid min-h-[calc(100vh-56px)] xl:grid-cols-[minmax(0,1fr)_380px]">
-      <section className="relative min-h-[calc(100vh-56px)] overflow-hidden border-r border-[#dfe6ee] bg-[#d8eadf]">
+    <div className="grid h-[calc(100vh-56px)] min-h-0 overflow-hidden xl:grid-cols-[minmax(0,1fr)_380px]">
+      <section className="relative h-full min-h-0 overflow-hidden border-r border-[#dfe6ee] bg-[#d8eadf]">
         <LiveMapShell
           assets={filteredAssets}
           playbackPoints={isPlaybackOpen ? playbackPoints : []}
@@ -925,7 +925,7 @@ export function LiveMapPanel() {
         </div>
       </section>
 
-      <aside className="flex min-h-[calc(100vh-56px)] flex-col bg-white">
+      <aside className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
         <div className="border-b border-[#dfe6ee] p-5">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#718096]" size={17} />

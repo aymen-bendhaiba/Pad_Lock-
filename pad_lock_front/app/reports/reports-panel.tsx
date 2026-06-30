@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch, cachedApiJson } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
 
@@ -75,6 +76,54 @@ function statusLabel(status: ReportStatut) { if (status === "Ready") return "Pre
 function optionLabel(value: string) { const labels: Record<string, string> = { rfid: "RFID", static_password: "Mot de passe statique", dynamic_password: "Mot de passe dynamique", bluetooth: "Bluetooth", other: "Autre", locked: "Verrouille", unlock_rejected: "Deverrouillage refuse", tamper: "Sabotage", geofence: "Geofence", low_battery: "Batterie faible", offline: "Hors ligne", info: "Information", warning: "Avertissement", critical: "Critique", unresolved: "Non resolu", resolved: "Resolu", acknowledged: "Acquitte" }; return labels[value] ?? value; }
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) { return Promise.race([promise, new Promise<T>((_, reject) => window.setTimeout(() => reject(new Error(message)), timeoutMs))]); }
 
+function numberValue(...values: unknown[]) { for (const value of values) { if (typeof value === "number" && Number.isFinite(value)) return value; if (typeof value === "string") { const parsed = Number(value.replace(/[^0-9.-]/g, "")); if (Number.isFinite(parsed)) return parsed; } } return undefined; }
+function batteryTimestamp(record: ApiRecord, index: number) { return textValue(record.date, record.day, record.timestamp, record.createdAt, record.occurredAt, record.updatedAt, record.recordedAt, record.time) ?? "Point " + (index + 1); }
+function batteryPercentage(record: ApiRecord) { const direct = numberValue(record.percentage, record.batteryPercentage, record.batteryPercent, record.batteryLevel, record.level, record.value, record.averagePercentage, record.avgPercentage, record.latestPercentage, record.minimumPercentage, record.maximumPercentage, record.battery); return direct === undefined ? undefined : Math.max(0, Math.min(100, direct)); }
+function batteryChartSource(response?: ReportResponse) { return [...(response?.timeline ?? []), ...(response?.rows ?? [])]; }
+function normalizeBatteryChartData(response?: ReportResponse) { return batteryChartSource(response).map((item, index) => { const record = rowRecord(item); const percentage = batteryPercentage(record); if (percentage === undefined) return null; return { label: batteryTimestamp(record, index), percentage: Math.round(percentage * 10) / 10 }; }).filter((item): item is { label: string; percentage: number } => Boolean(item)).slice(0, 120); }
+function batteryTrendLabel(data: { percentage: number }[]) { if (data.length < 2) return "Tendance indisponible"; const delta = Math.round((data[data.length - 1].percentage - data[0].percentage) * 10) / 10; if (delta < 0) return "Baisse de " + Math.abs(delta) + "% sur la periode"; if (delta > 0) return "Hausse de " + delta + "% sur la periode"; return "Niveau stable sur la periode"; }
+
+function BatteryReportChart({ response }: { response?: ReportResponse }) {
+  const data = normalizeBatteryChartData(response);
+  const latest = data[data.length - 1]?.percentage;
+  const min = data.length ? Math.min(...data.map(item => item.percentage)) : undefined;
+  const max = data.length ? Math.max(...data.map(item => item.percentage)) : undefined;
+
+  return (
+    <div className="mb-4 rounded-[8px] border border-[#dfe6ee] bg-white p-4">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 className="text-[14px] font-bold text-[#0f172a]">Evolution de la batterie</h3>
+          <p className="mt-1 text-[12px] text-[#64748b]">Pourcentage de batterie sur la periode du rapport.</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+          <span className="rounded-[7px] bg-[#f8fafc] px-3 py-2"><span className="block font-bold text-[#0f172a]">{latest ?? "--"}%</span><span className="text-[#64748b]">Dernier</span></span>
+          <span className="rounded-[7px] bg-[#fff7ed] px-3 py-2"><span className="block font-bold text-[#9a3412]">{min ?? "--"}%</span><span className="text-[#64748b]">Min</span></span>
+          <span className="rounded-[7px] bg-[#ecfdf5] px-3 py-2"><span className="block font-bold text-[#047857]">{max ?? "--"}%</span><span className="text-[#64748b]">Max</span></span>
+        </div>
+      </div>
+      {data.length ? (
+        <>
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 10, right: 18, left: -18, bottom: 4 }}>
+                <CartesianGrid stroke="#e5edf5" strokeDasharray="4 4" />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} minTickGap={28} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#64748b" }} tickFormatter={(value) => value + "%"} />
+                <Tooltip formatter={(value) => [value + "%", "Batterie"]} labelStyle={{ fontWeight: 700, color: "#0f172a" }} contentStyle={{ borderRadius: 8, borderColor: "#dfe6ee" }} />
+                <Line type="monotone" dataKey="percentage" stroke="#2A9D90" strokeWidth={3} dot={{ r: 2, fill: "#2A9D90" }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-3 rounded-[7px] bg-[#f8fafc] px-3 py-2 text-[12px] font-semibold text-[#475569]">{batteryTrendLabel(data)}</p>
+        </>
+      ) : (
+        <div className="grid h-[180px] place-items-center rounded-[8px] border border-dashed border-[#cbd5e1] bg-[#fbfdff] text-[12px] text-[#64748b]">Aucun historique de batterie disponible pour tracer le graphique.</div>
+      )}
+    </div>
+  );
+}
+
 function pdfEscape(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
@@ -89,11 +138,12 @@ function createReportPdfBlob(report: ReportJob) {
   const summaryEntries = Object.entries(response?.summary ?? {}).slice(0, 8);
   const rows = response?.rows ?? [];
   const columns = rowColumns(rows).slice(0, 5);
+    const batteryPdfData = report.definition.key === "battery" ? normalizeBatteryChartData(response).slice(0, 36) : [];
   const rgb = (r: number, g: number, b: number) => (r / 255).toFixed(3) + " " + (g / 255).toFixed(3) + " " + (b / 255).toFixed(3);
   const pageRows: unknown[][] = [];
   if (!rows.length) pageRows.push([]);
   else {
-    const firstPageCount = summaryEntries.length > 4 ? 18 : 21;
+    const firstPageCount = report.definition.key === "battery" && batteryPdfData.length ? 8 : summaryEntries.length > 4 ? 18 : 21;
     const otherPageCount = 25;
     pageRows.push(rows.slice(0, firstPageCount));
     for (let index = firstPageCount; index < rows.length; index += otherPageCount) pageRows.push(rows.slice(index, index + otherPageCount));
@@ -105,6 +155,10 @@ function createReportPdfBlob(report: ReportJob) {
     const strokeRect = (x: number, y: number, w: number, h: number, color: [number, number, number]) => commands.push(rgb(...color) + " RG", "0.8 w", x + " " + y + " " + w + " " + h + " re S");
     const textAt = (x: number, y: number, value: unknown, size = 10, color: [number, number, number] = [17, 24, 39], bold = false, maxLength = 82) => {
       commands.push("BT", rgb(...color) + " rg", (bold ? "/F2 " : "/F1 ") + size + " Tf", x + " " + y + " Td", "(" + pdfEscape(truncatePdfText(value, maxLength)) + ") Tj", "ET");
+    };
+    const linePath = (points: [number, number][], color: [number, number, number], width = 1.4) => {
+      if (points.length < 2) return;
+      commands.push(rgb(...color) + " RG", width + " w", points.map((point, index) => point[0] + " " + point[1] + (index === 0 ? " m" : " l")).join(" "), "S");
     };
 
     rect(0, 780, 612, 62, [10, 24, 42]);
@@ -129,6 +183,34 @@ function createReportPdfBlob(report: ReportJob) {
         textAt(x + 10, y + 12, formatValue(value), 14, [15, 23, 42], true, 18);
       });
       tableY = summaryEntries.length > 4 ? 540 : 604;
+      if (report.definition.key === "battery") {
+        const chartX = 42;
+        const chartY = 352;
+        const chartW = 528;
+        const chartH = 142;
+        textAt(chartX, chartY + chartH + 22, "Evolution de la batterie", 13, [17, 24, 39], true);
+        textAt(chartX, chartY + chartH + 8, batteryPdfData.length ? batteryTrendLabel(batteryPdfData) : "Aucun historique de batterie disponible pour tracer le graphique.", 8, [100, 116, 139], false, 90);
+        rect(chartX, chartY, chartW, chartH, [248, 250, 252]);
+        strokeRect(chartX, chartY, chartW, chartH, [223, 230, 238]);
+        [0, 25, 50, 75, 100].forEach((tick) => {
+          const y = chartY + 18 + (tick / 100) * (chartH - 36);
+          linePath([[chartX + 44, y], [chartX + chartW - 18, y]], [226, 232, 240], 0.4);
+          textAt(chartX + 12, y - 3, String(tick) + "%", 6.5, [100, 116, 139], false, 8);
+        });
+        if (batteryPdfData.length > 0) {
+          const usableW = chartW - 76;
+          const usableH = chartH - 36;
+          const points = batteryPdfData.map((item, index): [number, number] => [
+            chartX + 44 + (batteryPdfData.length === 1 ? usableW / 2 : (index / (batteryPdfData.length - 1)) * usableW),
+            chartY + 18 + (item.percentage / 100) * usableH,
+          ]);
+          linePath(points, [42, 157, 144], 2.2);
+          points.forEach(([x, y]) => rect(x - 1.7, y - 1.7, 3.4, 3.4, [42, 157, 144]));
+          textAt(chartX + 44, chartY + 8, batteryPdfData[0].label, 6.5, [100, 116, 139], false, 22);
+          textAt(chartX + chartW - 132, chartY + 8, batteryPdfData[batteryPdfData.length - 1].label, 6.5, [100, 116, 139], false, 22);
+        }
+        tableY = 300;
+      }
     }
 
     textAt(42, tableY + 32, pageIndex === 0 ? "Lignes detaillees" : "Suite des lignes", 13, [17, 24, 39], true);
@@ -235,6 +317,7 @@ function ViewReportModal({ report, onClose }: { report: ReportJob; onClose: () =
         <div className="flex items-start justify-between border-b border-[#dfe6ee] px-5 py-4"><div><h2 className="text-[17px] font-bold">{report.name}</h2><p className="mt-1 text-[12px] text-[#64748b]">{report.date} {report.time} - {report.type} - {rows.length} ligne(s) affichee(s) sur {Number.isFinite(totalRows) ? totalRows : rows.length}</p></div><button type="button" onClick={onClose}><X size={18} /></button></div>
         <div className="max-h-[calc(86vh-72px)] overflow-auto p-5">
           {summary.length ? <div className="mb-4 grid gap-3 md:grid-cols-4">{summary.map(([key, value]) => <div key={key} className="rounded-[7px] border border-[#dfe6ee] px-3 py-3"><p className="text-[10px] font-bold uppercase text-[#64748b]">{formatLabel(key)}</p><p className="mt-2 truncate text-[18px] font-bold">{formatValue(value)}</p></div>)}</div> : null}
+          {report.definition.key === "battery" ? <BatteryReportChart response={report.response} /> : null}
           <div className="overflow-hidden rounded-[7px] border border-[#dfe6ee]"><div className="overflow-x-auto"><table className="min-w-full text-left text-[12px]"><thead className="bg-[#fbfdff] text-[#496383]"><tr>{columns.map(column => <th key={column} className="whitespace-nowrap px-3 py-3 font-bold">{formatLabel(column)}</th>)}</tr></thead><tbody>{rows.map((row, index) => { const record = rowRecord(row); return <tr key={index} className="border-t border-[#edf2f7]">{columns.map(column => <td key={column} className="max-w-[220px] truncate px-3 py-3">{formatValue(record[column])}</td>)}</tr>; })}</tbody></table></div>{!rows.length ? <div className="grid h-32 place-items-center text-[12px] text-[#64748b]">Aucune ligne detaillee.</div> : null}</div>
         </div>
       </div>

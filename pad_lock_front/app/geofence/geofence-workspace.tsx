@@ -19,7 +19,6 @@ import {
   cachedApiJson,
   clearAppCache,
   getGeoBoundaries,
-  getGeoBoundaryById,
 } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
 import { GeofenceMapShell } from "./geofence-map-shell";
@@ -27,6 +26,14 @@ import type { BoundarySummary, GeofenceAccessMode, LatLngTuple, LockMapAsset, Sa
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type ApiRecord = Record<string, unknown>;
+type CustomGeoFeature = {
+  type?: string;
+  properties?: ApiRecord;
+  geometry?: unknown;
+  bbox?: unknown;
+};
+
+const customGeoPath = "/images/data/custom_geo.json";
 
 const continentOptions = [
   "Africa",
@@ -398,6 +405,72 @@ function normalizeBoundaries(payload: unknown): BoundarySummary[] {
   }, []);
 }
 
+function normalizeGeoKey(value: unknown) {
+  return stringValue(value)?.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || undefined;
+}
+
+function customGeoKeysForFeature(feature: CustomGeoFeature) {
+  const properties = feature.properties;
+
+  return [
+    properties?.iso_a3,
+    properties?.iso_a3_eh,
+    properties?.adm0_a3,
+    properties?.adm0_iso,
+    properties?.gu_a3,
+    properties?.sov_a3,
+    properties?.iso_a2,
+    properties?.iso_a2_eh,
+    properties?.postal,
+    properties?.name,
+    properties?.name_en,
+    properties?.name_fr,
+    properties?.name_long,
+    properties?.admin,
+    properties?.geounit,
+    properties?.sovereignt,
+  ]
+    .map(normalizeGeoKey)
+    .filter((key): key is string => Boolean(key));
+}
+
+function customGeoKeysForBoundary(country: BoundarySummary) {
+  return [country.countryCode, country.name]
+    .map(normalizeGeoKey)
+    .filter((key): key is string => Boolean(key));
+}
+
+function indexCustomGeoFeatures(payload: unknown) {
+  const record = asRecord(payload);
+  const features = Array.isArray(record?.features) ? record.features : [];
+  const index = new Map<string, CustomGeoFeature>();
+
+  for (const value of features) {
+    const feature = asRecord(value) as CustomGeoFeature | undefined;
+
+    if (!feature) continue;
+
+    for (const key of customGeoKeysForFeature(feature)) {
+      if (!index.has(key)) {
+        index.set(key, feature);
+      }
+    }
+  }
+
+  return index;
+}
+
+function findCustomGeoFeature(country: BoundarySummary | undefined, index: Map<string, CustomGeoFeature>) {
+  if (!country) return undefined;
+
+  for (const key of customGeoKeysForBoundary(country)) {
+    const feature = index.get(key);
+
+    if (feature) return feature;
+  }
+
+  return undefined;
+}
 function toLatLngTuple(value: unknown): LatLngTuple | null {
   if (Array.isArray(value) && value.length >= 2) {
     const longitude = Number(value[0]);
@@ -934,6 +1007,7 @@ export function GeofenceWorkspace() {
   const [countryRings, setCountryRings] = useState<LatLngTuple[][]>([]);
   const [countryPresetGeofence, setCountryPresetGeofence] =
     useState<SavedGeofence | null>(null);
+  const [customGeoIndex, setCustomGeoIndex] = useState<Map<string, CustomGeoFeature>>(new Map());
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [message, setMessage] = useState("Chargement des geofences.");
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
@@ -941,6 +1015,33 @@ export function GeofenceWorkspace() {
   const [savingGeofenceId, setSavingGeofenceId] = useState<string | null>(null);
   const [deletingGeofenceId, setDeletingGeofenceId] = useState<string | null>(null);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCustomGeo() {
+      try {
+        const response = await fetch(customGeoPath, { cache: "force-cache" });
+        if (!response.ok) throw new Error("Custom geography file unavailable.");
+
+        const payload = await response.json();
+        const index = indexCustomGeoFeatures(payload);
+
+        if (isMounted) {
+          setCustomGeoIndex(index);
+        }
+      } catch {
+        if (isMounted) {
+          setCustomGeoIndex(new Map());
+        }
+      }
+    }
+
+    loadCustomGeo();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   useEffect(() => {
     let isMounted = true;
 
@@ -1073,81 +1174,65 @@ export function GeofenceWorkspace() {
     (geofence) => geofence.id === selectedGeofenceId,
   );
 
-  const mapGeofences = useMemo(
-    () =>
-      selectedCustomGeofence &&
-      !countryGeofences.some((geofence) => geofence.id === selectedCustomGeofence.id)
-        ? [selectedCustomGeofence, ...countryGeofences]
-        : countryGeofences,
-    [countryGeofences, selectedCustomGeofence],
-  );
+  const selectedMapGeofence = selectedGeofenceId
+    ? countryGeofences.find((geofence) => geofence.id === selectedGeofenceId && geofence.source !== "boundary") ?? selectedCustomGeofence
+    : undefined;
+
+  const mapGeofences = useMemo(() => {
+    const boundaryGeofence = countryPresetGeofence ? [countryPresetGeofence] : [];
+
+    if (!selectedMapGeofence) {
+      return boundaryGeofence;
+    }
+
+    return boundaryGeofence.some((geofence) => geofence.id === selectedMapGeofence.id)
+      ? boundaryGeofence
+      : [...boundaryGeofence, selectedMapGeofence];
+  }, [countryPresetGeofence, selectedMapGeofence]);
 
   const mapCenter =
-    selectedCustomGeofence?.points[0] ??
-    selectedCustomGeofence?.rings?.[0]?.[0] ??
+    selectedMapGeofence?.points[0] ??
+    selectedMapGeofence?.rings?.[0]?.[0] ??
     countryCenter;
 
   useEffect(() => {
-    if (!selectedCountryId) {
-      return;
-    }
-
-    let isMounted = true;
-
-    async function loadCountryGeometry() {
-      try {
-        const payload = await getGeoBoundaryById(selectedCountryId);
-        const record =
-          payload && typeof payload === "object" && "data" in payload
-            ? (payload as Record<string, unknown>).data
-            : payload;
-        const geometry =
-          record && typeof record === "object"
-            ? geometryFromRecord(record as Record<string, unknown>)
-            : undefined;
-        const countryRecord =
-          record && typeof record === "object"
-            ? (record as Record<string, unknown>)
-            : undefined;
-        const geometryRings = ringsFromGeometry(geometry);
-        const bboxRings =
-          countryRecord && "bbox" in countryRecord
-            ? [bboxToRing(countryRecord.bbox)].filter((ring) => ring.length >= 4)
-            : [];
-        const rings = geometryRings.length > 0 ? geometryRings : bboxRings;
-        const nextCenter = rings[0]?.[0] ?? null;
-
-        if (isMounted) {
-          setCountryCenter(nextCenter);
-          setCountryRings(rings);
-          setCountryPresetGeofence(
-            selectedCountry && rings.length > 0
-              ? {
-                  ...boundaryToGeofence(selectedCountry),
-                  name: `${selectedCountry.name} boundary geofence`,
-                  description:
-                    "Zone creee a partir de la limite du pays.",
-                  area: "Limite du pays",
-                  rings,
-                }
-              : null,
-          );
-        }
-      } catch {
-        if (isMounted) {
-          setCountryCenter(null);
-          setCountryRings([]);
-          setCountryPresetGeofence(null);
-        }
+    const frame = window.requestAnimationFrame(() => {
+      if (!selectedCountryId || !selectedCountry) {
+        setCountryCenter(null);
+        setCountryRings([]);
+        setCountryPresetGeofence(null);
+        return;
       }
-    }
 
-    loadCountryGeometry();
+      const feature = findCustomGeoFeature(selectedCountry, customGeoIndex);
+      const geometryRings = ringsFromGeometry(feature?.geometry);
+      const bboxRings = feature?.bbox
+        ? [bboxToRing(feature.bbox)].filter((ring) => ring.length >= 4)
+        : [];
+      const rings = geometryRings.length > 0 ? geometryRings : bboxRings;
+      const nextCenter = rings[0]?.[0] ?? null;
 
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedCountry, selectedCountryId]);
+      setCountryCenter(nextCenter);
+      setCountryRings(rings);
+      setCountryPresetGeofence(
+        rings.length > 0
+          ? {
+              ...boundaryToGeofence(selectedCountry),
+              name: `${selectedCountry.name} boundary geofence`,
+              description: "Zone creee a partir des coordonnees locales du pays.",
+              area: "Limite du pays",
+              rings,
+            }
+          : null,
+      );
+
+      if (rings.length === 0 && customGeoIndex.size > 0) {
+        setMessage(`Coordonnees locales introuvables pour ${selectedCountry.name}.`);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [customGeoIndex, selectedCountry, selectedCountryId]);
 
   function selectContinent(continent: string) {
     setSelectedContinent(continent);
@@ -1223,8 +1308,8 @@ export function GeofenceWorkspace() {
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-56px)] grid-cols-1 xl:grid-cols-[230px_330px_minmax(0,1fr)]">
-      <aside className="border-r border-[#dfe6ee] bg-white px-4 py-5">
+    <div className="grid h-[calc(100vh-56px)] min-h-0 overflow-hidden grid-cols-1 xl:grid-cols-[230px_330px_minmax(0,1fr)]">
+      <aside className="h-full overflow-y-auto border-r border-[#dfe6ee] bg-white px-4 py-5">
         <div>
           <h1 className="text-[21px] font-bold tracking-normal text-black">
             Geofence
@@ -1342,7 +1427,7 @@ export function GeofenceWorkspace() {
           </div>
         </div>      </aside>
 
-      <aside className="border-r border-[#dfe6ee] bg-[#fbfdff] px-4 py-5">
+      <aside className="h-full overflow-y-auto border-r border-[#dfe6ee] bg-[#fbfdff] px-4 py-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[16px] font-bold text-black">
@@ -1481,7 +1566,7 @@ export function GeofenceWorkspace() {
         </div>
       </aside>
 
-      <section className="grid min-h-[calc(100vh-56px)] grid-rows-[auto_1fr_auto]">
+      <section className="grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden">
         <div className="flex flex-col justify-between gap-3 border-b border-[#dfe6ee] bg-white px-5 py-3 md:flex-row md:items-center">
           <div>
             <h2 className="text-[18px] font-bold text-black">
@@ -1509,7 +1594,7 @@ export function GeofenceWorkspace() {
           </div>
         </div>
 
-        <div className="relative min-h-[640px]">
+        <div className="relative min-h-0 overflow-hidden">
           <GeofenceMapShell
             savedGeofences={mapGeofences}
             selectedGeofenceId={selectedGeofenceId}

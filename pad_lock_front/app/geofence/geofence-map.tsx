@@ -1,7 +1,7 @@
 "use client";
 
 import { DivIcon, LatLngBounds, LatLngExpression } from "leaflet";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Circle,
   MapContainer,
@@ -17,6 +17,22 @@ import "leaflet/dist/leaflet.css";
 import type { LatLngTuple, LockMapAsset, SavedGeofence } from "./geofence-types";
 
 const moroccoCenter: LatLngExpression = [31.7917, -7.0926];
+
+type MapLayerMode = "street" | "satellite";
+
+const STREET_LAYER = {
+  attribution: "&copy; OpenStreetMap contributors",
+  maxNativeZoom: 19,
+  maxZoom: 19,
+  url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+};
+
+const SATELLITE_LAYER = {
+  attribution: "Tiles &copy; Esri",
+  maxNativeZoom: 17,
+  maxZoom: 17,
+  url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+};
 
 const lockStatusColors: Record<LockMapAsset["status"], string> = {
   Moving: "#047857",
@@ -67,9 +83,9 @@ function SelectedGeofenceFocus({
   const map = useMap();
 
   useEffect(() => {
-    const selectedGeofence = savedGeofences.find((item) => item.id === selectedGeofenceId)
-      ?? savedGeofences.find((item) => item.source !== "boundary")
-      ?? savedGeofences[0];
+    const selectedGeofence = selectedGeofenceId
+      ? savedGeofences.find((item) => item.id === selectedGeofenceId)
+      : savedGeofences.find((item) => item.source === "boundary") ?? savedGeofences[0];
     const positions = selectedGeofence ? geofencePositions(selectedGeofence) : [];
 
     if (positions.length > 1) {
@@ -95,6 +111,25 @@ function SelectedGeofenceFocus({
   return null;
 }
 
+function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerMode; onLayerChange: (layer: MapLayerMode) => void }) {
+  return (
+    <div className="leaflet-top leaflet-right">
+      <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
+        {[{ key: "street" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onLayerChange(item.key)}
+            className={"h-8 rounded-[6px] px-3 transition " + (activeLayer === item.key ? "bg-[#111827] text-white" : "text-[#475569] hover:bg-[#f3f7fa]")}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type GeofenceMapProps = {
   savedGeofences: SavedGeofence[];
   selectedGeofenceId: string | null;
@@ -110,6 +145,9 @@ export function GeofenceMap({
   countryRings,
   lockAssets,
 }: GeofenceMapProps) {
+  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("satellite");
+  const tileLayer = activeLayer === "street" ? STREET_LAYER : SATELLITE_LAYER;
+
   return (
     <MapContainer
       center={moroccoCenter}
@@ -122,12 +160,13 @@ export function GeofenceMap({
       worldCopyJump
     >
       <TileLayer
-        attribution="Tiles &copy; Esri"
-        maxNativeZoom={17}
-        maxZoom={17}
-        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        attribution={tileLayer.attribution}
+        maxNativeZoom={tileLayer.maxNativeZoom}
+        maxZoom={tileLayer.maxZoom}
+        url={tileLayer.url}
       />
       <ZoomControl position="topleft" />
+      <MapLayerSwitch activeLayer={activeLayer} onLayerChange={setActiveLayer} />
       <SelectedGeofenceFocus
         savedGeofences={savedGeofences}
         selectedGeofenceId={selectedGeofenceId}
@@ -169,14 +208,30 @@ export function GeofenceMap({
 
       {countryRings.map((ring, index) => (
         <Polygon
+          key={`selected-country-halo-${index}`}
+          positions={ring}
+          pathOptions={{
+            className: "geofence-country-halo",
+            color: "#2A9D90",
+            fillColor: "#2A9D90",
+            fillOpacity: 0.14,
+            opacity: 0.38,
+            weight: 7,
+          }}
+        />
+      ))}
+
+      {countryRings.map((ring, index) => (
+        <Polygon
           key={`selected-country-${index}`}
           positions={ring}
           pathOptions={{
-            color: "#f97316",
-            dashArray: "8 8",
-            fillColor: "#f97316",
+            className: "geofence-country-wave",
+            color: "#0f766e",
+            fillColor: "#2A9D90",
             fillOpacity: 0.08,
-            weight: 2,
+            opacity: 0.95,
+            weight: 3,
           }}
         />
       ))}

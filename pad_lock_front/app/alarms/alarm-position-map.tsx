@@ -1,8 +1,44 @@
 "use client";
 
 import { DivIcon } from "leaflet";
+import { useState } from "react";
 import { MapContainer, Marker, Popup, TileLayer, ZoomControl } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+
+type MapLayerMode = "street" | "satellite";
+
+const STREET_LAYER = {
+  attribution: "&copy; OpenStreetMap contributors",
+  maxNativeZoom: 19,
+  maxZoom: 19,
+  url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+};
+
+const SATELLITE_LAYER = {
+  attribution: "Tiles &copy; Esri",
+  maxNativeZoom: 17,
+  maxZoom: 18,
+  url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+};
+
+function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerMode; onLayerChange: (layer: MapLayerMode) => void }) {
+  return (
+    <div className="leaflet-top leaflet-right">
+      <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
+        {[{ key: "street" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onLayerChange(item.key)}
+            className={"h-8 rounded-[6px] px-3 transition " + (activeLayer === item.key ? "bg-[#111827] text-white" : "text-[#475569] hover:bg-[#f3f7fa]")}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function alarmLockIcon() {
   return new DivIcon({
@@ -22,6 +58,9 @@ type AlarmPositionMapProps = {
 };
 
 export function AlarmPositionMap({ position, label }: AlarmPositionMapProps) {
+  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("satellite");
+  const tileLayer = activeLayer === "street" ? STREET_LAYER : SATELLITE_LAYER;
+
   return (
     <MapContainer
       center={position}
@@ -33,12 +72,13 @@ export function AlarmPositionMap({ position, label }: AlarmPositionMapProps) {
       className="absolute inset-0 z-0"
     >
       <TileLayer
-        attribution="Tiles &copy; Esri"
-        maxNativeZoom={17}
-        maxZoom={18}
-        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        attribution={tileLayer.attribution}
+        maxNativeZoom={tileLayer.maxNativeZoom}
+        maxZoom={tileLayer.maxZoom}
+        url={tileLayer.url}
       />
       <ZoomControl position="topleft" />
+      <MapLayerSwitch activeLayer={activeLayer} onLayerChange={setActiveLayer} />
       <Marker position={position} icon={alarmLockIcon()}>
         <Popup closeButton={false} className="fleet-asset-popup">
           <div className="w-[210px] rounded-[8px] bg-white px-3 py-2 text-[12px] text-[#0f172a]">
