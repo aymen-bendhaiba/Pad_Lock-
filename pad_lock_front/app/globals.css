@@ -188,7 +188,12 @@ html.dark [class*="bg-[#f8fafc]"],
 html.dark [class*="bg-[#fbfdff]"],
 html.dark [class*="bg-[#f3f7fa]"],
 html.dark [class*="bg-[#f6f8fb]"],
+html.dark [class*="bg-[#f7f7f8]"],
+html.dark [class*="bg-[#f1f1f2]"],
 html.dark [class*="bg-[#eef4fa]"],
+html.dark [class*="bg-[#eef4f7]"],
+html.dark [class*="bg-[#e7f8f5]"],
+html.dark [class*="bg-[#d8eadf]"],
 html.dark [class*="bg-[#f3f6fa]"],
 html.dark [class*="bg-[#edf2f7]"] {
   background-color: #0f1b2d !important;
@@ -200,7 +205,9 @@ html.dark [class*="bg-white/"] {
 
 html.dark [class*="border-[#dfe6ee]"],
 html.dark [class*="border-[#e6edf5]"],
+html.dark [class*="border-[#e6edf4]"],
 html.dark [class*="border-[#e3e9f0]"],
+html.dark [class*="border-[#e2e8f0]"],
 html.dark [class*="border-[#d8e2ec]"],
 html.dark [class*="border-[#cbd5e1]"],
 html.dark [class*="border-[#d5e0ea]"] {
@@ -250,4 +257,19 @@ html.dark .leaflet-popup-tip {
 
 html.dark .leaflet-container {
   background: #07111f !important;
+}
+html.dark [class*="bg-white/55"],
+html.dark [class*="bg-slate-950/45"] {
+  background-color: rgba(7, 17, 31, 0.72) !important;
+}
+
+html.dark [class*="shadow-xl"],
+html.dark [class*="shadow-2xl"],
+html.dark [class*="shadow-lg"] {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.46) !important;
+}
+
+html.dark option {
+  background-color: #101d31;
+  color: #e5eef9;
 }
