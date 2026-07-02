@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { TcpConnectionsService } from '../tcp/tcp-connections.service';
 import { CreateLockDeviceDto } from './dto/create-lock-device.dto';
 import { FindLocksQueryDto } from './dto/find-locks-query.dto';
 import { UpdateLockDeviceDto } from './dto/update-lock-device.dto';
@@ -15,9 +16,10 @@ export class LocksService {
   constructor(
     @InjectRepository(LockDevice)
     private readonly lockDevicesRepository: Repository<LockDevice>,
+    private readonly tcpConnectionsService: TcpConnectionsService,
   ) {}
 
-  findAll(query: FindLocksQueryDto = {}): Promise<LockDevice[]> {
+  async findAll(query: FindLocksQueryDto = {}) {
     const builder = this.lockDevicesRepository
       .createQueryBuilder('lock')
       .select([
@@ -34,10 +36,6 @@ export class LocksService {
       .skip(((query.page ?? 1) - 1) * (query.limit ?? 100))
       .take(query.limit ?? 100);
 
-    if (query.status) {
-      builder.andWhere('lock.status = :status', { status: query.status });
-    }
-
     if (query.search?.trim()) {
       builder.andWhere(
         `(COALESCE(lock."terminalId", '') || ' ' || COALESCE(lock.name, '') ||
@@ -46,7 +44,13 @@ export class LocksService {
       );
     }
 
-    return builder.getMany();
+    const locks = (await builder.getMany()).map((lockDevice) =>
+      this.withCurrentConnectionState(lockDevice),
+    );
+
+    return query.status
+      ? locks.filter((lockDevice) => lockDevice.status === query.status)
+      : locks;
   }
 
   async create(dto: CreateLockDeviceDto): Promise<LockDevice> {
@@ -87,6 +91,12 @@ export class LocksService {
     return lockDevice;
   }
 
+  async findCurrentByTerminalIdOrFail(terminalId: string) {
+    return this.withCurrentConnectionState(
+      await this.findByTerminalIdOrFail(terminalId),
+    );
+  }
+
   async findOrCreateFromTcp(
     terminalId: string,
     input?: { imei?: string | null },
@@ -116,5 +126,23 @@ export class LocksService {
         lastSeenAt: new Date(),
       }),
     );
+  }
+
+  private withCurrentConnectionState(lockDevice: LockDevice) {
+    const connected = this.tcpConnectionsService.has(lockDevice.terminalId);
+    const status = connected
+      ? LockDeviceStatus.Online
+      : LockDeviceStatus.Offline;
+
+    return {
+      ...lockDevice,
+      status,
+      online: connected,
+      connected,
+      telemetryAvailable: connected,
+      connectionStatus: connected
+        ? 'connected'
+        : 'not_connected_over_tcp',
+    };
   }
 }

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { TcpConnectionsService } from '../tcp/tcp-connections.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
 type CountRow = {
@@ -17,6 +18,7 @@ type LatestPositionRow = {
   terminalId: string;
   speedKmh: number | null;
   isLocked: boolean | null;
+  status?: string | null;
 };
 
 type ActivityRow = {
@@ -70,12 +72,21 @@ type DashboardSnapshotRow = KpiRow & {
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly tcpConnectionsService: TcpConnectionsService,
+  ) {}
 
   async summary(query: DashboardQueryDto) {
     const { from, to } = dateRange(query);
     const terminalId = query.terminalId?.toUpperCase() ?? null;
-    const snapshot = await this.dashboardSnapshot(from, to, terminalId);
+    const connectedTerminalIds = this.tcpConnectionsService.terminalIds();
+    const snapshot = await this.dashboardSnapshot(
+      from,
+      to,
+      terminalId,
+      connectedTerminalIds,
+    );
     const lockCounts = snapshot;
     const latestPositions = snapshot.latestPositions;
     const alarmCount = { count: snapshot.alarmCount };
@@ -177,10 +188,12 @@ export class DashboardService {
     from: Date,
     to: Date,
     terminalId: string | null,
+    connectedTerminalIds: string[],
   ): Promise<DashboardSnapshotRow> {
     const terminalFilter = terminalId ? `AND "terminalId" = $3` : '';
     const lockFilter = terminalId ? `WHERE "terminalId" = $3` : '';
     const cardFilter = terminalId ? `AND lock."terminalId" = $3` : '';
+    const connectedIdsParameter = terminalId ? '$4' : '$3';
     const rows = await this.dataSource.query<DashboardSnapshotRow[]>(
       `
         WITH filtered_positions AS MATERIALIZED (
@@ -275,9 +288,13 @@ export class DashboardService {
         lock_counts AS (
           SELECT
             COUNT(*)::text AS total,
-            COUNT(*) FILTER (WHERE status = 'online')::text AS online,
-            COUNT(*) FILTER (WHERE status = 'offline')::text AS offline,
-            COUNT(*) FILTER (WHERE status = 'unknown')::text AS unknown
+            COUNT(*) FILTER (
+              WHERE "terminalId" = ANY(${connectedIdsParameter}::text[])
+            )::text AS online,
+            COUNT(*) FILTER (
+              WHERE NOT ("terminalId" = ANY(${connectedIdsParameter}::text[]))
+            )::text AS offline,
+            '0'::text AS unknown
           FROM lock_devices
           ${lockFilter}
         )
@@ -289,13 +306,30 @@ export class DashboardService {
           COALESCE((
             SELECT JSONB_AGG(
               JSONB_BUILD_OBJECT(
-                'terminalId', "terminalId",
-                'speedKmh', "speedKmh",
-                'isLocked', "isLocked"
+                'terminalId', ranked_positions."terminalId",
+                'speedKmh',
+                  CASE
+                    WHEN lock."terminalId" = ANY(${connectedIdsParameter}::text[])
+                      THEN ranked_positions."speedKmh"
+                    ELSE NULL
+                  END,
+                'isLocked',
+                  CASE
+                    WHEN lock."terminalId" = ANY(${connectedIdsParameter}::text[])
+                      THEN ranked_positions."isLocked"
+                    ELSE NULL
+                  END,
+                'status',
+                  CASE
+                    WHEN lock."terminalId" = ANY(${connectedIdsParameter}::text[])
+                      THEN 'online'
+                    ELSE 'offline'
+                  END
               )
-              ORDER BY "terminalId"
+              ORDER BY ranked_positions."terminalId"
             )
             FROM ranked_positions
+            JOIN lock_devices lock ON lock."terminalId" = ranked_positions."terminalId"
             WHERE row_number = 1
           ), '[]'::jsonb) AS "latestPositions",
           (SELECT COUNT(*)::text FROM filtered_alarms) AS "alarmCount",
@@ -368,7 +402,9 @@ export class DashboardService {
           ), '[]'::jsonb) AS "tripHeatmapRows"
         FROM lock_counts
       `,
-      terminalId ? [from, to, terminalId] : [from, to],
+      terminalId
+        ? [from, to, terminalId, connectedTerminalIds]
+        : [from, to, connectedTerminalIds],
     );
 
     return (
@@ -533,6 +569,10 @@ function daysBefore(date: Date, days: number): Date {
 function movementCounts(rows: LatestPositionRow[]) {
   return rows.reduce(
     (summary, row) => {
+      if (row.status && row.status !== 'online') {
+        return summary;
+      }
+
       if ((row.speedKmh ?? 0) > 0) {
         summary.moving += 1;
       } else {
@@ -548,7 +588,9 @@ function movementCounts(rows: LatestPositionRow[]) {
 function lockStateCounts(rows: LatestPositionRow[]) {
   return rows.reduce(
     (summary, row) => {
-      if (row.isLocked === true) {
+      if (row.status && row.status !== 'online') {
+        summary.unknown += 1;
+      } else if (row.isLocked === true) {
         summary.locked += 1;
       } else if (row.isLocked === false) {
         summary.unlocked += 1;

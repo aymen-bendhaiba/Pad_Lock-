@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { LockDeviceStatus } from '../locks/lock-device.entity';
 import { LocksService } from '../locks/locks.service';
+import { TcpConnectionsService } from '../tcp/tcp-connections.service';
 import { HistoryQueryDto } from './dto/history-query.dto';
 import { FindDevicesQueryDto } from './dto/find-devices-query.dto';
 import { LockPosition } from './lock-position.entity';
@@ -26,6 +28,7 @@ export class PositionsService {
     @InjectRepository(LockPosition)
     private readonly positionsRepository: Repository<LockPosition>,
     private readonly locksService: LocksService,
+    private readonly tcpConnectionsService: TcpConnectionsService,
   ) {}
 
   async recordFromTcp(
@@ -61,6 +64,7 @@ export class PositionsService {
   async findActiveDevices(query: FindDevicesQueryDto = {}) {
     const builder = this.positionsRepository
       .createQueryBuilder('position')
+      .leftJoinAndSelect('position.lockDevice', 'lockDevice')
       .distinctOn(['position.terminalId'])
       .select([
         'position.terminalId',
@@ -74,6 +78,11 @@ export class PositionsService {
         'position.mileage',
         'position.recordedAt',
         'position.receivedAt',
+        'lockDevice.id',
+        'lockDevice.name',
+        'lockDevice.imei',
+        'lockDevice.status',
+        'lockDevice.lastSeenAt',
       ])
       .where('position.deletedAt IS NULL')
       .orderBy('position.terminalId', 'ASC')
@@ -93,24 +102,48 @@ export class PositionsService {
 
     const positions = await builder.getMany();
 
-    return positions.map((position) => ({
-      id: position.terminalId,
-      position: {
-        lat: position.latitude,
-        lng: position.longitude,
-        speed: position.speedKmh ?? 0,
-        timestamp: position.receivedAt.getTime(),
-        gpsTimestamp: position.recordedAt.getTime(),
-        battery:
-          position.batteryPercentage === null
-            ? null
-            : `${position.batteryPercentage}%`,
-        isCharging: position.isCharging,
-        isLocked: position.isLocked,
-        is_positioned: position.isPositioned,
-        mileage: position.mileage,
-      },
-    }));
+    return positions.map((position) => {
+      const isConnected = this.tcpConnectionsService.has(position.terminalId);
+      const status = isConnected
+        ? LockDeviceStatus.Online
+        : LockDeviceStatus.Offline;
+      const telemetryAvailable = isConnected;
+
+      return {
+        id: position.terminalId,
+        terminalId: position.terminalId,
+        name: position.lockDevice?.name,
+        imei: position.lockDevice?.imei,
+        status,
+        online: telemetryAvailable,
+        connected: telemetryAvailable,
+        telemetryAvailable,
+        connectionStatus: telemetryAvailable
+          ? 'connected'
+          : 'not_connected_over_tcp',
+        lastSeenAt: position.lockDevice?.lastSeenAt?.toISOString() ?? null,
+        position: {
+          lat: position.latitude,
+          lng: position.longitude,
+          speed: telemetryAvailable ? (position.speedKmh ?? 0) : null,
+          timestamp: position.receivedAt.getTime(),
+          gpsTimestamp: position.recordedAt.getTime(),
+          lastKnownAt: position.recordedAt.toISOString(),
+          battery:
+            telemetryAvailable && position.batteryPercentage !== null
+              ? `${position.batteryPercentage}%`
+              : null,
+          isCharging: telemetryAvailable ? position.isCharging : null,
+          isLocked: telemetryAvailable ? position.isLocked : null,
+          is_positioned: position.isPositioned,
+          mileage: telemetryAvailable ? position.mileage : null,
+          telemetryAvailable,
+          connectionStatus: telemetryAvailable
+            ? 'connected'
+            : 'not_connected_over_tcp',
+        },
+      };
+    });
   }
 
   async findHistory(

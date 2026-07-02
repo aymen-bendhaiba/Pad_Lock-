@@ -5,11 +5,18 @@ describe('DashboardService', () => {
   const dataSource = {
     query: jest.fn(),
   };
+  const tcpConnectionsService = {
+    terminalIds: jest.fn().mockReturnValue([]),
+  };
   let service: DashboardService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new DashboardService(dataSource as never);
+    tcpConnectionsService.terminalIds.mockReturnValue([]);
+    service = new DashboardService(
+      dataSource as never,
+      tcpConnectionsService as never,
+    );
   });
 
   it('uses from/to date range for position activity and alert queries', async () => {
@@ -58,7 +65,7 @@ describe('DashboardService', () => {
 
     expect(dataSource.query).toHaveBeenCalledWith(
       expect.stringContaining('WITH filtered_positions AS MATERIALIZED'),
-      [from, to],
+      [from, to, []],
     );
     expect(dataSource.query).toHaveBeenCalledTimes(1);
     expect(response.lockActivity.summary).toEqual({
@@ -116,7 +123,81 @@ describe('DashboardService', () => {
 
     expect(dataSource.query).toHaveBeenCalledWith(
       expect.stringContaining('AND "terminalId" = $3'),
-      expect.arrayContaining(['8034400004']),
+      expect.arrayContaining(['8034400004', []]),
+    );
+  });
+
+  it('does not count stale offline telemetry as current movement or lock state', async () => {
+    dataSource.query.mockResolvedValueOnce([
+      {
+        total: '2',
+        online: '1',
+        offline: '1',
+        unknown: '0',
+        latestPositions: [
+          {
+            terminalId: '8034400004',
+            speedKmh: 12,
+            isLocked: true,
+            status: 'online',
+          },
+          {
+            terminalId: '8034400005',
+            speedKmh: null,
+            isLocked: null,
+            status: 'offline',
+          },
+        ],
+        alarmCount: '0',
+        stoppedCount: '0',
+        unlockedCount: '0',
+        totalActivities: '0',
+        activityRows: [],
+        eventTypeRows: [],
+        topAlarms: [],
+        syncRows: [],
+        topRfidCards: [],
+        tripHeatmapRows: [],
+      },
+    ]);
+
+    const response = await service.summary({});
+
+    expect(response.kpis.moving).toBe(1);
+    expect(response.kpis.idle).toBe(0);
+    expect(response.lockStateDistribution).toEqual({
+      locked: 1,
+      unlocked: 0,
+      unknown: 1,
+    });
+  });
+
+  it('nulls latest dashboard telemetry in SQL when the lock is offline', async () => {
+    dataSource.query.mockResolvedValueOnce([
+      {
+        total: '0',
+        online: '0',
+        offline: '0',
+        unknown: '0',
+        latestPositions: [],
+        alarmCount: '0',
+        stoppedCount: '0',
+        unlockedCount: '0',
+        totalActivities: '0',
+        activityRows: [],
+        eventTypeRows: [],
+        topAlarms: [],
+        syncRows: [],
+        topRfidCards: [],
+        tripHeatmapRows: [],
+      },
+    ]);
+
+    await service.summary({});
+
+    expect(dataSource.query).toHaveBeenCalledWith(
+      expect.stringContaining('= ANY($3::text[])'),
+      expect.any(Array),
     );
   });
 

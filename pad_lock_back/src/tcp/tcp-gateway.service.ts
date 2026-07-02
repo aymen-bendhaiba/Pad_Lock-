@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Socket, createServer, Server } from 'node:net';
+import { createServer, Server } from 'node:net';
 import { ArrayContains, DataSource, In, Repository } from 'typeorm';
 import {
   Geofence,
@@ -53,12 +53,12 @@ import {
   parseJt701dBinary,
   ParsedJt701dBinary,
 } from './parsers/jt701d-binary.parser';
+import {
+  RegisteredTcpSocket,
+  TcpConnectionsService,
+} from './tcp-connections.service';
 
-type DeviceSocket = Socket & {
-  buffer?: Buffer;
-  lastSerial?: number | null;
-  terminalId?: string;
-};
+type DeviceSocket = RegisteredTcpSocket;
 
 type PendingRfidRequest = {
   resolve: (value: RfidTcpResponse) => void;
@@ -83,7 +83,6 @@ export type RfidTcpResponse = {
 @Injectable()
 export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TcpGatewayService.name);
-  private readonly connectedDevices = new Map<string, DeviceSocket>();
   private readonly deviceChannelState = new Map<string, GeofenceRules>();
   private readonly pendingRfidRequests = new Map<string, PendingRfidRequest>();
   private readonly pendingCommandRequests = new Map<
@@ -94,6 +93,7 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly config: ConfigService,
+    private readonly connectedDevices: TcpConnectionsService,
     private readonly lockEventsService: LockEventsService,
     private readonly positionsService: PositionsService,
     private readonly locksService: LocksService,

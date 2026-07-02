@@ -5,6 +5,7 @@ import {
   GeofenceShapeType,
 } from '../geofences/geofence.entity';
 import { RfidCardRole, RfidCardSyncStatus } from '../rfid/rfid-card.entity';
+import { TcpConnectionsService } from './tcp-connections.service';
 import { TcpGatewayService } from './tcp-gateway.service';
 
 function geofence(
@@ -57,8 +58,10 @@ function serviceFixture(input: {
   const geofencesRepository = {
     find: jest.fn().mockResolvedValue(input.geofences ?? []),
   };
+  const connectedDevices = new TcpConnectionsService();
   const service = new TcpGatewayService(
     { getOrThrow: jest.fn().mockReturnValue(5000) },
+    connectedDevices,
     {} as never,
     {} as never,
     {

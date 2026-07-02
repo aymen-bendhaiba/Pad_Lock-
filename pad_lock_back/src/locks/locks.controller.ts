@@ -31,7 +31,7 @@ export class LocksController {
 
   @Get(':terminalId')
   findOne(@Param('terminalId') terminalId: string) {
-    return this.locksService.findByTerminalIdOrFail(terminalId);
+    return this.locksService.findCurrentByTerminalIdOrFail(terminalId);
   }
 
   @Patch(':terminalId')
