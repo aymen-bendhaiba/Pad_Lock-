@@ -463,7 +463,7 @@ function buildMetrics(summary: SummaryRecord): Metric[] {
 
   return [
     {
-      label: "Total des cadenas",
+      label: "Total des PadLock",
       value: getMetricValue(summary, ["total assets", "assets", "locks"], ["totalAssets", "assets", "total", "locks", "totalLocks"]),
       trend: trendFor(summary, "total"),
       icon: Database,
@@ -669,7 +669,7 @@ export function DashboardPanel() {
         <article className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="flex flex-col gap-3 border-b border-[#e6edf4] px-5 py-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className="text-[15px] font-bold">Activites des cadenas</h2>
+              <h2 className="text-[15px] font-bold">Activites des PadLock</h2>
               <p className="mt-1 text-[12px] text-[#718096]">Repartition des alarmes, mouvements, arrets, verrouillages et deverrouillages</p>
             </div>
             <button type="button" className="h-9 w-fit rounded-[7px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-medium text-[#475569]">{selectedRangeLabel}</button>
@@ -752,14 +752,14 @@ export function DashboardPanel() {
               </div>
             </div>
           ) : (
-            <div className="grid h-[292px] place-items-center bg-[#fbfdff] text-[12px] text-[#64748b]">Aucune activite de cadenas disponible pour le moment.</div>
+            <div className="grid h-[292px] place-items-center bg-[#fbfdff] text-[12px] text-[#64748b]">Aucune activite de PadLock disponible pour le moment.</div>
           )}
         </article>
 
         <article className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="border-b border-[#e6edf4] px-5 py-4">
             <h2 className="text-[15px] font-bold">Etat de connexion</h2>
-            <p className="mt-1 text-[12px] text-[#718096]">Disponibilite des cadenas connectes</p>
+            <p className="mt-1 text-[12px] text-[#718096]">Disponibilite des PadLock connectes</p>
           </div>
           <div className="p-5">
             <div className="grid place-items-center rounded-[10px] bg-[#f8fafc] py-5">
@@ -774,10 +774,10 @@ export function DashboardPanel() {
             </div>
             <div className="mt-4 grid gap-3">
               <div className="rounded-[8px] border border-[#d7f3df] bg-[#f0fdf4] px-3 py-3">
-                <div className="flex items-center justify-between text-[12px]"><span className="flex items-center gap-2 font-semibold text-[#047857]"><span className="size-2.5 rounded-full bg-[#34C759]" />Cadenas en ligne</span><strong className="text-[#064e3b]">{formatNumber(connection.online)}</strong></div>
+                <div className="flex items-center justify-between text-[12px]"><span className="flex items-center gap-2 font-semibold text-[#047857]"><span className="size-2.5 rounded-full bg-[#34C759]" />PadLock en ligne</span><strong className="text-[#064e3b]">{formatNumber(connection.online)}</strong></div>
               </div>
               <div className="rounded-[8px] border border-[#e2e8f0] bg-white px-3 py-3">
-                <div className="flex items-center justify-between text-[12px]"><span className="flex items-center gap-2 font-semibold text-[#64748b]"><span className="size-2.5 rounded-full bg-[#cbd5e1]" />Cadenas hors ligne</span><strong className="text-[#334155]">{formatNumber(connection.offline)}</strong></div>
+                <div className="flex items-center justify-between text-[12px]"><span className="flex items-center gap-2 font-semibold text-[#64748b]"><span className="size-2.5 rounded-full bg-[#cbd5e1]" />PadLock hors ligne</span><strong className="text-[#334155]">{formatNumber(connection.offline)}</strong></div>
               </div>
             </div>
           </div>

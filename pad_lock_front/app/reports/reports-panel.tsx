@@ -25,20 +25,21 @@ type ApiRecord = Record<string, unknown>;
 type ReportStatut = "Ready" | "Processing" | "Error";
 type GroupBy = "day" | "week" | "month";
 type ReportKind = "alerts" | "geofences" | "unlocks" | "mileage" | "battery";
+type ReportOutputFormat = "pdf" | "excel";
 
 type ReportDefinition = { key: ReportKind; label: string; endpoint: string; type: string; description: string };
 type DeviceOption = { id: string; name: string };
 type ReportResponse = { range?: ApiRecord; filters?: ApiRecord; summary?: ApiRecord; timeline?: unknown[]; pagination?: ApiRecord; rows?: unknown[] };
 type ReportsSummaryResponse = { range?: ApiRecord; filters?: ApiRecord; reports?: Partial<Record<ReportKind, ApiRecord>> };
 type ReportJob = { id: string; name: string; status: ReportStatut; type: string; date: string; time: string; size: string; definition: ReportDefinition; filters: ReportFilters; response?: ReportResponse; error?: string };
-type ReportFilters = { kind: ReportKind; from: string; to: string; terminalId: string; groupBy: GroupBy; page: number; limit: number; type: string; severity: string; status: string; geofenceId: string; method: string; below: string };
+type ReportFilters = { kind: ReportKind; from: string; to: string; terminalId: string; groupBy: GroupBy; page: number; limit: number; type: string; severity: string; status: string; geofenceId: string; method: string; below: string; outputFormat: ReportOutputFormat };
 
 const reportDefinitions: ReportDefinition[] = [
   { key: "alerts", label: "Rapport des alarmes", endpoint: "/reports/alerts", type: "Securite", description: "Totaux des alarmes, alarmes non traitees et critiques, repartitions, chronologie et details." },
-  { key: "geofences", label: "Rapport des geofences", endpoint: "/reports/geofences", type: "Geofence", description: "Entrees, sorties, deverrouillages dans les zones, cadenas concernes, regles et chronologie." },
+  { key: "geofences", label: "Rapport des geofences", endpoint: "/reports/geofences", type: "Geofence", description: "Entrees, sorties, deverrouillages dans les zones, PadLock concernes, regles et chronologie." },
   { key: "unlocks", label: "Rapport des deverrouillages", endpoint: "/reports/unlocks", type: "Securite", description: "Ouvertures, methodes utilisees, totaux RFID/mots de passe, coordonnees, geofences et chronologie." },
-  { key: "mileage", label: "Rapport de kilometrage", endpoint: "/reports/mileage", type: "Operationnel", description: "Kilometres totaux et par cadenas, kilometrage initial, final, distance calculee et horodatage." },
-  { key: "battery", label: "Rapport de batterie", endpoint: "/reports/battery", type: "Maintenance", description: "Niveaux moyen, minimum, maximum et dernier niveau de batterie, batteries faibles et charges par cadenas." },
+  { key: "mileage", label: "Rapport de kilometrage", endpoint: "/reports/mileage", type: "Operationnel", description: "Kilometres totaux et par PadLock, kilometrage initial, final, distance calculee et horodatage." },
+  { key: "battery", label: "Rapport de batterie", endpoint: "/reports/battery", type: "Maintenance", description: "Niveaux moyen, minimum, maximum et dernier niveau de batterie, batteries faibles et charges par PadLock." },
 ];
 const methodOptions = ["", "rfid", "static_password", "dynamic_password", "bluetooth", "other"];
 const alertTypeOptions = ["", "locked", "unlock_rejected", "tamper", "geofence", "low_battery", "offline", "other"];
@@ -54,14 +55,14 @@ type RangePreset = typeof rangePresetOptions[number]["value"];
 
 function defaultFromDate() { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); }
 function defaultToDate() { return new Date().toISOString().slice(0, 10); }
-function defaultFilters(kind: ReportKind = "alerts"): ReportFilters { return { kind, from: defaultFromDate(), to: defaultToDate(), terminalId: "", groupBy: "day", page: 1, limit: 100, type: "", severity: "", status: "", geofenceId: "", method: "", below: "" }; }
+function defaultFilters(kind: ReportKind = "alerts"): ReportFilters { return { kind, from: defaultFromDate(), to: defaultToDate(), terminalId: "", groupBy: "day", page: 1, limit: 100, type: "", severity: "", status: "", geofenceId: "", method: "", below: "", outputFormat: "pdf" }; }
 function asRecord(value: unknown): ApiRecord | undefined { return value && typeof value === "object" && !Array.isArray(value) ? value as ApiRecord : undefined; }
 function rowsFromPayload(payload: unknown): unknown[] { if (Array.isArray(payload)) return payload; const r = asRecord(payload); if (!r) return []; for (const k of ["data", "items", "results", "devices", "locks", "rows"]) if (Array.isArray(r[k])) return r[k] as unknown[]; return []; }
 function textValue(...values: unknown[]) { for (const v of values) { if (typeof v === "string" && v.trim()) return v.trim(); if (typeof v === "number" && Number.isFinite(v)) return String(v); if (typeof v === "boolean") return v ? "Oui" : "Non"; } return undefined; }
 function terminalIdFromRecord(record: ApiRecord) { return textValue(record.terminalId, record.terminalID, record.deviceId, record.lockId, record.id, record.imei) ?? "unknown"; }
-function normalizeDevice(row: unknown, index: number): DeviceOption | null { const r = asRecord(row); if (!r) return null; const id = terminalIdFromRecord(r); if (id === "unknown") return null; return { id, name: textValue(r.name, r.assetName, r.deviceName, r.label) ?? "Cadenas-" + index }; }
+function normalizeDevice(row: unknown, index: number): DeviceOption | null { const r = asRecord(row); if (!r) return null; const id = terminalIdFromRecord(r); if (id === "unknown") return null; return { id, name: textValue(r.name, r.assetName, r.deviceName, r.label) ?? "PadLock-" + index }; }
 function formatValue(value: unknown): string { if (value === null || value === undefined || value === "") return "--"; if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2); if (typeof value === "boolean") return value ? "Oui" : "Non"; if (typeof value === "string") return optionLabel(value); if (Array.isArray(value)) return value.length + " element" + (value.length === 1 ? "" : "s"); if (typeof value === "object") return JSON.stringify(value); return String(value); }
-function formatLabel(key: string) { const labels: Record<string, string> = { total: "Total", totalAlerts: "Total alarmes", totalOpenings: "Total ouvertures", totalOpened: "Total ouvertures", totalGeofences: "Total geofences", samples: "Echantillons", entries: "Entrees", exits: "Sorties", totalKilometers: "Kilometres totaux", affectedLocks: "Cadenas concernes", unresolved: "Non resolues", critical: "Critiques", averagePercentage: "Batterie moyenne", lowSamples: "Batteries faibles", movingSamples: "Positions en mouvement", terminalId: "Cadenas", type: "Type", severity: "Severite", status: "Statut", createdAt: "Date creation", timestamp: "Horodatage", latitude: "Latitude", longitude: "Longitude", method: "Methode", geofenceId: "Geofence" }; return labels[key] ?? key.replace(/([A-Z])/g, " $1").replace(/[_-]+/g, " ").replace(/^./, c => c.toUpperCase()); }
+function formatLabel(key: string) { const labels: Record<string, string> = { total: "Total", totalAlerts: "Total alarmes", totalOpenings: "Total ouvertures", totalOpened: "Total ouvertures", totalGeofences: "Total geofences", samples: "Echantillons", entries: "Entrees", exits: "Sorties", totalKilometers: "Kilometres totaux", affectedLocks: "PadLock concernes", unresolved: "Non resolues", critical: "Critiques", averagePercentage: "Batterie moyenne", lowSamples: "Batteries faibles", movingSamples: "Positions en mouvement", terminalId: "PadLock", type: "Type", severity: "Severite", status: "Statut", createdAt: "Date creation", timestamp: "Horodatage", latitude: "Latitude", longitude: "Longitude", method: "Methode", geofenceId: "Geofence" }; return labels[key] ?? key.replace(/([A-Z])/g, " $1").replace(/[_-]+/g, " ").replace(/^./, c => c.toUpperCase()); }
 function rowRecord(row: unknown): ApiRecord { return asRecord(row) ?? { value: row }; }
 function rowColumns(rows: unknown[]) { const keys = new Set<string>(); for (const row of rows.slice(0, 20)) Object.keys(rowRecord(row)).forEach(k => keys.add(k)); return Array.from(keys).filter(k => k !== "deletedAt"); }
 function reportTotal(response?: ReportResponse) { const summary = response?.summary; const total = Number(response?.pagination?.total ?? summary?.total ?? summary?.totalAlerts ?? summary?.totalOpenings ?? response?.rows?.length ?? 0); return Number.isFinite(total) ? total : 0; }
@@ -75,6 +76,23 @@ function statusClass(status: ReportStatut) { if (status === "Ready") return "bg-
 function statusLabel(status: ReportStatut) { if (status === "Ready") return "Pret"; if (status === "Processing") return "En cours"; return "Erreur"; }
 function optionLabel(value: string) { const labels: Record<string, string> = { rfid: "RFID", static_password: "Mot de passe statique", dynamic_password: "Mot de passe dynamique", bluetooth: "Bluetooth", other: "Autre", locked: "Verrouille", unlock_rejected: "Deverrouillage refuse", tamper: "Sabotage", geofence: "Geofence", low_battery: "Batterie faible", offline: "Hors ligne", info: "Information", warning: "Avertissement", critical: "Critique", unresolved: "Non resolu", resolved: "Resolu", acknowledged: "Acquitte" }; return labels[value] ?? value; }
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) { return Promise.race([promise, new Promise<T>((_, reject) => window.setTimeout(() => reject(new Error(message)), timeoutMs))]); }
+function reportRowTitle(kind: ReportKind, record: ApiRecord, index: number) {
+  const terminal = textValue(record.terminalId, record.terminalID, record.lockId, record.deviceId, record.imei);
+  const date = textValue(record.occurredAt, record.timestamp, record.createdAt, record.updatedAt, record.recordedAt, record.time, record.date);
+  const site = textValue(record.geofenceName, record.geofence, record.siteName, record.name, record.geofenceId);
+  const type = textValue(record.type, record.eventType, record.alertType);
+  const method = textValue(record.method, record.unlockMethod);
+  const status = textValue(record.status, record.state);
+  const padLock = terminal ? "PadLock " + terminal : undefined;
+  const suffix = date ? " - " + date : "";
+
+  if (kind === "alerts") return ["Alarme", type ? optionLabel(type) : undefined, padLock].filter(Boolean).join(" - ") + suffix;
+  if (kind === "unlocks") return ["Deverrouillage", method ? optionLabel(method) : undefined, padLock].filter(Boolean).join(" - ") + suffix;
+  if (kind === "geofences") return ["Geofence", site, padLock].filter(Boolean).join(" - ") + suffix;
+  if (kind === "mileage") return ["Kilometrage", padLock, status ? optionLabel(status) : undefined].filter(Boolean).join(" - ") + suffix;
+  if (kind === "battery") return ["Etat batterie", padLock, textValue(record.latest, record.latestPercentage, record.percentage, record.battery, record.averagePercentage)].filter(Boolean).join(" - ") + suffix;
+  return ["Enregistrement", padLock, type ? optionLabel(type) : undefined].filter(Boolean).join(" - ") || "Enregistrement " + index;
+}
 
 function numberValue(...values: unknown[]) { for (const value of values) { if (typeof value === "number" && Number.isFinite(value)) return value; if (typeof value === "string") { const parsed = Number(value.replace(/[^0-9.-]/g, "")); if (Number.isFinite(parsed)) return parsed; } } return undefined; }
 function batteryTimestamp(record: ApiRecord, index: number) { return textValue(record.date, record.day, record.timestamp, record.createdAt, record.occurredAt, record.updatedAt, record.recordedAt, record.time) ?? "Point " + (index + 1); }
@@ -297,7 +315,7 @@ function createReportPdfBlob(report: ReportJob) {
       const cardBottom = cardTop - cardHeight;
       page.rect(42, cardBottom, 528, cardHeight, rowNumber % 2 ? [248, 250, 252] : [255, 255, 255]);
       page.strokeRect(42, cardBottom, 528, cardHeight, [223, 230, 238]);
-      page.textAt(56, cardTop - 18, "Ligne " + rowNumber, 9, [15, 23, 42], true);
+      page.textLines(56, cardTop - 18, wrapPdfLines(reportRowTitle(report.definition.key, record, rowNumber), 70, 1), 9, [15, 23, 42], true, 10);
 
       let entryY = cardTop - 38;
       for (let index = 0; index < blocks.length; index += 2) {
@@ -348,6 +366,94 @@ function createReportPdfBlob(report: ReportJob) {
   pdf += "trailer\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF";
   return new Blob([pdf], { type: "application/pdf" });
 }
+function escapeHtml(value: unknown) {
+  return formatValue(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function createReportExcelBlob(report: ReportJob) {
+  const response = report.response;
+  const rows = response?.rows ?? [];
+  const columns = rowColumns(rows);
+  const summaryEntries = Object.entries(response?.summary ?? {}).slice(0, 12);
+  const summaryCards: [string, unknown][] = summaryEntries.length ? summaryEntries : [["total", reportTotal(response)]];
+  const summaryHtml = summaryCards
+    .map(([key, value]) => `<td class="summary"><span>${escapeHtml(formatLabel(key))}</span><strong>${escapeHtml(value)}</strong></td>`)
+    .join("");
+  const metadataHtml = ([
+    ["Type", report.type],
+    ["Statut", statusLabel(report.status)],
+    ["Genere le", report.date + " " + report.time],
+    ["Lignes", String(rows.length)],
+  ] as [string, string][])
+    .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`)
+    .join("");
+  const headersHtml = columns.map(column => `<th>${escapeHtml(formatLabel(column))}</th>`).join("");
+  const rowsHtml = rows
+    .map(row => {
+      const record = rowRecord(row);
+      return `<tr>${columns.map(column => `<td>${escapeHtml(record[column])}</td>`).join("")}</tr>`;
+    })
+    .join("");
+  const emptyColspan = Math.max(1, columns.length);
+  const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { font-family: Arial, sans-serif; color: #0f172a; background: #f8fafc; }
+  .sheet { background: #ffffff; padding: 0 0 24px; }
+  .hero { background: #0b1728; color: white; padding: 24px 30px; border-left: 9px solid #2A9D90; }
+  .hero h1 { margin: 0 0 8px; font-size: 25px; font-weight: 700; }
+  .hero p { margin: 0; color: #cbd5e1; font-size: 13px; }
+  .section-title { margin: 26px 28px 8px; color: #0f172a; font-size: 17px; font-weight: 700; }
+  table { border-collapse: collapse; width: calc(100% - 56px); margin: 12px 28px; }
+  .meta th { width: 150px; background: #eef6f7; color: #496383; text-align: left; }
+  .meta td, .meta th { border: 1px solid #d9e5ef; padding: 9px 11px; font-size: 12px; }
+  .summary { background: #eefbf8; border: 1px solid #d9e5ef; padding: 13px; width: 25%; }
+  .summary span { display: block; color: #496383; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .summary strong { display: block; margin-top: 5px; color: #0f172a; font-size: 19px; }
+  .details th { background: #172236; color: white; padding: 10px; text-align: left; font-size: 12px; border: 1px solid #172236; }
+  .details td { border: 1px solid #d9e5ef; padding: 9px; font-size: 12px; vertical-align: top; }
+  .details tr:nth-child(even) td { background: #f8fafc; }
+  .empty { color: #64748b; font-style: italic; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="hero"><h1>${escapeHtml(report.name)}</h1><p>Pad Lock - Rapports et analyses</p></div>
+    <div class="section-title">Informations du rapport</div>
+    <table class="meta">${metadataHtml}</table>
+    <div class="section-title">Synthese</div>
+    <table><tr>${summaryHtml}</tr></table>
+    <div class="section-title">Lignes detaillees</div>
+    <table class="details">
+      <thead><tr>${headersHtml || `<th>Information</th>`}</tr></thead>
+      <tbody>${rowsHtml || `<tr><td class="empty" colspan="${emptyColspan}">Aucune ligne detaillee retournee pour ces filtres.</td></tr>`}</tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+  return new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function safeReportFilename(report: ReportJob, extension: ReportOutputFormat) {
+  const fileExtension = extension === "excel" ? "xls" : extension;
+  return report.name.replace(/[^a-z0-9-_]+/gi, "_") + "." + fileExtension;
+}
 function datesForRangePreset(preset: RangePreset) {
   const option = rangePresetOptions.find(item => item.value === preset) ?? rangePresetOptions[1];
   if (option.value === "custom") return null;
@@ -371,11 +477,11 @@ function GenerateReportModal({ filters, devices, loading, onClose, onGenerate }:
           <label className="block text-[12px] font-medium">Type de rapport <span className="text-[#ef4444]">*</span><select value={draft.kind} onChange={e => update({ kind: e.target.value as ReportKind, type: "", severity: "", status: "", geofenceId: "", method: "", below: "" })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15">{reportDefinitions.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
           <div className="block text-[12px] font-medium"><span>Periode <span className="text-[#ef4444]">*</span></span><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_112px_112px]"><select value={rangePreset} onChange={e => chooseRange(e.target.value as RangePreset)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none">{rangePresetOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select><input value={draft.from} onChange={e => updateDate({ from: e.target.value })} disabled={!isCustomRange} type="date" className="h-9 w-full rounded-[6px] border border-[#dfe6ee] px-2 text-[11px] outline-none disabled:bg-[#f8fafc] disabled:text-[#94a3b8]" /><input value={draft.to} onChange={e => updateDate({ to: e.target.value })} disabled={!isCustomRange} type="date" className="h-9 w-full rounded-[6px] border border-[#dfe6ee] px-2 text-[11px] outline-none disabled:bg-[#f8fafc] disabled:text-[#94a3b8]" /></div></div>
           <label className="block text-[12px] font-medium">Regrouper par<select value={draft.groupBy} onChange={e => update({ groupBy: e.target.value as GroupBy })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none"><option value="day">Jour</option><option value="week">Semaine</option><option value="month">Mois</option></select></label>
-          <div className="border-t border-[#dfe6ee] pt-4"><p className="text-[12px] font-medium">Selection des cadenas</p><p className="mt-1 text-[11px] text-[#64748b]">Selectionnez les cadenas a inclure</p></div>
-          <label className="block text-[12px] font-medium">Selectionner un cadenas <span className="text-[#ef4444]">*</span><select value={draft.terminalId} onChange={e => update({ terminalId: e.target.value })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none"><option value="">Tous les cadenas</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name} - {device.id}</option>)}</select></label>
+          <div className="border-t border-[#dfe6ee] pt-4"><p className="text-[12px] font-medium">Selection des PadLock</p><p className="mt-1 text-[11px] text-[#64748b]">Selectionnez les PadLock a inclure</p></div>
+          <label className="block text-[12px] font-medium">Selectionner un PadLock <span className="text-[#ef4444]">*</span><select value={draft.terminalId} onChange={e => update({ terminalId: e.target.value })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none"><option value="">Tous les PadLock</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name} - {device.id}</option>)}</select></label>
           {draft.kind === "alerts" ? <div className="grid grid-cols-3 gap-2"><select value={draft.type} onChange={e => update({ type: e.target.value })} className="h-9 rounded-[6px] border border-[#dfe6ee] px-2 text-[11px]">{alertTypeOptions.map(item => <option key={item} value={item}>{item ? optionLabel(item) : "Tous les types"}</option>)}</select><select value={draft.severity} onChange={e => update({ severity: e.target.value })} className="h-9 rounded-[6px] border border-[#dfe6ee] px-2 text-[11px]">{severityOptions.map(item => <option key={item} value={item}>{item ? optionLabel(item) : "Toutes les severites"}</option>)}</select><select value={draft.status} onChange={e => update({ status: e.target.value })} className="h-9 rounded-[6px] border border-[#dfe6ee] px-2 text-[11px]">{alertStatutOptions.map(item => <option key={item} value={item}>{item ? optionLabel(item) : "Tous les statuts"}</option>)}</select></div> : null}
           {draft.kind === "unlocks" ? <select value={draft.method} onChange={e => update({ method: e.target.value })} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 text-[12px]">{methodOptions.map(method => <option key={method} value={method}>{method ? optionLabel(method) : "Toutes les methodes"}</option>)}</select> : null}
-          <label className="block text-[12px] font-medium">Format de sortie<select value="PDF" disabled className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-[#f8fafc] px-3 outline-none"><option>PDF</option></select></label>
+          <label className="block text-[12px] font-medium">Format de sortie<select value={draft.outputFormat} onChange={e => update({ outputFormat: e.target.value as ReportOutputFormat })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white px-3 outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"><option value="pdf">PDF</option><option value="excel">Excel</option></select></label>
           <div className="flex gap-3 rounded-[7px] bg-[#f7f7f8] p-4"><span className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-[#050505] text-white"><FileText size={16} /></span><div><h3 className="text-[15px] font-medium">{definition.label} contient :</h3><p className="mt-2 text-[11px] leading-snug text-[#64748b]">{definition.description}</p></div></div>
         </div>
         <div className="mt-5 flex justify-between"><button type="button" onClick={onClose} className="h-9 rounded-[6px] border border-[#dfe6ee] bg-white px-4 text-[12px] font-medium">Annuler</button><button type="button" onClick={() => onGenerate(draft)} disabled={loading} className="flex h-9 items-center gap-2 rounded-[6px] bg-[#111111] px-4 text-[12px] font-semibold text-white disabled:opacity-60">{loading ? <Loader2 size={14} className="animate-spin" /> : null}Generer le rapport</button></div>
@@ -418,6 +524,8 @@ export function ReportsPanel() {
   const [viewReport, setViewReport] = useState<ReportJob | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"info" | "error">("info");
+  const [exportFormat, setExportFormat] = useState<ReportOutputFormat>("pdf");
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -435,13 +543,14 @@ export function ReportsPanel() {
   async function fetchAllReportPages(path: string, first: ReportResponse) { const total = Number(first.pagination?.total ?? first.rows?.length ?? 0); const firstRows = first.rows ?? []; const limit = Math.max(1, Number(first.pagination?.limit ?? 100)); const pageCount = Math.ceil(total / limit); if (!Number.isFinite(total) || pageCount <= 1 || firstRows.length >= total) return first; const rest = await Promise.all(Array.from({ length: pageCount - 1 }, (_, index) => fetchReportPath(pathWithPage(path, index + 2)).catch(() => undefined))); const rows = [...firstRows, ...rest.flatMap(response => response?.rows ?? [])].slice(0, total || undefined); return { ...first, rows, pagination: { ...first.pagination, page: 1, limit, total } }; }
   async function fetchReport(filters: ReportFilters, includeAllPages = true, allowFallbacks = true) { let emptyResponse: ReportResponse | undefined; let lastError: Error | undefined; for (const path of reportRequestPaths(filters, allowFallbacks)) { try { const firstPage = await fetchReportPath(path); const response = includeAllPages ? await fetchAllReportPages(path, firstPage) : firstPage; if (hasReportData(response)) return response; emptyResponse = emptyResponse ?? response; } catch (error) { lastError = error instanceof Error ? error : new Error("Impossible de charger le rapport."); } } if (emptyResponse) return emptyResponse; throw lastError ?? new Error("Impossible de charger le rapport."); }
   function jobFrom(definition: ReportDefinition, filters: ReportFilters, response?: ReportResponse, error?: string): ReportJob { const time = timestampParts(); return { id: definition.key + "-" + Date.now() + "-" + Math.random().toString(36).slice(2), name: definition.label, status: error ? "Error" : response ? "Ready" : "Processing", type: definition.type, date: time.date, time: time.time, size: response ? formatSize(response) : "--", definition, filters, response, error }; }
-  async function loadDefaultReports(nextTerminalId = lockFilter === "All" ? "" : lockFilter) { setLoading(true); setMessage("Chargement de l'historique des rapports..."); const baseFilters = { ...defaultFilters(), terminalId: nextTerminalId }; const baseJobs = reportDefinitions.map(definition => jobFrom(definition, { ...baseFilters, kind: definition.key })); setReports(baseJobs); try { const summaryPayload = await fetchReportsSummary(baseFilters); const jobs = reportDefinitions.map(definition => { const filters = { ...baseFilters, kind: definition.key }; const summary = summaryPayload.reports?.[definition.key] ?? {}; const response: ReportResponse = { range: summaryPayload.range, filters: summaryPayload.filters, summary, rows: [], timeline: [] }; return jobFrom(definition, filters, response); }); setReports(jobs); setMessage("Historique des rapports"); } catch (error) { setReports(baseJobs.map(job => ({ ...job, status: "Error" as ReportStatut, error: userFriendlyError(error, "Echec"), size: "--" }))); setMessage(userFriendlyError(error, "Impossible de charger l'historique des rapports.")); } finally { setLoading(false); } }
-  async function generateReport(filters: ReportFilters) { const definition = reportDefinitions.find(d => d.key === filters.kind) ?? reportDefinitions[0]; setLoading(true); setMessage("Generation du rapport..."); const pending = jobFrom(definition, filters); setReports(current => [pending, ...current]); try { const response = await fetchReport(filters); setReports(current => current.map(item => item.id === pending.id ? { ...item, status: "Ready", response, size: formatSize(response), date: timestampParts().date, time: timestampParts().time } : item)); setShowModal(false); setMessage("Rapport genere."); } catch (error) { setReports(current => current.map(item => item.id === pending.id ? { ...item, status: "Error", error: userFriendlyError(error, "Echec"), size: "--" } : item)); setMessage(userFriendlyError(error, "Impossible de generer le rapport.")); } finally { setLoading(false); } }
+  async function loadDefaultReports(nextTerminalId = lockFilter === "All" ? "" : lockFilter) { setLoading(true); setMessageTone("info"); setMessage("Chargement de l'historique des rapports..."); const baseFilters = { ...defaultFilters(), terminalId: nextTerminalId }; const baseJobs = reportDefinitions.map(definition => jobFrom(definition, { ...baseFilters, kind: definition.key })); setReports(baseJobs); try { const summaryPayload = await fetchReportsSummary(baseFilters); const jobs = reportDefinitions.map(definition => { const filters = { ...baseFilters, kind: definition.key }; const summary = summaryPayload.reports?.[definition.key] ?? {}; const response: ReportResponse = { range: summaryPayload.range, filters: summaryPayload.filters, summary, rows: [], timeline: [] }; return jobFrom(definition, filters, response); }); setReports(jobs); setMessage("Historique des rapports"); } catch (error) { setReports(baseJobs.map(job => ({ ...job, status: "Error" as ReportStatut, error: userFriendlyError(error, "Echec"), size: "--" }))); setMessage(userFriendlyError(error, "Impossible de charger l'historique des rapports.")); } finally { setLoading(false); } }
+  async function generateReport(filters: ReportFilters) { const definition = reportDefinitions.find(d => d.key === filters.kind) ?? reportDefinitions[0]; setLoading(true); setMessageTone("info"); setMessage("Generation du rapport..."); const pending = jobFrom(definition, filters); setReports(current => [pending, ...current]); try { const response = await fetchReport(filters); setReports(current => current.map(item => item.id === pending.id ? { ...item, status: "Ready", response, size: formatSize(response), date: timestampParts().date, time: timestampParts().time } : item)); setShowModal(false); setMessage("Rapport genere."); } catch (error) { setReports(current => current.map(item => item.id === pending.id ? { ...item, status: "Error", error: userFriendlyError(error, "Echec"), size: "--" } : item)); setMessage(userFriendlyError(error, "Impossible de generer le rapport.")); } finally { setLoading(false); } }
   function deleteReport(id: string) { setReports(current => current.filter(item => item.id !== id)); setSelectedIds(current => current.filter(item => item !== id)); setOpenMenuId(null); }
   function hasDetailedReport(report: ReportJob) { return Boolean((report.response?.rows?.length ?? 0) > 0 || (report.response?.timeline?.length ?? 0) > 0); }
-  async function loadReportDetails(report: ReportJob) { if (hasDetailedReport(report)) return report; setLoading(true); setMessage("Chargement des details du rapport..."); try { const response = await fetchReport(report.filters); const detailed = { ...report, status: "Ready" as ReportStatut, response, size: formatSize(response), error: undefined }; setReports(current => current.map(item => item.id === report.id ? detailed : item)); return detailed; } finally { setLoading(false); } }
+  async function loadReportDetails(report: ReportJob) { if (hasDetailedReport(report)) return report; setLoading(true); setMessageTone("info"); setMessage("Chargement des details du rapport..."); try { const response = await fetchReport(report.filters); const detailed = { ...report, status: "Ready" as ReportStatut, response, size: formatSize(response), error: undefined }; setReports(current => current.map(item => item.id === report.id ? detailed : item)); return detailed; } finally { setLoading(false); } }
   async function openReport(report: ReportJob) { setOpenMenuId(null); try { setViewReport(await loadReportDetails(report)); setMessage("Historique des rapports"); } catch (error) { setMessage(userFriendlyError(error, "Impossible de charger les details du rapport.")); } }
-  async function downloadReport(report: ReportJob) { try { const detailed = await loadReportDetails(report); const blob = createReportPdfBlob(detailed); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = detailed.name.replace(/[^a-z0-9-_]+/gi, "_") + ".pdf"; link.click(); URL.revokeObjectURL(url); setOpenMenuId(null); setMessage("Historique des rapports"); } catch (error) { setMessage(userFriendlyError(error, "Impossible de telecharger le rapport.")); } }
+  async function downloadReport(report: ReportJob, format: ReportOutputFormat = report.filters.outputFormat ?? "pdf") { try { const detailed = await loadReportDetails(report); const blob = format === "excel" ? createReportExcelBlob(detailed) : createReportPdfBlob(detailed); downloadBlob(blob, safeReportFilename(detailed, format)); setOpenMenuId(null); setMessageTone("info"); setMessage("Historique des rapports"); } catch (error) { setMessageTone("error"); setMessage(userFriendlyError(error, "Impossible de telecharger le rapport.")); } }
+  async function exportSelectedReport(format: ReportOutputFormat) { const selectedReports = selectedIds.map(id => reports.find(report => report.id === id)).filter((report): report is ReportJob => Boolean(report)); if (!selectedReports.length) { setMessageTone("error"); setMessage("Selectionnez un rapport avant d'exporter."); return; } setMessageTone("info"); setMessage("Export de " + selectedReports.length + " rapport(s) en cours..."); for (const report of selectedReports) { await downloadReport(report, format); } setMessage("Export termine : " + selectedReports.length + " rapport(s) telecharge(s)."); }
   const filteredReports = useMemo(() => reports.filter(report => { const matchesQuery = (report.name + " " + report.type + " " + report.status).toLowerCase().includes(query.toLowerCase()); const matchesType = reportTypeFilter === "All" || report.definition.key === reportTypeFilter; const matchesLock = lockFilter === "All" || report.filters.terminalId === lockFilter; return matchesQuery && matchesType && matchesLock; }), [reports, query, reportTypeFilter, lockFilter]);
   const pageCount = Math.max(1, Math.ceil(filteredReports.length / rowsPerPage)); const pagedReports = filteredReports.slice((page - 1) * rowsPerPage, page * rowsPerPage); const allSelected = pagedReports.length > 0 && pagedReports.every(report => selectedIds.includes(report.id));
   function toggleSelected(id: string) { setSelectedIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]); }
@@ -450,8 +559,8 @@ export function ReportsPanel() {
   return (
     <div className="w-full px-4 py-7 md:px-6">
       <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-start"><div><h1 className="text-[26px] font-bold tracking-normal text-black">Rapports et analyses</h1><p className="mt-2 text-[13px] text-[#64748b]">Consultez et telechargez les donnees historiques et les indicateurs de performance.</p></div><button type="button" onClick={() => setShowModal(true)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] bg-[#111111] px-3 text-[12px] font-semibold text-white"><FileText size={14} />Generer un rapport</button></div>
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div className="flex flex-col gap-3 md:flex-row md:flex-wrap"><label className="relative block w-full md:w-[300px]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} /><input value={query} onChange={e => setQuery(e.target.value)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher un rapport" /></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><SlidersHorizontal size={14} /><select value={reportTypeFilter} onChange={e => setReportTypeFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les types de rapports</option>{reportDefinitions.map(definition => <option key={definition.key} value={definition.key}>{definition.label}</option>)}</select></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><select value={lockFilter} onChange={e => setLockFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les cadenas</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select></label></div><div className="flex gap-2"><button type="button" onClick={() => void loadDefaultReports(lockFilter === "All" ? "" : lockFilter)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">{loading ? <Loader2 size={14} className="animate-spin" /> : null}Actualiser</button><button type="button" onClick={() => { const report = reports.find(r => r.id === selectedIds[0]); if (report) void downloadReport(report); }} className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><Upload size={14} />Exporter</button></div></div>
-      {message ? <p className="mb-4 rounded-[7px] bg-[#f8fafc] px-3 py-2 text-[12px] text-[#64748b]">{message}</p> : null}
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div className="flex flex-col gap-3 md:flex-row md:flex-wrap"><label className="relative block w-full md:w-[300px]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} /><input value={query} onChange={e => setQuery(e.target.value)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher un rapport" /></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><SlidersHorizontal size={14} /><select value={reportTypeFilter} onChange={e => setReportTypeFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les types de rapports</option>{reportDefinitions.map(definition => <option key={definition.key} value={definition.key}>{definition.label}</option>)}</select></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><select value={lockFilter} onChange={e => setLockFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les PadLock</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select></label></div><div className="flex gap-2"><button type="button" onClick={() => void loadDefaultReports(lockFilter === "All" ? "" : lockFilter)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">{loading ? <Loader2 size={14} className="animate-spin" /> : null}Actualiser</button><label className="flex h-9 w-fit items-center rounded-[6px] border border-[#dfe6ee] bg-white px-2 text-[12px] font-semibold"><select value={exportFormat} onChange={e => setExportFormat(e.target.value as ReportOutputFormat)} className="bg-transparent outline-none"><option value="pdf">PDF</option><option value="excel">Excel</option></select></label><button type="button" onClick={() => void exportSelectedReport(exportFormat)} aria-disabled={selectedIds.length === 0} className={("flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] px-3 text-[12px] font-semibold transition " + (selectedIds.length === 0 ? "bg-[#f8fafc] text-[#94a3b8]" : "bg-white text-[#111827] hover:bg-[#f8fafc]"))}><Upload size={14} />Exporter</button></div></div>
+      {message ? <p className={("mb-4 rounded-[7px] px-3 py-2 text-[12px] " + (messageTone === "error" ? "bg-red-50 text-red-700" : "bg-[#f8fafc] text-[#64748b]"))}>{message}</p> : null}
       <div className="overflow-visible rounded-[7px] border border-[#dfe6ee] bg-white"><div className="grid grid-cols-[48px_2fr_1fr_1fr_1.3fr_1fr_70px] border-b border-[#dfe6ee] px-4 py-3 text-[12px] font-medium text-[#496383]"><input checked={allSelected} onChange={toggleAll} type="checkbox" aria-label="Selectionner tous les rapports" /><span>Nom du rapport</span><span>Statut</span><span>Type</span><span>Date de generation</span><span>Taille</span><span>Actions</span></div>
         {loading && reports.length === 0 ? <div className="grid h-44 place-items-center text-[13px] font-medium text-[#64748b]"><span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Chargement des rapports...</span></div> : null}
         {pagedReports.map((report, index) => <div key={report.id} className={("relative grid grid-cols-[48px_2fr_1fr_1fr_1.3fr_1fr_70px] items-center border-b border-[#dfe6ee] px-4 py-4 text-[12px] " + (index === 1 ? "bg-[#f1f1f2]" : "bg-white"))}><input checked={selectedIds.includes(report.id)} onChange={() => toggleSelected(report.id)} type="checkbox" aria-label={"Selectionner " + report.name} /><span><span className="font-medium">{report.name}</span>{report.error ? <span className="mt-1 block max-w-[320px] truncate text-[11px] text-[#ef4444]" title={report.error}>{report.error}</span> : null}</span><span><span className={"rounded-[5px] px-2 py-1 text-[11px] font-medium " + statusClass(report.status)}>{statusLabel(report.status)}</span></span><span>{report.type}</span><span>{report.date}<br /><span className="text-[#64748b]">{report.time}</span></span><span>{report.size}</span><button type="button" onClick={() => setOpenMenuId(openMenuId === report.id ? null : report.id)} className="grid size-7 place-items-center rounded-[5px] hover:bg-[#eef4fa]" aria-label={"Ouvrir les actions pour " + report.name}><Ellipsis size={16} /></button>{openMenuId === report.id ? <div className="absolute right-8 top-10 z-10 w-[132px] overflow-hidden rounded-[6px] border border-[#dfe6ee] bg-white py-1 text-[12px] shadow-lg"><button type="button" onClick={() => void openReport(report)} className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-[#eef4fa]"><Eye size={13} />Voir</button><button type="button" onClick={() => void downloadReport(report)} className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-[#eef4fa]"><Download size={13} />Telecharger</button><button type="button" onClick={() => deleteReport(report.id)} className="flex h-8 w-full items-center gap-2 px-3 text-left text-red-700 hover:bg-red-50"><Trash2 size={13} />Supprimer</button></div> : null}</div>)}

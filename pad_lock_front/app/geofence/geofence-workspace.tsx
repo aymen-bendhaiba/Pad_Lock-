@@ -863,7 +863,7 @@ function UnlockPermissionStatus({
         ) : null}
       </div>
       <p className="mt-1 text-[11px] leading-snug text-[#63758d]">
-        Choisissez si le cadenas peut etre deverrouille lorsqu&apos;il se trouve dans cette geofence.
+        Choisissez si le PadLock peut etre deverrouille lorsqu&apos;il se trouve dans cette geofence.
       </p>
       <div className="mt-2 space-y-2 text-[12px] text-[#0f172a]">
         <label className="flex items-start gap-2 rounded-[7px] bg-white px-3 py-2 ring-1 ring-[#e3e9f0]">
@@ -876,7 +876,7 @@ function UnlockPermissionStatus({
           />
           <span>
             <span className="block font-semibold">Deverrouillage autorise</span>
-            <span className="block text-[11px] text-[#63758d]">Le cadenas peut etre ouvert dans cette zone.</span>
+            <span className="block text-[11px] text-[#63758d]">Le PadLock peut etre ouvert dans cette zone.</span>
           </span>
         </label>
         <label className="flex items-start gap-2 rounded-[7px] bg-white px-3 py-2 ring-1 ring-[#e3e9f0]">
@@ -889,7 +889,7 @@ function UnlockPermissionStatus({
           />
           <span>
             <span className="block font-semibold">Deverrouillage bloque</span>
-            <span className="block text-[11px] text-[#63758d]">Le cadenas ne doit pas etre ouvert dans cette zone.</span>
+            <span className="block text-[11px] text-[#63758d]">Le PadLock ne doit pas etre ouvert dans cette zone.</span>
           </span>
         </label>
       </div>
@@ -1007,6 +1007,27 @@ function normalizeGeofences(payload: unknown): SavedGeofence[] {
   }, []);
 }
 
+function textMatchesQuery(query: string, ...values: Array<string | undefined>) {
+  if (!query) return true;
+  return values.filter(Boolean).some((value) => value?.toLowerCase().includes(query));
+}
+
+function geofenceMatchesSearch(geofence: SavedGeofence, query: string) {
+  return textMatchesQuery(
+    query,
+    geofence.name,
+    geofence.id,
+    geofence.number,
+    geofence.description,
+    geofence.area,
+    geofence.shapeType,
+    geofence.accessMode,
+    geofence.countryCode,
+    geofence.countryName,
+    geofence.geoBoundaryId,
+    geofence.lockAccessAllowed ? "deverrouillage autorise" : "deverrouillage bloque",
+  );
+}
 function geofenceMatchesCountry(
   geofence: SavedGeofence,
   country: BoundarySummary | undefined,
@@ -1169,6 +1190,10 @@ export function GeofenceWorkspace() {
   }, [selectedContinent]);
 
   const selectedCountry = countries.find((country) => country.id === selectedCountryId);
+  const geofenceSearchQuery = countrySearch.trim().toLowerCase();
+  const selectedCountryMatchesSearch = selectedCountry
+    ? textMatchesQuery(geofenceSearchQuery, selectedCountry.name, selectedCountry.countryCode)
+    : false;
 
   const countriesInContinent = useMemo(() => {
     const query = countrySearch.trim().toLowerCase();
@@ -1189,17 +1214,25 @@ export function GeofenceWorkspace() {
       const matchedGeofences = geofences.filter((geofence) =>
         geofenceMatchesCountry(geofence, selectedCountry, countryRings),
       );
+      const visibleGeofences = geofenceSearchQuery && !selectedCountryMatchesSearch
+        ? matchedGeofences.filter((geofence) => geofenceMatchesSearch(geofence, geofenceSearchQuery))
+        : matchedGeofences;
 
       return countryPresetGeofence
-        ? [countryPresetGeofence, ...matchedGeofences]
-        : matchedGeofences;
+        ? [countryPresetGeofence, ...visibleGeofences]
+        : visibleGeofences;
     },
-    [countryPresetGeofence, countryRings, geofences, selectedCountry],
+    [countryPresetGeofence, countryRings, geofenceSearchQuery, geofences, selectedCountry, selectedCountryMatchesSearch],
   );
 
   const customGeofences = useMemo(
-    () => geofences.filter((geofence) => geofence.source === "custom"),
-    [geofences],
+    () => {
+      const custom = geofences.filter((geofence) => geofence.source === "custom");
+      return geofenceSearchQuery
+        ? custom.filter((geofence) => geofenceMatchesSearch(geofence, geofenceSearchQuery))
+        : custom;
+    },
+    [geofenceSearchQuery, geofences],
   );
 
   const selectedCustomGeofence = customGeofences.find(
@@ -1453,7 +1486,7 @@ export function GeofenceWorkspace() {
             ) : null}
             {customGeofences.length === 0 ? (
               <p className="rounded-[7px] border border-dashed border-[#cbd5e1] bg-[#fbfdff] px-3 py-3 text-[12px] leading-snug text-[#63758d]">
-                Aucune geofence personnalisee pour le moment.
+                {geofenceSearchQuery ? "Aucune geofence personnalisee ne correspond a la recherche." : "Aucune geofence personnalisee pour le moment."}
               </p>
             ) : null}
           </div>
@@ -1483,7 +1516,7 @@ export function GeofenceWorkspace() {
             value={countrySearch}
             onChange={(event) => setCountrySearch(event.target.value)}
             className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none transition placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
-            placeholder="Rechercher un pays..."
+            placeholder="Rechercher un pays ou une geofence..."
             type="search"
           />
         </label>
@@ -1591,7 +1624,7 @@ export function GeofenceWorkspace() {
 
             {selectedCountry && countryGeofences.length === 0 ? (
               <div className="rounded-[8px] border border-dashed border-[#cbd5e1] bg-white px-3 py-4 text-[12px] leading-snug text-[#63758d]">
-                Aucune geofence disponible pour {selectedCountry.name}.
+                {geofenceSearchQuery && !selectedCountryMatchesSearch ? "Aucune geofence ne correspond a la recherche dans " + selectedCountry.name + "." : "Aucune geofence disponible pour " + selectedCountry.name + "."}
               </div>
             ) : null}
           </div>
