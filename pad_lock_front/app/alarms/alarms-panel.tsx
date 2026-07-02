@@ -26,6 +26,7 @@ type AlarmStatus = "Read" | "Unread" | "Investigating" | "Resolved";
 type AlarmRow = {
   id: string;
   device: string;
+  sourceName: string;
   type: string;
   severity: AlarmSeverity;
   date: string;
@@ -174,12 +175,16 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
     const typeLabel =
       textValue(record.type, record.eventType, record.alarmType, record.kind) ??
       "Alerte";
+    const sourceName =
+      textValue(record.source, record.name, record.sourceName, record.origin, record.sender, device?.name, lock?.name) ??
+      "Source inconnue";
 
     alarms.push({
       id:
         textValue(record.id, record.uuid, record.eventId) ??
         `${deviceLabel}-${typeLabel}-${timestamp.date}-${timestamp.time}-${index}`,
       device: deviceLabel,
+      sourceName,
       type: typeLabel,
       severity: severityFromValue(record.severity ?? record.level ?? record.priority),
       date: timestamp.date,
@@ -234,8 +239,90 @@ function severityOptionLabel(severity: string) {
   return severity;
 }
 
+const backendLabelMap: Record<string, string> = {
+  alerts: "Alarmes",
+  alert: "Alarme",
+  alarm: "Alarme",
+  vibration: "Vibration",
+  locked: "Verrouillage",
+  unlocked: "Deverrouillage",
+  unlock: "Deverrouillage",
+  unlock_rejected: "Deverrouillage refuse",
+  tamper: "Tentative de sabotage",
+  geofence: "Geofence",
+  geofence_entry: "Entree de geofence",
+  geofence_exit: "Sortie de geofence",
+  low_battery: "Batterie faible",
+  battery_low: "Batterie faible",
+  offline: "Hors ligne",
+  online: "En ligne",
+  movement: "Mouvement",
+  moving: "En mouvement",
+  stopped: "A l'arret",
+  idle: "A l'arret",
+  charging: "En charge",
+  rfid: "Badge RFID",
+  static_password: "Mot de passe statique",
+  dynamic_password: "Mot de passe dynamique",
+  bluetooth: "Bluetooth",
+  tcp: "Connexion TCP",
+  sms: "SMS",
+  gprs: "GPRS",
+  server: "Serveur",
+  backend: "Serveur",
+  system: "Systeme",
+  device: "Equipement",
+  lock: "PadLock",
+  terminal: "Terminal",
+  info: "Information",
+  warning: "Avertissement",
+  critical: "Critique",
+  unread: "Non lue",
+  read: "Lue",
+  resolved: "Resolue",
+  resolve: "Resolue",
+  investigating: "En investigation",
+  automatically_locked: "Verrouillage automatique",
+  swipe_illegal_rfid_card: "Badge RFID non autorise",
+  illegal_rfid_card: "Badge RFID non autorise",
+  illegal_card: "Badge non autorise",
+  swipe_rfid_card: "Passage du badge RFID",
+  rfid_card: "Badge RFID",
+  door_locked: "Verrouillage du PadLock",
+  door_unlocked: "Deverrouillage du PadLock",
+  lock_opened: "PadLock ouvert",
+  lock_closed: "PadLock ferme",
+  unlock_failed: "Echec du deverrouillage",
+  password_error: "Mot de passe incorrect",
+  low_power: "Batterie faible",
+  vibration_alarm: "Alarme de vibration",
+};
+
+function backendValueLabel(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return "Non renseigne";
+  const key = normalized.toLowerCase().replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[\s-]+/g, "_");
+  const mapped = backendLabelMap[key];
+  if (mapped) return mapped;
+  return normalized
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function alarmTypeLabel(type: string) {
+  return backendValueLabel(type);
+}
+
+function alarmSourceLabel(source: string) {
+  const merged = source.replace(/([a-z])([A-Z])/g, "$1 $2");
+  if (merged.toLowerCase() === "automatically locked swipe illegal rfid card") {
+    return "Verrouillage automatique - badge RFID non autorise";
+  }
+  return source === "Source inconnue" ? source : backendValueLabel(merged);
+}
+
 function typeOptionLabel(type: string) {
-  return type === "All types" ? "Tous les types" : type;
+  return type === "All types" ? "Tous les types" : alarmTypeLabel(type);
 }
 
 function severityClass(severity: AlarmSeverity) {
@@ -376,10 +463,10 @@ function createAlarmsPdfBlob(alarms: AlarmRow[], summary: ExportSummaryItem[], s
     }
 
     const tableTop = pageIndex === 0 ? 578 : 720;
-    const columns = [margin, 120, 206, 276, 338, 420];
+    const columns = [margin, 108, 174, 240, 298, 362, 434];
     addPdfText(commands, margin, tableTop + 28, "Alarmes exportees", 14, "0.04 0.10 0.18");
     addPdfRect(commands, margin, tableTop, 512, 24, "0.10 0.16 0.26");
-    ["PadLock", "Type", "Severite", "Date", "Statut", "Description"].forEach((header, index) => {
+    ["PadLock", "Nom", "Type", "Severite", "Date", "Statut", "Description"].forEach((header, index) => {
       addPdfText(commands, columns[index] + 4, tableTop + 8, header, 8, "1 1 1");
     });
 
@@ -390,12 +477,13 @@ function createAlarmsPdfBlob(alarms: AlarmRow[], summary: ExportSummaryItem[], s
     pageRows.forEach((alarm, rowIndex) => {
       const y = tableTop - 24 - rowIndex * 24;
       addPdfRect(commands, margin, y, 512, 24, rowIndex % 2 === 0 ? "0.97 0.98 0.99" : "1 1 1");
-      addPdfText(commands, columns[0] + 4, y + 8, alarm.device, 7);
-      addPdfText(commands, columns[1] + 4, y + 8, alarm.type, 7);
-      addPdfText(commands, columns[2] + 4, y + 8, severityLabel(alarm.severity), 7);
-      addPdfText(commands, columns[3] + 4, y + 8, `${alarm.date} ${alarm.time}`, 7);
-      addPdfText(commands, columns[4] + 4, y + 8, statusLabel(alarm.status), 7);
-      addPdfText(commands, columns[5] + 4, y + 8, alarm.description, 7, "0.16 0.24 0.35");
+      addPdfText(commands, columns[0] + 4, y + 8, alarm.device, 6.5);
+      addPdfText(commands, columns[1] + 4, y + 8, alarmSourceLabel(alarm.sourceName), 6.5);
+      addPdfText(commands, columns[2] + 4, y + 8, alarmTypeLabel(alarm.type), 6.5);
+      addPdfText(commands, columns[3] + 4, y + 8, severityLabel(alarm.severity), 6.5);
+      addPdfText(commands, columns[4] + 4, y + 8, `${alarm.date} ${alarm.time}`, 6.5);
+      addPdfText(commands, columns[5] + 4, y + 8, statusLabel(alarm.status), 6.5);
+      addPdfText(commands, columns[6] + 4, y + 8, alarm.description, 6.5, "0.16 0.24 0.35");
     });
 
     addPdfText(commands, margin, 32, `Page ${pageIndex + 1} / ${totalPages}`, 8, "0.42 0.50 0.62");
@@ -414,7 +502,8 @@ function createAlarmsExcelBlob(alarms: AlarmRow[], summary: ExportSummaryItem[],
       (alarm) => `
         <tr>
           <td>${escapeHtml(alarm.device)}</td>
-          <td>${escapeHtml(alarm.type)}</td>
+          <td>${escapeHtml(alarmSourceLabel(alarm.sourceName))}</td>
+          <td>${escapeHtml(alarmTypeLabel(alarm.type))}</td>
           <td>${escapeHtml(severityLabel(alarm.severity))}</td>
           <td>${escapeHtml(alarm.date)} ${escapeHtml(alarm.time)}</td>
           <td>${escapeHtml(statusLabel(alarm.status))}</td>
@@ -446,8 +535,8 @@ function createAlarmsExcelBlob(alarms: AlarmRow[], summary: ExportSummaryItem[],
   <div class="hero"><h1>Registre des alarmes</h1><p>${escapeHtml(subtitle)}</p></div>
   <table><tr>${summaryHtml}</tr></table>
   <table>
-    <thead><tr><th>PadLock</th><th>Type</th><th>Severite</th><th>Date et heure</th><th>Statut</th><th>Description</th><th>Latitude</th><th>Longitude</th></tr></thead>
-    <tbody>${rowsHtml || `<tr><td colspan="8">Aucune alarme ne correspond aux filtres selectionnes.</td></tr>`}</tbody>
+    <thead><tr><th>PadLock</th><th>Nom</th><th>Type</th><th>Severite</th><th>Date et heure</th><th>Statut</th><th>Description</th><th>Latitude</th><th>Longitude</th></tr></thead>
+    <tbody>${rowsHtml || `<tr><td colspan="9">Aucune alarme ne correspond aux filtres selectionnes.</td></tr>`}</tbody>
   </table>
 </body>
 </html>`;
@@ -855,7 +944,7 @@ export function AlarmsPanel() {
 
   const filteredAlarms = useMemo(() => {
     return alarms.filter((alarm) => {
-      const matchesQuery = `${alarm.device} ${alarm.type} ${severityLabel(alarm.severity)} ${alarm.description} ${alarm.status}`
+      const matchesQuery = `${alarm.device} ${alarmSourceLabel(alarm.sourceName)} ${alarmTypeLabel(alarm.type)} ${severityLabel(alarm.severity)} ${alarm.description} ${statusLabel(alarm.status)}`
         .toLowerCase()
         .includes(query.trim().toLowerCase());
       const matchesTab =
@@ -1189,9 +1278,10 @@ export function AlarmsPanel() {
       </div>
 
       <div className="overflow-visible rounded-[7px] border border-[#dfe6ee] bg-white">
-        <div className="grid grid-cols-[48px_1fr_1.1fr_90px_1.1fr_2.1fr_100px_70px] border-b border-[#dfe6ee] px-4 py-3 text-[12px] font-medium text-[#496383]">
+        <div className="grid grid-cols-[48px_1fr_1fr_1.05fr_90px_1.1fr_1.8fr_100px_70px] border-b border-[#dfe6ee] px-4 py-3 text-[12px] font-medium text-[#496383]">
           <input checked={allSelected} onChange={toggleAll} type="checkbox" aria-label="Selectionner toutes les alarmes" />
           <span>PadLock</span>
+          <span>Nom</span>
           <span>Type</span>
           <span>Severite</span>
           <span>Date et heure</span>
@@ -1203,13 +1293,14 @@ export function AlarmsPanel() {
         {filteredAlarms.map((alarm, index) => (
           <div
             key={alarm.id}
-            className={`relative grid grid-cols-[48px_1fr_1.1fr_90px_1.1fr_2.1fr_100px_70px] items-center border-b border-[#dfe6ee] px-4 py-4 text-[12px] ${
+            className={`relative grid grid-cols-[48px_1fr_1fr_1.05fr_90px_1.1fr_1.8fr_100px_70px] items-center border-b border-[#dfe6ee] px-4 py-4 text-[12px] ${
               index === 1 ? "bg-[#f1f1f2]" : "bg-white"
             }`}
           >
-            <input checked={selectedIds.includes(alarm.id)} onChange={() => toggleSelected(alarm.id)} type="checkbox" aria-label={`Selectionner ${alarm.type}`} />
+            <input checked={selectedIds.includes(alarm.id)} onChange={() => toggleSelected(alarm.id)} type="checkbox" aria-label={`Selectionner ${alarmTypeLabel(alarm.type)}`} />
             <span>{alarm.device}</span>
-            <span>{alarm.type}</span>
+            <span className="truncate pr-2" title={alarmSourceLabel(alarm.sourceName)}>{alarmSourceLabel(alarm.sourceName)}</span>
+            <span>{alarmTypeLabel(alarm.type)}</span>
             <span>
               <span className={`rounded-[5px] px-2 py-1 text-[11px] font-medium ${severityClass(alarm.severity)}`}>
                 {severityLabel(alarm.severity)}
@@ -1241,7 +1332,7 @@ export function AlarmsPanel() {
               type="button"
               onClick={() => setOpenMenuId(openMenuId === alarm.id ? null : alarm.id)}
               className="grid size-7 place-items-center rounded-[5px] hover:bg-[#eef4fa]"
-              aria-label={`Ouvrir les actions pour ${alarm.type}`}
+              aria-label={`Ouvrir les actions pour ${alarmTypeLabel(alarm.type)}`}
             >
               <Ellipsis size={16} />
             </button>
@@ -1276,7 +1367,7 @@ export function AlarmsPanel() {
             <div className="flex items-start justify-between border-b border-[#dfe6ee] px-4 py-3">
               <div>
                 <h2 className="text-[15px] font-bold text-[#0f172a]">Position de l&apos;alerte</h2>
-                <p className="mt-1 text-[12px] text-[#64748b]">{mapAlarm.device} - {mapAlarm.type}</p>
+                <p className="mt-1 text-[12px] text-[#64748b]">{mapAlarm.device} - {alarmTypeLabel(mapAlarm.type)}</p>
               </div>
               <button type="button" onClick={() => setMapAlarm(null)} className="grid size-8 place-items-center rounded-[6px] hover:bg-[#eef4fa]" aria-label="Fermer la carte">
                 <X size={17} />
