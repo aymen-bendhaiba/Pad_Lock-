@@ -216,7 +216,7 @@ function normalizeDevice(record: ApiRecord, lock?: ApiRecord): CommandDevice {
     terminalId: id,
     name: readString(record, ["name", "assetName", "deviceName", "label"])
       ?? readString(lock, ["name", "assetName", "deviceName", "label"])
-      ?? "Cadenas-" + id,
+      ?? "PadLock-" + id,
     battery: battery.label,
     batteryValue: battery.value,
     status: normalizeStatus(record, lock, telemetryAvailable),
@@ -673,12 +673,12 @@ export function CommandsPanel() {
 
   const titles: Record<Tab, [string, string]> = {
     "Device Status": ["Etat des equipements", "Consultez les equipements connectes et envoyez des commandes de redemarrage."],
-    "Unlock Devices": ["Deverrouillage a distance", "Deverrouillez un cadenas a distance."],
-    "Low Battery": ["Seuil de batterie faible", "Definissez le seuil de batterie faible des cadenas connectes."],
+    "Unlock Devices": ["Deverrouillage a distance", "Deverrouillez un PadLock a distance."],
+    "Low Battery": ["Seuil de batterie faible", "Definissez le seuil de batterie faible des PadLock connectes."],
     "Sleep Mode": ["Mode veille", "Activez la veille profonde et definissez le seuil de declenchement."],
     Password: ["Gestion du mot de passe", "Modifiez les mots de passe statiques de deverrouillage."],
     "Phone Number": ["Numeros de telephone", "Configurez les numeros VIP par equipement."],
-    "Add RFID": ["Badges RFID", "Chargez, ajoutez et supprimez les badges RFID de chaque cadenas."],
+    "Add RFID": ["Badges RFID", "Chargez, ajoutez et supprimez les badges RFID de chaque PadLock."],
   };
 
   const tabLabels: Record<Tab, string> = {
@@ -696,7 +696,7 @@ export function CommandsPanel() {
       <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
           <h1 className="text-[26px] font-bold tracking-normal text-black">Commandes et controle des equipements</h1>
-          <p className="mt-2 text-[13px] text-[#64748b]">Gerez les cadenas connectes et envoyez les commandes disponibles.</p>
+          <p className="mt-2 text-[13px] text-[#64748b]">Gerez les PadLock connectes et envoyez les commandes disponibles.</p>
         </div>
         <button
           type="button"

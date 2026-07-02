@@ -271,7 +271,7 @@ export function GeofenceCreateWorkspace() {
 
     if (!selectedLockId) {
       setEnregistrerState("error");
-      setEnregistrerMessage("Selectionnez le cadenas concerne par cette geofence.");
+      setEnregistrerMessage("Selectionnez le PadLock concerne par cette geofence.");
       return;
     }
 
@@ -327,7 +327,7 @@ export function GeofenceCreateWorkspace() {
             Gestion des geofences
           </h1>
           <p className="mt-1 text-[12px] text-[#63758d]">
-            Creez et suivez les zones de controle de vos cadenas.
+            Creez et suivez les zones de controle de vos PadLock.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -372,7 +372,7 @@ export function GeofenceCreateWorkspace() {
             </label>
 
             <label className="block">
-              <span className="text-[12px] font-bold text-[#0f172a]">Cadenas concerne*</span>
+              <span className="text-[12px] font-bold text-[#0f172a]">PadLock concerne*</span>
               <select
                 value={selectedLockId}
                 onChange={(event) => setSelectedLockId(event.target.value)}
@@ -380,7 +380,7 @@ export function GeofenceCreateWorkspace() {
                 className="mt-1.5 h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white px-3 text-[12px] outline-none transition focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15 disabled:cursor-not-allowed disabled:bg-[#f8fafc] disabled:text-[#8190a5]"
               >
                 {locksLoading ? (
-                  <option>Chargement des cadenas...</option>
+                  <option>Chargement des PadLock...</option>
                 ) : lockOptions.length ? (
                   lockOptions.map((lock) => (
                     <option key={lock.id} value={lock.id}>
@@ -388,7 +388,7 @@ export function GeofenceCreateWorkspace() {
                     </option>
                   ))
                 ) : (
-                  <option>Aucun cadenas trouve</option>
+                  <option>Aucun PadLock trouve</option>
                 )}
               </select>
             </label>
@@ -464,7 +464,7 @@ export function GeofenceCreateWorkspace() {
                   />
                   <span>
                     <span className="block font-semibold">Deverrouillage autorise</span>
-                    <span className="block text-[11px] text-[#63758d]">Le cadenas peut etre deverrouille dans cette zone.</span>
+                    <span className="block text-[11px] text-[#63758d]">Le PadLock peut etre deverrouille dans cette zone.</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-2 rounded-[7px] bg-white px-3 py-2 ring-1 ring-[#e3e9f0]">
@@ -476,7 +476,7 @@ export function GeofenceCreateWorkspace() {
                   />
                   <span>
                     <span className="block font-semibold">Deverrouillage bloque</span>
-                    <span className="block text-[11px] text-[#63758d]">Le cadenas ne peut pas etre deverrouille dans cette zone.</span>
+                    <span className="block text-[11px] text-[#63758d]">Le PadLock ne peut pas etre deverrouille dans cette zone.</span>
                   </span>
                 </label>
               </div>

@@ -508,7 +508,7 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
   const status = normalizeStatus(record, activeAlert, telemetryAvailable);
   const name = readString(record, ["name", "assetName", "deviceName", "label"])
     ?? readString(lock, ["name", "assetName", "deviceName", "label"])
-    ?? `Cadenas-${terminalId}`;
+    ?? `PadLock-${terminalId}`;
 
   const deviceDetails = buildDeviceDetails(record, lock, telemetryAvailable);
   const batteryFromDevice = deviceDetails.find((detail) => detail.label === "Battery")?.value;
@@ -790,7 +790,7 @@ export function LiveMapPanel() {
           return;
         }
 
-        setError(userFriendlyError(refreshError, "Impossible de charger les cadenas en direct."));
+        setError(userFriendlyError(refreshError, "Impossible de charger les PadLock en direct."));
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -848,7 +848,7 @@ export function LiveMapPanel() {
 
   async function loadPlayback(asset = selectedAsset) {
     if (!asset) {
-      setPlaybackError("Selectionnez un cadenas avant le playback.");
+      setPlaybackError("Selectionnez un PadLock avant le playback.");
       setIsPlaybackOpen(true);
       return;
     }
@@ -866,7 +866,7 @@ export function LiveMapPanel() {
       const points = playbackPointsFromHistory(payload);
 
       setPlaybackPoints(points);
-      setPlaybackError(points.length ? null : "Aucune position de playback pour ce cadenas.");
+      setPlaybackError(points.length ? null : "Aucune position de playback pour ce PadLock.");
     } catch (playbackLoadError) {
       setPlaybackPoints([]);
       setPlaybackError(userFriendlyError(playbackLoadError, "Impossible de charger l'historique du playback."));
@@ -914,7 +914,7 @@ export function LiveMapPanel() {
 
         {displayIsLoading ? (
           <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-full border border-[#dfe6ee] bg-white/95 px-4 py-2 text-[12px] font-semibold text-[#475569] shadow-sm">
-            Chargement des cadenas en direct...
+            Chargement des PadLock en direct...
           </div>
         ) : null}
 
@@ -928,7 +928,7 @@ export function LiveMapPanel() {
           <>
             <div className="pointer-events-none absolute left-1/2 top-5 z-20 -translate-x-1/2 rounded-full border border-[#bfdbfe] bg-white/95 px-5 py-2 text-[12px] font-bold text-[#1d4ed8] shadow-[0_10px_24px_rgba(37,99,235,0.18)] backdrop-blur">
               <span className="mr-2 inline-flex size-2 animate-pulse rounded-full bg-[#2563eb]" />
-              {isPlaybackLoading ? "Chargement du playback" : "Mode playback actif"} - {playbackAsset?.name ?? selectedAsset?.name ?? "cadenas selectionne"} - {playbackSpeed}x
+              {isPlaybackLoading ? "Chargement du playback" : "Mode playback actif"} - {playbackAsset?.name ?? selectedAsset?.name ?? "PadLock selectionne"} - {playbackSpeed}x
             </div>
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 animate-pulse bg-[linear-gradient(90deg,rgba(37,99,235,0.28),rgba(37,99,235,0.08),transparent)]" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 animate-pulse bg-[linear-gradient(270deg,rgba(37,99,235,0.22),rgba(37,99,235,0.06),transparent)]" />
@@ -969,7 +969,7 @@ export function LiveMapPanel() {
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#718096]" size={17} />
             <input
               className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white pl-10 pr-4 text-[13px] outline-none transition placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
-              placeholder="Rechercher un cadenas ou un ID..."
+              placeholder="Rechercher un PadLock ou un ID..."
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -978,9 +978,9 @@ export function LiveMapPanel() {
         </div>
 
         <div className="flex items-center justify-between px-5 py-4">
-          <h1 className="text-[14px] font-bold">Tous les cadenas ({filteredAssets.length})</h1>
+          <h1 className="text-[14px] font-bold">Tous les PadLock ({filteredAssets.length})</h1>
           <select
-            aria-label="Filtrer les cadenas"
+            aria-label="Filtrer les PadLock"
             className="h-8 rounded-[7px] border border-[#dfe6ee] bg-white px-2.5 text-[12px] font-medium text-[#475569] outline-none transition focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
             value={filter}
             onChange={(event) => setFilter(event.target.value as AssetFilter)}
@@ -1012,7 +1012,7 @@ export function LiveMapPanel() {
             ))
           ) : (
             <div className="mx-2 rounded-[8px] border border-dashed border-[#d5e0ea] p-4 text-[13px] text-[#64748b]">
-              {displayIsLoading ? "Chargement des cadenas..." : "Aucun cadenas ne correspond a cette vue."}
+              {displayIsLoading ? "Chargement des PadLock..." : "Aucun PadLock ne correspond a cette vue."}
             </div>
           )}
         </div>
@@ -1023,7 +1023,7 @@ export function LiveMapPanel() {
               <div className="min-w-0">
                 <p className="text-[13px] font-bold text-[#111827]">Lecture du trajet</p>
                 <p className="mt-0.5 truncate text-[11px] text-[#64748b]">
-                  {selectedAsset ? selectedAsset.name : "Selectionnez un cadenas"}
+                  {selectedAsset ? selectedAsset.name : "Selectionnez un PadLock"}
                 </p>
               </div>
               <button

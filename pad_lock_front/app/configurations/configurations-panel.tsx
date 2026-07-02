@@ -132,7 +132,7 @@ function normalizeDevice(record: ApiRecord, fallback?: ApiRecord): DeviceOption 
   const terminalId = terminalIdFromRecord(record);
   return {
     terminalId,
-    name: textValue(record.name, record.assetName, record.deviceName, record.label, fallback?.name, fallback?.deviceName) ?? "Cadenas-" + terminalId,
+    name: textValue(record.name, record.assetName, record.deviceName, record.label, fallback?.name, fallback?.deviceName) ?? "PadLock-" + terminalId,
     imei: textValue(record.imei, fallback?.imei),
   };
 }
@@ -294,7 +294,7 @@ function SimCard({ simKey, title, form, sync, onChange, onRead, onSave, saving, 
 
   return (
     <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
-      <SectionHeader icon={Wifi} title={title} description="Parametres reseau utilises par le cadenas pour joindre la plateforme." sync={sync} />
+      <SectionHeader icon={Wifi} title={title} description="Parametres reseau utilises par le PadLock pour joindre la plateforme." sync={sync} />
       <div className="grid gap-5 p-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <div className="rounded-[8px] border border-[#e6edf5] bg-[#fbfdff] p-4">
           <p className="mb-3 text-[12px] font-bold uppercase tracking-[0.08em] text-[#64748b]">Connexion serveur</p>
@@ -335,7 +335,7 @@ function PhoneCard({ phones, sync, onChange, onRead, onSave, saving, reading }: 
 }) {
   return (
     <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
-      <SectionHeader icon={Phone} title="Numeros de telephone VIP" description="Renseignez les numeros autorises a recevoir les notifications d'alarme du cadenas." sync={sync} />
+      <SectionHeader icon={Phone} title="Numeros de telephone VIP" description="Renseignez les numeros autorises a recevoir les notifications d'alarme du PadLock." sync={sync} />
       <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-5">
         {phones.map((phone, index) => (
           <div key={index} className="rounded-[8px] border border-[#e6edf5] bg-[#fbfdff] p-3">
@@ -390,7 +390,7 @@ export function ConfigurationsPanel() {
       } catch {
         if (!isMounted) return;
         setDeviceState("error");
-        setMessage("Impossible de charger les cadenas depuis le serveur.");
+        setMessage("Impossible de charger les PadLock depuis le serveur.");
       }
     }
     loadDevices();
@@ -433,7 +433,7 @@ export function ConfigurationsPanel() {
       setSaveState("idle");
       lastAutoReadTerminalRef.current = terminalIdValue;
       void readPhones(terminalIdValue);
-      setMessage(nextConfig.configured ? "Configuration chargee depuis le serveur." : "Aucune configuration enregistree pour ce cadenas. Remplissez les champs puis ecrivez la section voulue.");
+      setMessage(nextConfig.configured ? "Configuration chargee depuis le serveur." : "Aucune configuration enregistree pour ce PadLock. Remplissez les champs puis ecrivez la section voulue.");
     } catch (error) {
       setConfigState("error");
       setSaveState("error");
@@ -512,7 +512,7 @@ export function ConfigurationsPanel() {
       setConfig(nextConfig);
       setForm(formFromConfig(nextConfig));
       setSaveState("saved");
-      setMessage("Configuration enregistree. Les statuts ci-dessous indiquent ce que le cadenas a confirme.");
+      setMessage("Configuration enregistree. Les statuts ci-dessous indiquent ce que le PadLock a confirme.");
     } catch (error) {
       setSaveState("error");
       setMessage(userFriendlyError(error, "Impossible d'enregistrer la configuration."));
@@ -608,14 +608,14 @@ export function ConfigurationsPanel() {
     <div className="grid min-h-[calc(100vh-56px)] grid-cols-1 bg-[#f6f8fb] xl:grid-cols-[310px_minmax(0,1fr)]">
       <aside className="border-r border-[#dfe6ee] bg-white px-4 py-5">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#2A9D90]">Configuration cadenas</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#2A9D90]">Configuration PadLock</p>
           <h1 className="mt-1 text-[24px] font-bold text-black">Configurations</h1>
-          <p className="mt-2 text-[12px] leading-snug text-[#64748b]">Selectionnez un cadenas, lisez sa configuration enregistree, puis ecrivez uniquement la section modifiee.</p>
+          <p className="mt-2 text-[12px] leading-snug text-[#64748b]">Selectionnez un PadLock, lisez sa configuration enregistree, puis ecrivez uniquement la section modifiee.</p>
         </div>
 
         <label className="relative mt-5 block">
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} />
-          <input value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher un cadenas..." />
+          <input value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} className="h-10 w-full rounded-[7px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher un PadLock..." />
         </label>
 
         <div className="mt-4 max-h-[calc(100vh-250px)] space-y-2 overflow-y-auto pr-1">
@@ -625,17 +625,17 @@ export function ConfigurationsPanel() {
               <span className="mt-1 block text-[11px] text-[#64748b]">{device.terminalId}</span>
             </button>
           ))}
-          {deviceState === "loading" ? <p className="rounded-[8px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#64748b]">Chargement des cadenas...</p> : null}
-          {deviceState === "error" ? <p className="rounded-[8px] bg-red-50 px-3 py-3 text-[12px] text-red-700">Impossible de charger les cadenas.</p> : null}
-          {deviceState === "ready" && filteredDevices.length === 0 ? <p className="rounded-[8px] border border-dashed border-[#cbd5e1] px-3 py-3 text-[12px] text-[#64748b]">Aucun cadenas ne correspond a votre recherche.</p> : null}
+          {deviceState === "loading" ? <p className="rounded-[8px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#64748b]">Chargement des PadLock...</p> : null}
+          {deviceState === "error" ? <p className="rounded-[8px] bg-red-50 px-3 py-3 text-[12px] text-red-700">Impossible de charger les PadLock.</p> : null}
+          {deviceState === "ready" && filteredDevices.length === 0 ? <p className="rounded-[8px] border border-dashed border-[#cbd5e1] px-3 py-3 text-[12px] text-[#64748b]">Aucun PadLock ne correspond a votre recherche.</p> : null}
         </div>
       </aside>
 
       <section className="min-w-0 px-4 py-5 md:px-6">
         <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
           <div>
-            <h2 className="text-[22px] font-bold text-black">{selectedDevice?.name ?? "Selectionnez un cadenas"}</h2>
-            <p className="mt-1 text-[12px] text-[#64748b]">{selectedTerminalId ? "Terminal " + selectedTerminalId : "Choisissez un cadenas pour gerer sa configuration SIM, transmission et vibration."}</p>
+            <h2 className="text-[22px] font-bold text-black">{selectedDevice?.name ?? "Selectionnez un PadLock"}</h2>
+            <p className="mt-1 text-[12px] text-[#64748b]">{selectedTerminalId ? "Terminal " + selectedTerminalId : "Choisissez un PadLock pour gerer sa configuration SIM, transmission et vibration."}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <ActionButton variant="light" onClick={() => readConfiguration("read", selectedTerminalId, true)} loading={activeAction === "read" || configState === "loading"}>Lire la configuration</ActionButton>
@@ -649,7 +649,7 @@ export function ConfigurationsPanel() {
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-[13px] font-bold text-[#0f172a]">Etat de la configuration</p>
-                <p className="mt-1 text-[12px] text-[#64748b]">{config?.configured ? "Une configuration est deja enregistree." : "Aucune configuration enregistree pour ce cadenas."}</p>
+                <p className="mt-1 text-[12px] text-[#64748b]">{config?.configured ? "Une configuration est deja enregistree." : "Aucune configuration enregistree pour ce PadLock."}</p>
               </div>
               <div className="flex flex-wrap gap-2 text-[11px] font-bold">
                 <span className={"rounded-full border px-2.5 py-1 capitalize " + syncTone(config?.sync?.reporting ?? null)}>Transmission : {syncLabel(config?.sync?.reporting?.status)}</span>
@@ -699,8 +699,8 @@ export function ConfigurationsPanel() {
             <div className="flex gap-3">
               <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[#ecfdf5] text-[#047857]"><ShieldCheck size={18} /></span>
               <div>
-                <h3 className="text-[14px] font-bold text-[#0f172a]">Synchronisation avec le cadenas</h3>
-                <p className="mt-1 text-[12px] leading-snug text-[#64748b]">Une ecriture reussie enregistre les valeurs demandees meme si le cadenas est hors ligne. Les sections en attente ou en echec peuvent etre renvoyees, et le serveur reessaie aussi lorsque le cadenas se reconnecte.</p>
+                <h3 className="text-[14px] font-bold text-[#0f172a]">Synchronisation avec le PadLock</h3>
+                <p className="mt-1 text-[12px] leading-snug text-[#64748b]">Une ecriture reussie enregistre les valeurs demandees meme si le PadLock est hors ligne. Les sections en attente ou en echec peuvent etre renvoyees, et le serveur reessaie aussi lorsque le PadLock se reconnecte.</p>
               </div>
             </div>
           </section>

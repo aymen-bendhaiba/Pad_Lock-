@@ -49,7 +49,7 @@ function detailLabel(label: string) {
   const labels: Record<string, string> = {
     Location: "Lieu",
     "Terminal ID": "ID terminal",
-    Device: "Cadenas",
+    Device: "PadLock",
     Status: "Statut",
     Battery: "Batterie",
     Locked: "Verrouillage",

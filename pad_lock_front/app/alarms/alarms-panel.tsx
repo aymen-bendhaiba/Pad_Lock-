@@ -170,7 +170,7 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
         device?.id,
         lock?.terminalId,
         lock?.id,
-      ) ?? "Cadenas inconnu";
+      ) ?? "PadLock inconnu";
     const typeLabel =
       textValue(record.type, record.eventType, record.alarmType, record.kind) ??
       "Alerte";
@@ -189,7 +189,7 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
         textValue(record.description, record.message, record.reason, record.payload) ??
         (latitude !== null && longitude !== null
           ? "Position: " + latitude.toFixed(6) + ", " + longitude.toFixed(6)
-          : "Alerte recue depuis un cadenas connecte"),
+          : "Alerte recue depuis un PadLock connecte"),
       latitude,
       longitude,
       status: statusFromValue(record.status ?? record.readStatus),
@@ -379,7 +379,7 @@ function createAlarmsPdfBlob(alarms: AlarmRow[], summary: ExportSummaryItem[], s
     const columns = [margin, 120, 206, 276, 338, 420];
     addPdfText(commands, margin, tableTop + 28, "Alarmes exportees", 14, "0.04 0.10 0.18");
     addPdfRect(commands, margin, tableTop, 512, 24, "0.10 0.16 0.26");
-    ["Cadenas", "Type", "Severite", "Date", "Statut", "Description"].forEach((header, index) => {
+    ["PadLock", "Type", "Severite", "Date", "Statut", "Description"].forEach((header, index) => {
       addPdfText(commands, columns[index] + 4, tableTop + 8, header, 8, "1 1 1");
     });
 
@@ -446,7 +446,7 @@ function createAlarmsExcelBlob(alarms: AlarmRow[], summary: ExportSummaryItem[],
   <div class="hero"><h1>Registre des alarmes</h1><p>${escapeHtml(subtitle)}</p></div>
   <table><tr>${summaryHtml}</tr></table>
   <table>
-    <thead><tr><th>Cadenas</th><th>Type</th><th>Severite</th><th>Date et heure</th><th>Statut</th><th>Description</th><th>Latitude</th><th>Longitude</th></tr></thead>
+    <thead><tr><th>PadLock</th><th>Type</th><th>Severite</th><th>Date et heure</th><th>Statut</th><th>Description</th><th>Latitude</th><th>Longitude</th></tr></thead>
     <tbody>${rowsHtml || `<tr><td colspan="8">Aucune alarme ne correspond aux filtres selectionnes.</td></tr>`}</tbody>
   </table>
 </body>
@@ -1191,7 +1191,7 @@ export function AlarmsPanel() {
       <div className="overflow-visible rounded-[7px] border border-[#dfe6ee] bg-white">
         <div className="grid grid-cols-[48px_1fr_1.1fr_90px_1.1fr_2.1fr_100px_70px] border-b border-[#dfe6ee] px-4 py-3 text-[12px] font-medium text-[#496383]">
           <input checked={allSelected} onChange={toggleAll} type="checkbox" aria-label="Selectionner toutes les alarmes" />
-          <span>Cadenas</span>
+          <span>PadLock</span>
           <span>Type</span>
           <span>Severite</span>
           <span>Date et heure</span>
