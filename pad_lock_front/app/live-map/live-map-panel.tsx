@@ -9,7 +9,7 @@ import { apiFetch, cachedApiJson } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
 
 type ApiRecord = Record<string, unknown>;
-type AssetFilter = "all" | "moving" | "idle" | "alarm" | "offline" | "locked" | "unlocked";
+type AssetFilter = "all" | "online" | "moving" | "idle" | "alarm" | "offline" | "locked" | "unlocked";
 
 function rowsFromPayload(payload: unknown): ApiRecord[] {
   if (Array.isArray(payload)) {
@@ -741,6 +741,10 @@ function matchesFilter(asset: LiveMapAsset, filter: AssetFilter) {
     return true;
   }
 
+  if (filter === "online") {
+    return asset.status !== "Offline";
+  }
+
   if (filter === "locked") {
     return asset.lock === "Locked";
   }
@@ -893,6 +897,7 @@ export function LiveMapPanel() {
 
   const stats = useMemo(() => ({
     all: assets.length,
+    online: assets.filter((asset) => asset.status !== "Offline").length,
     moving: assets.filter((asset) => asset.status === "Moving").length,
     idle: assets.filter((asset) => asset.status === "Idle").length,
     offline: assets.filter((asset) => asset.status === "Offline").length,
@@ -939,6 +944,7 @@ export function LiveMapPanel() {
           <div className="flex flex-wrap gap-x-5 gap-y-2">
             {[
               ["Tous", stats.all, "bg-[#34C759]"],
+              ["En ligne", stats.online, "bg-[#22c55e]"],
               ["Mouvement", stats.moving, "bg-[#3b82f6]"],
               ["Arret", stats.idle, "bg-[#f97316]"],
               ["Hors ligne", stats.offline, "bg-[#94a3b8]"],
@@ -986,6 +992,7 @@ export function LiveMapPanel() {
             onChange={(event) => setFilter(event.target.value as AssetFilter)}
           >
             <option value="all">Tous</option>
+            <option value="online">En ligne</option>
             <option value="moving">En mouvement</option>
             <option value="idle">A l&apos;arret</option>
             <option value="alarm">Alarme</option>
