@@ -40,6 +40,7 @@ function serviceFixture(input: {
     cardNumber: string;
     installedOnLock: boolean;
   }>;
+  positionsService?: unknown;
 }) {
   const rfidCardsRepository = {
     find: jest.fn().mockResolvedValue(
@@ -63,13 +64,16 @@ function serviceFixture(input: {
     { getOrThrow: jest.fn().mockReturnValue(5000) },
     connectedDevices,
     {} as never,
-    {} as never,
+    (input.positionsService ?? {}) as never,
     {
+      findOrCreateFromTcp: jest
+        .fn()
+        .mockResolvedValue({ id: 'lock-1', terminalId: '8034400004' }),
       findByTerminalIdOrFail: jest
         .fn()
         .mockResolvedValue({ id: 'lock-1', terminalId: '8034400004' }),
     } as never,
-    { retryPendingForLock: jest.fn() } as never,
+    { retryPendingForLock: jest.fn().mockResolvedValue(undefined) } as never,
     {} as never,
     geofencesRepository as never,
     {
@@ -93,8 +97,37 @@ function serviceFixture(input: {
       cards: ['1234567890'],
     });
 
-  return { service, rfidCardsRepository, sendRfidCommandMock };
+  return {
+    service,
+    rfidCardsRepository,
+    sendRfidCommandMock,
+    connectedDevices,
+  };
 }
+
+describe('TcpGatewayService packet acknowledgements', () => {
+  it('acks a binary frame before persistence side effects finish', async () => {
+    const { service } = serviceFixture({
+      positionsService: {
+        recordFromTcp: jest.fn().mockRejectedValue(new Error('DB unavailable')),
+      },
+    });
+    const socket = {
+      buffer: Buffer.from(
+        '24 80 34 40 00 04 19 14 00 34 10 06 26 12 00 01 33 57 60 19 00 65 18 20 2B 01 6A 00 00 00 12 07 00 00 00 00 00 E0 45 FF 05 A0 28 1F 00 02 00 00 86 10 05 07 72 13 80 6F 01 87 02 5C 00 10'.replace(
+          / /g,
+          '',
+        ),
+        'hex',
+      ),
+      write: jest.fn(),
+    };
+
+    await service['processBuffer'](socket as never);
+
+    expect(socket.write).toHaveBeenCalledWith('(P69,0,16)');
+  });
+});
 
 describe('TcpGatewayService RFID geofence enforcement', () => {
   it('defaults missing geofence rule channels to allowed when applying P59', async () => {

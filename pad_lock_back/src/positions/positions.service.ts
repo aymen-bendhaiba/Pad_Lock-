@@ -62,6 +62,8 @@ export class PositionsService {
   }
 
   async findActiveDevices(query: FindDevicesQueryDto = {}) {
+    await this.locksService.syncStatusesWithCurrentConnections();
+
     const builder = this.positionsRepository
       .createQueryBuilder('position')
       .leftJoinAndSelect('position.lockDevice', 'lockDevice')

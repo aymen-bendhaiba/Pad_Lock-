@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { TcpConnectionsService } from '../tcp/tcp-connections.service';
+import { LocksService } from '../locks/locks.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
 type CountRow = {
@@ -74,13 +74,14 @@ type DashboardSnapshotRow = KpiRow & {
 export class DashboardService {
   constructor(
     private readonly dataSource: DataSource,
-    private readonly tcpConnectionsService: TcpConnectionsService,
+    private readonly locksService: LocksService,
   ) {}
 
   async summary(query: DashboardQueryDto) {
     const { from, to } = dateRange(query);
     const terminalId = query.terminalId?.toUpperCase() ?? null;
-    const connectedTerminalIds = this.tcpConnectionsService.terminalIds();
+    const connectedTerminalIds =
+      await this.locksService.syncStatusesWithCurrentConnections();
     const snapshot = await this.dashboardSnapshot(
       from,
       to,

@@ -120,6 +120,15 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     this.server.listen(port, host, () => {
       this.logger.log(`JT701D TCP listener ready on ${host}:${port}`);
     });
+    void this.locksService
+      .syncStatusesWithCurrentConnections()
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Could not synchronize lock statuses on startup: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 
   onModuleDestroy() {
@@ -352,11 +361,11 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const parsed = parseJt701dBinary(data);
     this.registerSocket(parsed.terminalId, socket);
-    await this.recordBinaryEvent(parsed);
 
     const serialNumber = data[data.length - 1];
     socket.lastSerial = serialNumber;
     socket.write(`(P69,0,${serialNumber})`);
+    await this.recordBinaryEvent(parsed);
   }
 
   private async handleAsciiFrame(
@@ -382,8 +391,8 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (parsed.kind === 'p45_report') {
-      await this.recordP45Event(parsed);
       socket.write(`(P69,0,${parsed.serialNumber || 0})`);
+      await this.recordP45Event(parsed);
       return;
     }
 
@@ -405,6 +414,15 @@ export class TcpGatewayService implements OnModuleInit, OnModuleDestroy {
     this.connectedDevices.set(normalizedTerminalId, socket);
 
     if (isNewConnection) {
+      void this.locksService
+        .findOrCreateFromTcp(normalizedTerminalId)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Could not mark ${normalizedTerminalId} online: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
       void this.lockConfigurationsService
         .retryPendingForLock(normalizedTerminalId)
         .catch((error: unknown) => {

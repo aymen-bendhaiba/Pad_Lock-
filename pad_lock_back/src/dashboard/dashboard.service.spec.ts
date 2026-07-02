@@ -5,18 +5,15 @@ describe('DashboardService', () => {
   const dataSource = {
     query: jest.fn(),
   };
-  const tcpConnectionsService = {
-    terminalIds: jest.fn().mockReturnValue([]),
+  const locksService = {
+    syncStatusesWithCurrentConnections: jest.fn().mockResolvedValue([]),
   };
   let service: DashboardService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    tcpConnectionsService.terminalIds.mockReturnValue([]);
-    service = new DashboardService(
-      dataSource as never,
-      tcpConnectionsService as never,
-    );
+    locksService.syncStatusesWithCurrentConnections.mockResolvedValue([]);
+    service = new DashboardService(dataSource as never, locksService as never);
   });
 
   it('uses from/to date range for position activity and alert queries', async () => {
@@ -68,6 +65,7 @@ describe('DashboardService', () => {
       [from, to, []],
     );
     expect(dataSource.query).toHaveBeenCalledTimes(1);
+    expect(locksService.syncStatusesWithCurrentConnections).toHaveBeenCalled();
     expect(response.lockActivity.summary).toEqual({
       alarms: 2,
       stopped: 1,
@@ -99,6 +97,9 @@ describe('DashboardService', () => {
   });
 
   it('pushes the terminal filter into every dashboard data source', async () => {
+    locksService.syncStatusesWithCurrentConnections.mockResolvedValue([
+      '8034400004',
+    ]);
     dataSource.query.mockResolvedValueOnce([
       {
         total: '0',
@@ -123,7 +124,7 @@ describe('DashboardService', () => {
 
     expect(dataSource.query).toHaveBeenCalledWith(
       expect.stringContaining('AND "terminalId" = $3'),
-      expect.arrayContaining(['8034400004', []]),
+      expect.arrayContaining(['8034400004', ['8034400004']]),
     );
   });
 

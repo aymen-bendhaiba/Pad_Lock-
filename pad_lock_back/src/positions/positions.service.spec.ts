@@ -13,9 +13,12 @@ function fixture(
       .mockResolvedValueOnce(rows),
   };
   const tcpConnectionsService = { has: jest.fn().mockReturnValue(false) };
+  const locksService = {
+    syncStatusesWithCurrentConnections: jest.fn().mockResolvedValue([]),
+  };
   const service = new PositionsService(
     repository as never,
-    {} as never,
+    locksService as never,
     tcpConnectionsService as never,
   );
 
@@ -87,13 +90,22 @@ describe('PositionsService active devices', () => {
       createQueryBuilder: jest.fn().mockReturnValue(builder),
     };
     const tcpConnectionsService = { has: jest.fn().mockReturnValue(connected) };
+    const locksService = {
+      syncStatusesWithCurrentConnections: jest.fn().mockResolvedValue([]),
+    };
     const service = new PositionsService(
       repository as never,
-      {} as never,
+      locksService as never,
       tcpConnectionsService as never,
     );
 
-    return { service, repository, builder, tcpConnectionsService };
+    return {
+      service,
+      repository,
+      builder,
+      tcpConnectionsService,
+      locksService,
+    };
   }
 
   it('marks disconnected lock telemetry unavailable even when the database status is stale', async () => {
@@ -150,6 +162,14 @@ describe('PositionsService active devices', () => {
         },
       },
     ]);
+  });
+
+  it('synchronizes lock statuses to the database before returning devices', async () => {
+    const { service, locksService } = activeDevicesFixture([]);
+
+    await service.findActiveDevices();
+
+    expect(locksService.syncStatusesWithCurrentConnections).toHaveBeenCalled();
   });
 
   it('keeps live telemetry for locks connected over TCP', async () => {
