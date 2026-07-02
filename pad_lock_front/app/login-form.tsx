@@ -31,10 +31,10 @@ export function LoginForm() {
   return (
     <form className="mt-8" aria-label="Formulaire de connexion" onSubmit={handleSubmit}>
       <div>
-        <h3 className="text-[16px] font-semibold leading-none text-[#17171c]">
+        <h3 className="text-[16px] font-semibold leading-none text-[#17171c] dark:text-[#e5eef9]">
           Connexion
         </h3>
-        <p className="mt-3 text-[12px] leading-none text-[#777781]">
+        <p className="mt-3 text-[12px] leading-none text-[#777781] dark:text-[#9fb0c7]">
           Saisissez votre email pour acceder a votre compte
         </p>
       </div>
@@ -43,7 +43,7 @@ export function LoginForm() {
         <div>
           <label
             htmlFor="email"
-            className="block text-[11px] font-medium leading-none text-[#1d1d22]"
+            className="block text-[11px] font-medium leading-none text-[#1d1d22] dark:text-[#d7e2f0]"
           >
             Email
           </label>
@@ -56,7 +56,7 @@ export function LoginForm() {
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="mt-2 h-9 w-full rounded-[4px] border border-[#dddddf] bg-white px-3 text-[12px] text-[#17171c] outline-none transition focus:border-[#1E9ADA] focus:ring-2 focus:ring-[#1E9ADA]/20"
+            className="mt-2 h-9 w-full rounded-[4px] border border-[#dddddf] bg-white px-3 text-[12px] text-[#17171c] outline-none transition placeholder:text-[#8a94a6] focus:border-[#1E9ADA] focus:ring-2 focus:ring-[#1E9ADA]/20 dark:border-[#2b3b52] dark:bg-[#101d31] dark:text-[#e5eef9] dark:placeholder:text-[#73849d]"
           />
         </div>
 
@@ -64,13 +64,13 @@ export function LoginForm() {
           <div className="flex items-center justify-between gap-4">
             <label
               htmlFor="password"
-              className="block text-[11px] font-medium leading-none text-[#1d1d22]"
+              className="block text-[11px] font-medium leading-none text-[#1d1d22] dark:text-[#d7e2f0]"
             >
               Mot de passe
             </label>
             <Link
               href="#"
-              className="text-[11px] font-normal leading-none text-[#1d1d22] underline underline-offset-2"
+              className="text-[11px] font-normal leading-none text-[#1d1d22] underline underline-offset-2 dark:text-[#d7e2f0]"
             >
               Mot de passe oublie ?
             </Link>
@@ -84,7 +84,7 @@ export function LoginForm() {
             minLength={8}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="mt-2 h-9 w-full rounded-[4px] border border-[#dddddf] bg-white px-3 text-[12px] text-[#17171c] outline-none transition focus:border-[#1E9ADA] focus:ring-2 focus:ring-[#1E9ADA]/20"
+            className="mt-2 h-9 w-full rounded-[4px] border border-[#dddddf] bg-white px-3 text-[12px] text-[#17171c] outline-none transition placeholder:text-[#8a94a6] focus:border-[#1E9ADA] focus:ring-2 focus:ring-[#1E9ADA]/20 dark:border-[#2b3b52] dark:bg-[#101d31] dark:text-[#e5eef9] dark:placeholder:text-[#73849d]"
           />
         </div>
       </div>
@@ -99,13 +99,13 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="h-9 w-full rounded-[4px] bg-[#1c1c21] text-[12px] font-medium text-white transition hover:bg-[#0C4E71] focus:outline-none focus:ring-2 focus:ring-[#1E9ADA]/35 disabled:cursor-not-allowed disabled:opacity-70"
+          className="h-9 w-full rounded-[4px] bg-[#1c1c21] text-[12px] font-medium text-white transition hover:bg-[#0C4E71] focus:outline-none focus:ring-2 focus:ring-[#1E9ADA]/35 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-[#1E9ADA] dark:hover:bg-[#167db4]"
         >
           {isSubmitting ? "Connexion..." : "Se connecter"}
         </button>
       </div>
 
-      <p className="mt-5 text-center text-[12px] leading-none text-[#1d1d22]">
+      <p className="mt-5 text-center text-[12px] leading-none text-[#1d1d22] dark:text-[#d7e2f0]">
         Vous n&apos;avez pas encore de compte ?{" "}
         <Link href="#" className="underline underline-offset-2">
           Creer un compte

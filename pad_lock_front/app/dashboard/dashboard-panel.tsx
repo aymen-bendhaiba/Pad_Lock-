@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Activity,
   CalendarDays,
@@ -787,7 +788,7 @@ export function DashboardPanel() {
         <article className="rounded-[8px] border border-[#dfe6ee] bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="mb-5 flex items-start justify-between">
             <div><h2 className="text-[15px] font-bold">Cartes RFID les plus utilisees</h2><p className="mt-1 text-[12px] text-[#718096]">Classement calcule depuis les donnees du serveur</p></div>
-            <button type="button" className="flex h-9 items-center gap-2 rounded-[7px] bg-[#111827] px-3 text-[12px] font-medium text-white">Rapports<ChartNoAxesColumn size={14} /></button>
+            <Link href="/reports" className="flex h-9 items-center gap-2 rounded-[7px] bg-[#111827] px-3 text-[12px] font-medium text-white">Rapports<ChartNoAxesColumn size={14} /></Link>
           </div>
           {rfidUsage.length > 0 ? (
             <div className="space-y-4">
@@ -807,7 +808,7 @@ export function DashboardPanel() {
         <article className="rounded-[8px] border border-[#dfe6ee] bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.03)]">
           <div className="mb-5 flex items-start justify-between gap-3">
             <div><h2 className="text-[15px] font-bold">Carte de chaleur des trajets</h2><p className="mt-1 text-[12px] text-[#718096]">Intensite des trajets calculee depuis les donnees du serveur</p></div>
-            <button type="button" className="flex h-9 items-center gap-2 rounded-[7px] border border-[#dfe6ee] px-3 text-[12px] font-medium"><Globe2 size={14} />Vue globale</button>
+            <Link href="/live-map" className="flex h-9 items-center gap-2 rounded-[7px] border border-[#dfe6ee] px-3 text-[12px] font-medium"><Globe2 size={14} />Vue globale</Link>
           </div>
           <div className="rounded-[10px] border border-[#e6edf4] bg-[#fbfdff] p-4">
             {heatMapTracks.length > 0 ? (

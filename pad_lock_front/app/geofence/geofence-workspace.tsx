@@ -236,7 +236,32 @@ function terminalIdFromRecord(record: ApiRecord) {
   return firstStringValue(record.terminalId, record.terminalID, record.deviceId, record.lockId, record.id, record.serial, record.imei) ?? "unknown";
 }
 
-function normalizeBattery(record: ApiRecord, lock?: ApiRecord) {
+
+function isTelemetryAvailable(record: ApiRecord | null | undefined, lock?: ApiRecord | null) {
+  const telemetryFlag = firstNestedBoolean(record, ["telemetryAvailable"])
+    ?? firstNestedBoolean(lock, ["telemetryAvailable"]);
+
+  if (telemetryFlag === false) {
+    return false;
+  }
+
+  const connectionStatus = (firstNestedString(record, ["connectionStatus"])
+    ?? firstNestedString(lock, ["connectionStatus"]))?.toLowerCase();
+
+  if (connectionStatus && ["not_connected_over_tcp", "offline", "disconnected"].includes(connectionStatus)) {
+    return false;
+  }
+
+  const online = firstNestedBoolean(record, ["online", "isOnline", "connected"])
+    ?? firstNestedBoolean(lock, ["online", "isOnline", "connected"]);
+
+  return online !== false;
+}
+function normalizeBattery(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)) {
+  if (!telemetryAvailable) {
+    return undefined;
+  }
+
   const raw = firstNestedString(record, ["battery", "batteryLevel", "power", "batteryPercent"]) ?? firstNestedString(lock, ["battery", "batteryLevel", "power", "batteryPercent"]);
 
   if (raw) {
@@ -252,7 +277,10 @@ function normalizeBattery(record: ApiRecord, lock?: ApiRecord) {
   return value === undefined ? undefined : Math.max(0, Math.min(100, Math.round(value))) + "%";
 }
 
-function normalizeLockState(record: ApiRecord, lock?: ApiRecord): LockMapAsset["lock"] {
+function normalizeLockState(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)): LockMapAsset["lock"] {
+  if (!telemetryAvailable) {
+    return "Unknown";
+  }
   const raw = firstNestedString(record, ["lock", "lockState", "locked", "statusLock"]) ?? firstNestedString(lock, ["lock", "lockState", "locked", "statusLock"]);
   const locked = firstNestedBoolean(record, ["locked", "isLocked"]) ?? firstNestedBoolean(lock, ["locked", "isLocked"]);
 
@@ -267,7 +295,10 @@ function normalizeLockState(record: ApiRecord, lock?: ApiRecord): LockMapAsset["
   return "Unknown";
 }
 
-function normalizeLockStatus(record: ApiRecord): LockMapAsset["status"] {
+function normalizeLockStatus(record: ApiRecord, telemetryAvailable = isTelemetryAvailable(record)): LockMapAsset["status"] {
+  if (!telemetryAvailable) {
+    return "Offline";
+  }
   const raw = firstNestedString(record, ["status", "state", "movementStatus", "motion", "online"]);
   const online = firstNestedBoolean(record, ["online", "isOnline", "connected"]);
 
@@ -302,13 +333,14 @@ function normalizeLockAsset(record: ApiRecord, lock?: ApiRecord): LockMapAsset |
   }
 
   const id = terminalIdFromRecord(record);
+  const telemetryAvailable = isTelemetryAvailable(record, lock);
 
   return {
     id,
     name: firstNestedString(record, ["name", "assetName", "deviceName", "label"]) ?? firstNestedString(lock, ["name", "assetName", "deviceName", "label"]) ?? "Device-" + id,
-    status: normalizeLockStatus(record),
-    lock: normalizeLockState(record, lock),
-    battery: normalizeBattery(record, lock),
+    status: normalizeLockStatus(record, telemetryAvailable),
+    lock: normalizeLockState(record, lock, telemetryAvailable),
+    battery: normalizeBattery(record, lock, telemetryAvailable),
     updatedAt: firstNestedString(record, ["updatedAt", "lastSeenAt", "timestamp", "createdAt"]),
     position,
   };

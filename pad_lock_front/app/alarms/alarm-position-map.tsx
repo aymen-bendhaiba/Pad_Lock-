@@ -5,13 +5,13 @@ import { useState } from "react";
 import { MapContainer, Marker, Popup, TileLayer, ZoomControl } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
-type MapLayerMode = "street" | "satellite";
+type MapLayerMode = "plan" | "satellite";
 
-const STREET_LAYER = {
-  attribution: "&copy; OpenStreetMap contributors",
-  maxNativeZoom: 19,
-  maxZoom: 19,
-  url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+const PLAN_LAYER = {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  maxNativeZoom: 20,
+  maxZoom: 20,
+  url: "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
 };
 
 const SATELLITE_LAYER = {
@@ -25,7 +25,7 @@ function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerM
   return (
     <div className="leaflet-top leaflet-right">
       <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
-        {[{ key: "street" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
+        {[{ key: "plan" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
           <button
             key={item.key}
             type="button"
@@ -58,8 +58,8 @@ type AlarmPositionMapProps = {
 };
 
 export function AlarmPositionMap({ position, label }: AlarmPositionMapProps) {
-  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("satellite");
-  const tileLayer = activeLayer === "street" ? STREET_LAYER : SATELLITE_LAYER;
+  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("plan");
+  const tileLayer = activeLayer === "plan" ? PLAN_LAYER : SATELLITE_LAYER;
 
   return (
     <MapContainer

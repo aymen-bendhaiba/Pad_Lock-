@@ -108,13 +108,6 @@ body::-webkit-scrollbar,
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #07111f;
-    --foreground: #e5eef9;
-    color-scheme: dark;
-  }
-}
 
 html.dark {
   --background: #07111f;
@@ -122,128 +115,62 @@ html.dark {
   color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  body,
-  main,
-  .dark-surface-root {
-    background-color: #07111f !important;
-    color: #e5eef9 !important;
-  }
 
-  aside,
-  header,
-  section,
-  nav,
-  [class*="bg-white"],
-  [class*="bg-[#ffffff]"],
-  [class*="bg-[#f8fafc]"],
-  [class*="bg-[#fbfdff]"],
-  [class*="bg-[#f3f7fa]"],
-  [class*="bg-[#f6f8fb]"],
-  [class*="bg-[#eef4fa]"],
-  [class*="bg-[#f3f6fa]"],
-  [class*="bg-[#edf2f7]"] {
-    background-color: #0f1b2d !important;
-  }
 
-  [class*="bg-white/"] {
-    background-color: rgba(15, 27, 45, 0.94) !important;
-  }
-
-  [class*="border-[#dfe6ee]"],
-  [class*="border-[#e6edf5]"],
-  [class*="border-[#e3e9f0]"],
-  [class*="border-[#d8e2ec]"],
-  [class*="border-[#cbd5e1]"],
-  [class*="border-[#d5e0ea]"] {
-    border-color: #243449 !important;
-  }
-
-  [class*="text-black"],
-  [class*="text-[#0f172a]"],
-  [class*="text-[#111827]"],
-  [class*="text-[#172033]"],
-  [class*="text-[#334155]"] {
-    color: #e5eef9 !important;
-  }
-
-  [class*="text-[#475569]"],
-  [class*="text-[#52657d]"],
-  [class*="text-[#5b6b84]"],
-  [class*="text-[#63758d]"],
-  [class*="text-[#64748b]"],
-  [class*="text-[#718096]"],
-  [class*="text-[#8190a5]"],
-  [class*="text-[#94a3b8]"] {
-    color: #9fb0c7 !important;
-  }
-
-  input,
-  select,
-  textarea,
-  button[class*="border"] {
-    background-color: #101d31 !important;
-    border-color: #2b3b52 !important;
-    color: #e5eef9 !important;
-  }
-
-  input::placeholder,
-  textarea::placeholder {
-    color: #73849d !important;
-  }
-
-  [class*="hover:bg-[#f3f7fa]"]:hover,
-  [class*="hover:bg-[#f8fafc]"]:hover,
-  [class*="hover:bg-[#eef4fa]"]:hover,
-  [class*="hover:bg-[#e8eef5]"]:hover {
-    background-color: #17263c !important;
-  }
-
-  [class*="shadow"],
-  .leaflet-popup-content-wrapper {
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45) !important;
-  }
-
-  .leaflet-control,
-  .leaflet-popup-content-wrapper,
-  .leaflet-popup-tip {
-    background-color: #0f1b2d !important;
-    color: #e5eef9 !important;
-    border-color: #243449 !important;
-  }
-
-  .leaflet-container {
-    background: #07111f !important;
-  }
-
-  [class*="bg-[#ecfdf5]"],
-  [class*="bg-[#e8f8ee]"],
-  [class*="bg-[#eaf8ef]"] {
-    background-color: rgba(16, 185, 129, 0.14) !important;
-  }
-
-  [class*="bg-red-50"],
-  [class*="bg-[#feecec]"],
-  [class*="bg-[#fef2f2]"],
-  [class*="bg-[#fff1f2]"] {
-    background-color: rgba(239, 68, 68, 0.14) !important;
-  }
-
-  [class*="bg-[#fff7d6]"],
-  [class*="bg-[#fff7ed]"] {
-    background-color: rgba(245, 158, 11, 0.14) !important;
-  }
-
-  [class*="bg-[#eff6ff]"] {
-    background-color: rgba(37, 99, 235, 0.16) !important;
-  }
-
-  [class*="ring-[#2A9D90]"],
-  [class*="focus:ring-[#2A9D90]"] {
-    --tw-ring-color: rgba(45, 212, 191, 0.28) !important;
-  }
+.login-overlay {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.64), rgba(255, 255, 255, 0.22));
 }
 
+html.dark .login-page {
+  background-color: #08111f !important;
+  color: #f8fbff !important;
+}
+
+html.dark .login-page img[alt=""] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+html.dark .login-page .login-overlay {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(42, 157, 144, 0.16), transparent 32%),
+    radial-gradient(circle at 78% 42%, rgba(30, 154, 218, 0.12), transparent 34%),
+    linear-gradient(135deg, #07111f 0%, #0b1626 48%, #08111f 100%);
+}
+
+html.dark .login-page .login-card {
+  background-color: rgba(10, 22, 38, 0.88) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36) !important;
+  backdrop-filter: blur(18px);
+}
+
+html.dark .login-page [class*="text-[#19191f]"],
+html.dark .login-page [class*="text-[#14141a]"],
+html.dark .login-page [class*="text-[#1b1b22]"],
+html.dark .login-page [class*="text-[#24242b]"],
+html.dark .login-page [class*="text-[#1f1f24]"],
+html.dark .login-page [class*="text-[#1d1d22]"],
+html.dark .login-page [class*="text-[#17171c]"],
+html.dark .login-page [class*="text-black"] {
+  color: #f8fbff !important;
+  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.28);
+}
+
+html.dark .login-page [class*="text-[#4b4b54]"],
+html.dark .login-page [class*="text-[#777781]"] {
+  color: #c8d5e7 !important;
+}
+
+html.dark .login-page input {
+  background-color: rgba(8, 18, 32, 0.72) !important;
+  border-color: rgba(148, 163, 184, 0.34) !important;
+  color: #f8fbff !important;
+}
+
+html.dark .login-page input::placeholder {
+  color: #8fa2bb !important;
+}
 html.dark body,
 html.dark main,
 html.dark .dark-surface-root {
@@ -261,7 +188,12 @@ html.dark [class*="bg-[#f8fafc]"],
 html.dark [class*="bg-[#fbfdff]"],
 html.dark [class*="bg-[#f3f7fa]"],
 html.dark [class*="bg-[#f6f8fb]"],
+html.dark [class*="bg-[#f7f7f8]"],
+html.dark [class*="bg-[#f1f1f2]"],
 html.dark [class*="bg-[#eef4fa]"],
+html.dark [class*="bg-[#eef4f7]"],
+html.dark [class*="bg-[#e7f8f5]"],
+html.dark [class*="bg-[#d8eadf]"],
 html.dark [class*="bg-[#f3f6fa]"],
 html.dark [class*="bg-[#edf2f7]"] {
   background-color: #0f1b2d !important;
@@ -273,7 +205,9 @@ html.dark [class*="bg-white/"] {
 
 html.dark [class*="border-[#dfe6ee]"],
 html.dark [class*="border-[#e6edf5]"],
+html.dark [class*="border-[#e6edf4]"],
 html.dark [class*="border-[#e3e9f0]"],
+html.dark [class*="border-[#e2e8f0]"],
 html.dark [class*="border-[#d8e2ec]"],
 html.dark [class*="border-[#cbd5e1]"],
 html.dark [class*="border-[#d5e0ea]"] {
@@ -323,4 +257,19 @@ html.dark .leaflet-popup-tip {
 
 html.dark .leaflet-container {
   background: #07111f !important;
+}
+html.dark [class*="bg-white/55"],
+html.dark [class*="bg-slate-950/45"] {
+  background-color: rgba(7, 17, 31, 0.72) !important;
+}
+
+html.dark [class*="shadow-xl"],
+html.dark [class*="shadow-2xl"],
+html.dark [class*="shadow-lg"] {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.46) !important;
+}
+
+html.dark option {
+  background-color: #101d31;
+  color: #e5eef9;
 }

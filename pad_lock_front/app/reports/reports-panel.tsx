@@ -63,7 +63,7 @@ function normalizeDevice(row: unknown, index: number): DeviceOption | null { con
 function formatValue(value: unknown): string { if (value === null || value === undefined || value === "") return "--"; if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2); if (typeof value === "boolean") return value ? "Oui" : "Non"; if (typeof value === "string") return optionLabel(value); if (Array.isArray(value)) return value.length + " element" + (value.length === 1 ? "" : "s"); if (typeof value === "object") return JSON.stringify(value); return String(value); }
 function formatLabel(key: string) { const labels: Record<string, string> = { total: "Total", totalAlerts: "Total alarmes", totalOpenings: "Total ouvertures", totalOpened: "Total ouvertures", totalGeofences: "Total geofences", samples: "Echantillons", entries: "Entrees", exits: "Sorties", totalKilometers: "Kilometres totaux", affectedLocks: "Cadenas concernes", unresolved: "Non resolues", critical: "Critiques", averagePercentage: "Batterie moyenne", lowSamples: "Batteries faibles", movingSamples: "Positions en mouvement", terminalId: "Cadenas", type: "Type", severity: "Severite", status: "Statut", createdAt: "Date creation", timestamp: "Horodatage", latitude: "Latitude", longitude: "Longitude", method: "Methode", geofenceId: "Geofence" }; return labels[key] ?? key.replace(/([A-Z])/g, " $1").replace(/[_-]+/g, " ").replace(/^./, c => c.toUpperCase()); }
 function rowRecord(row: unknown): ApiRecord { return asRecord(row) ?? { value: row }; }
-function rowColumns(rows: unknown[]) { const keys = new Set<string>(); for (const row of rows.slice(0, 20)) Object.keys(rowRecord(row)).forEach(k => keys.add(k)); return Array.from(keys).filter(k => k !== "deletedAt").slice(0, 8); }
+function rowColumns(rows: unknown[]) { const keys = new Set<string>(); for (const row of rows.slice(0, 20)) Object.keys(rowRecord(row)).forEach(k => keys.add(k)); return Array.from(keys).filter(k => k !== "deletedAt"); }
 function reportTotal(response?: ReportResponse) { const summary = response?.summary; const total = Number(response?.pagination?.total ?? summary?.total ?? summary?.totalAlerts ?? summary?.totalOpenings ?? response?.rows?.length ?? 0); return Number.isFinite(total) ? total : 0; }
 function hasReportData(response?: ReportResponse) { if (!response) return false; if ((response.rows?.length ?? 0) > 0) return true; if ((response.timeline?.length ?? 0) > 0) return true; return Object.values(response.summary ?? {}).some(value => Number(value) > 0); }
 function summaryTotal(summary?: ApiRecord) { if (!summary) return 0; for (const key of ["total", "totalAlerts", "totalOpenings", "totalOpened", "totalGeofences", "samples", "entries", "totalKilometers", "affectedLocks"]) { const value = Number(summary[key]); if (Number.isFinite(value) && value > 0) return value; } return 0; }
@@ -128,33 +128,69 @@ function pdfEscape(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 
-function truncatePdfText(value: unknown, maxLength = 34) {
-  const clean = formatValue(value).replace(/\s+/g, " ").trim();
-  return clean.length > maxLength ? clean.slice(0, maxLength - 1) + "..." : clean;
+function pdfCleanText(value: unknown) {
+  return formatValue(value).replace(/\s+/g, " ").trim();
+}
+
+function wrapPdfLines(value: unknown, maxChars: number, maxLines = 4) {
+  const words = pdfCleanText(value).split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? current + " " + word : word;
+
+    if (next.length <= maxChars) {
+      current = next;
+      continue;
+    }
+
+    if (current) {
+      lines.push(current);
+      current = word;
+    } else {
+      lines.push(word.slice(0, maxChars));
+      current = word.slice(maxChars);
+    }
+
+    if (lines.length >= maxLines) {
+      break;
+    }
+  }
+
+  if (current && lines.length < maxLines) {
+    lines.push(current.length > maxChars ? current.slice(0, maxChars) : current);
+  }
+
+  if (!lines.length) {
+    return ["--"];
+  }
+
+  if (words.join(" ").length > lines.join(" ").length && lines.length) {
+    lines[lines.length - 1] = lines[lines.length - 1].replace(/\.{3}$/, "") + "...";
+  }
+
+  return lines;
 }
 
 function createReportPdfBlob(report: ReportJob) {
   const response = report.response;
   const summaryEntries = Object.entries(response?.summary ?? {}).slice(0, 8);
   const rows = response?.rows ?? [];
-  const columns = rowColumns(rows).slice(0, 5);
-    const batteryPdfData = report.definition.key === "battery" ? normalizeBatteryChartData(response).slice(0, 36) : [];
+  const batteryPdfData = report.definition.key === "battery" ? normalizeBatteryChartData(response).slice(0, 36) : [];
+  const allColumns = rowColumns(rows);
   const rgb = (r: number, g: number, b: number) => (r / 255).toFixed(3) + " " + (g / 255).toFixed(3) + " " + (b / 255).toFixed(3);
-  const pageRows: unknown[][] = [];
-  if (!rows.length) pageRows.push([]);
-  else {
-    const firstPageCount = report.definition.key === "battery" && batteryPdfData.length ? 8 : summaryEntries.length > 4 ? 18 : 21;
-    const otherPageCount = 25;
-    pageRows.push(rows.slice(0, firstPageCount));
-    for (let index = firstPageCount; index < rows.length; index += otherPageCount) pageRows.push(rows.slice(index, index + otherPageCount));
-  }
+  const streams: string[] = [];
 
-  function renderPage(currentRows: unknown[], pageIndex: number, pageCount: number) {
+  function createPage(pageIndex: number) {
     const commands: string[] = [];
     const rect = (x: number, y: number, w: number, h: number, color: [number, number, number]) => commands.push(rgb(...color) + " rg", x + " " + y + " " + w + " " + h + " re f");
     const strokeRect = (x: number, y: number, w: number, h: number, color: [number, number, number]) => commands.push(rgb(...color) + " RG", "0.8 w", x + " " + y + " " + w + " " + h + " re S");
-    const textAt = (x: number, y: number, value: unknown, size = 10, color: [number, number, number] = [17, 24, 39], bold = false, maxLength = 82) => {
-      commands.push("BT", rgb(...color) + " rg", (bold ? "/F2 " : "/F1 ") + size + " Tf", x + " " + y + " Td", "(" + pdfEscape(truncatePdfText(value, maxLength)) + ") Tj", "ET");
+    const textAt = (x: number, y: number, value: unknown, size = 10, color: [number, number, number] = [17, 24, 39], bold = false) => {
+      commands.push("BT", rgb(...color) + " rg", (bold ? "/F2 " : "/F1 ") + size + " Tf", x + " " + y + " Td", "(" + pdfEscape(pdfCleanText(value)) + ") Tj", "ET");
+    };
+    const textLines = (x: number, y: number, lines: string[], size = 8, color: [number, number, number] = [51, 65, 85], bold = false, leading = 10) => {
+      lines.forEach((line, index) => textAt(x, y - index * leading, line, size, color, bold));
     };
     const linePath = (points: [number, number][], color: [number, number, number], width = 1.4) => {
       if (points.length < 2) return;
@@ -168,78 +204,122 @@ function createReportPdfBlob(report: ReportJob) {
     textAt(458, 815, "Pad Lock", 12, [255, 255, 255], true);
     textAt(458, 798, "Rapports et analyses", 8, [203, 213, 225]);
 
-    let tableY = 704;
-    if (pageIndex === 0) {
-      textAt(42, 742, "Synthese", 13, [17, 24, 39], true);
-      const cards: [string, unknown][] = summaryEntries.length ? summaryEntries : [["total", reportTotal(response)]];
-      cards.slice(0, 8).forEach(([key, value], index) => {
-        const col = index % 4;
-        const row = Math.floor(index / 4);
-        const x = 42 + col * 132;
-        const y = 682 - row * 64;
-        rect(x, y, 118, 48, index % 2 ? [248, 250, 252] : [239, 253, 250]);
-        strokeRect(x, y, 118, 48, [223, 230, 238]);
-        textAt(x + 10, y + 30, formatLabel(key), 7, [100, 116, 139], true, 22);
-        textAt(x + 10, y + 12, formatValue(value), 14, [15, 23, 42], true, 18);
-      });
-      tableY = summaryEntries.length > 4 ? 540 : 604;
-      if (report.definition.key === "battery") {
-        const chartX = 42;
-        const chartY = 352;
-        const chartW = 528;
-        const chartH = 142;
-        textAt(chartX, chartY + chartH + 22, "Evolution de la batterie", 13, [17, 24, 39], true);
-        textAt(chartX, chartY + chartH + 8, batteryPdfData.length ? batteryTrendLabel(batteryPdfData) : "Aucun historique de batterie disponible pour tracer le graphique.", 8, [100, 116, 139], false, 90);
-        rect(chartX, chartY, chartW, chartH, [248, 250, 252]);
-        strokeRect(chartX, chartY, chartW, chartH, [223, 230, 238]);
-        [0, 25, 50, 75, 100].forEach((tick) => {
-          const y = chartY + 18 + (tick / 100) * (chartH - 36);
-          linePath([[chartX + 44, y], [chartX + chartW - 18, y]], [226, 232, 240], 0.4);
-          textAt(chartX + 12, y - 3, String(tick) + "%", 6.5, [100, 116, 139], false, 8);
-        });
-        if (batteryPdfData.length > 0) {
-          const usableW = chartW - 76;
-          const usableH = chartH - 36;
-          const points = batteryPdfData.map((item, index): [number, number] => [
-            chartX + 44 + (batteryPdfData.length === 1 ? usableW / 2 : (index / (batteryPdfData.length - 1)) * usableW),
-            chartY + 18 + (item.percentage / 100) * usableH,
-          ]);
-          linePath(points, [42, 157, 144], 2.2);
-          points.forEach(([x, y]) => rect(x - 1.7, y - 1.7, 3.4, 3.4, [42, 157, 144]));
-          textAt(chartX + 44, chartY + 8, batteryPdfData[0].label, 6.5, [100, 116, 139], false, 22);
-          textAt(chartX + chartW - 132, chartY + 8, batteryPdfData[batteryPdfData.length - 1].label, 6.5, [100, 116, 139], false, 22);
-        }
-        tableY = 300;
-      }
-    }
-
-    textAt(42, tableY + 32, pageIndex === 0 ? "Lignes detaillees" : "Suite des lignes", 13, [17, 24, 39], true);
-    if (!rows.length || !columns.length) {
-      rect(42, tableY - 12, 528, 46, [248, 250, 252]);
-      strokeRect(42, tableY - 12, 528, 46, [223, 230, 238]);
-      textAt(58, tableY + 8, "Aucune ligne detaillee retournee pour ces filtres.", 10, [100, 116, 139]);
-    } else {
-      const widths = [110, 104, 104, 104, 104];
-      const xs = [42, 152, 256, 360, 464];
-      rect(42, tableY, 528, 24, [30, 41, 59]);
-      columns.forEach((column, index) => textAt(xs[index] + 8, tableY + 8, formatLabel(column), 8, [255, 255, 255], true, 16));
-      currentRows.forEach((row, rowIndex) => {
-        const y = tableY - 24 - rowIndex * 24;
-        const record = rowRecord(row);
-        rect(42, y, 528, 24, rowIndex % 2 ? [255, 255, 255] : [248, 250, 252]);
-        strokeRect(42, y, 528, 24, [226, 232, 240]);
-        columns.forEach((column, index) => textAt(xs[index] + 8, y + 8, record[column], 7.5, [51, 65, 85], false, widths[index] > 108 ? 18 : 16));
-      });
-    }
-
-    const filterLine = "Lignes " + (rows.length ? (pageIndex === 0 ? 1 : pageRows.slice(0, pageIndex).reduce((total, group) => total + group.length, 0) + 1) : 0) + "-" + pageRows.slice(0, pageIndex + 1).reduce((total, group) => total + group.length, 0) + " sur " + rows.length;
-    rect(42, 48, 528, 1, [226, 232, 240]);
-    textAt(42, 28, filterLine, 7, [100, 116, 139]);
-    textAt(500, 28, "Page " + (pageIndex + 1) + " sur " + pageCount, 7, [100, 116, 139]);
-    return commands.join("\n");
+    return { commands, rect, strokeRect, textAt, textLines, linePath, y: 742 };
   }
 
-  const streams = pageRows.map((group, index) => renderPage(group, index, pageRows.length));
+  function finishPage(page: ReturnType<typeof createPage>, pageNumber: number) {
+    page.rect(42, 48, 528, 1, [226, 232, 240]);
+    page.textAt(42, 28, "Lignes detaillees : " + rows.length, 7, [100, 116, 139]);
+    page.textAt(500, 28, "Page " + pageNumber, 7, [100, 116, 139]);
+    streams.push(page.commands.join("\n"));
+  }
+
+  let page = createPage(0);
+  let pageNumber = 1;
+
+  page.textAt(42, page.y, "Synthese", 13, [17, 24, 39], true);
+  const cards: [string, unknown][] = summaryEntries.length ? summaryEntries : [["total", reportTotal(response)]];
+  cards.slice(0, 8).forEach(([key, value], index) => {
+    const col = index % 4;
+    const row = Math.floor(index / 4);
+    const x = 42 + col * 132;
+    const y = 682 - row * 64;
+    page.rect(x, y, 118, 48, index % 2 ? [248, 250, 252] : [239, 253, 250]);
+    page.strokeRect(x, y, 118, 48, [223, 230, 238]);
+    page.textLines(x + 10, y + 30, wrapPdfLines(formatLabel(key), 20, 1), 7, [100, 116, 139], true, 8);
+    page.textLines(x + 10, y + 12, wrapPdfLines(value, 16, 1), 14, [15, 23, 42], true, 12);
+  });
+  page.y = summaryEntries.length > 4 ? 540 : 604;
+
+  if (report.definition.key === "battery") {
+    const chartX = 42;
+    const chartY = 352;
+    const chartW = 528;
+    const chartH = 142;
+    page.textAt(chartX, chartY + chartH + 22, "Evolution de la batterie", 13, [17, 24, 39], true);
+    page.textLines(chartX, chartY + chartH + 8, wrapPdfLines(batteryPdfData.length ? batteryTrendLabel(batteryPdfData) : "Aucun historique de batterie disponible pour tracer le graphique.", 88, 2), 8, [100, 116, 139], false, 10);
+    page.rect(chartX, chartY, chartW, chartH, [248, 250, 252]);
+    page.strokeRect(chartX, chartY, chartW, chartH, [223, 230, 238]);
+    [0, 25, 50, 75, 100].forEach((tick) => {
+      const y = chartY + 18 + (tick / 100) * (chartH - 36);
+      page.linePath([[chartX + 44, y], [chartX + chartW - 18, y]], [226, 232, 240], 0.4);
+      page.textAt(chartX + 12, y - 3, String(tick) + "%", 6.5, [100, 116, 139]);
+    });
+    if (batteryPdfData.length > 0) {
+      const usableW = chartW - 76;
+      const usableH = chartH - 36;
+      const points = batteryPdfData.map((item, index): [number, number] => [
+        chartX + 44 + (batteryPdfData.length === 1 ? usableW / 2 : (index / (batteryPdfData.length - 1)) * usableW),
+        chartY + 18 + (item.percentage / 100) * usableH,
+      ]);
+      page.linePath(points, [42, 157, 144], 2.2);
+      points.forEach(([x, y]) => page.rect(x - 1.7, y - 1.7, 3.4, 3.4, [42, 157, 144]));
+      page.textLines(chartX + 44, chartY + 8, wrapPdfLines(batteryPdfData[0].label, 22, 1), 6.5, [100, 116, 139]);
+      page.textLines(chartX + chartW - 132, chartY + 8, wrapPdfLines(batteryPdfData[batteryPdfData.length - 1].label, 22, 1), 6.5, [100, 116, 139]);
+    }
+    page.y = 300;
+  }
+
+  page.textAt(42, page.y + 32, "Lignes detaillees", 13, [17, 24, 39], true);
+
+  if (!rows.length || !allColumns.length) {
+    page.rect(42, page.y - 12, 528, 46, [248, 250, 252]);
+    page.strokeRect(42, page.y - 12, 528, 46, [223, 230, 238]);
+    page.textAt(58, page.y + 8, "Aucune ligne detaillee retournee pour ces filtres.", 10, [100, 116, 139]);
+  } else {
+    let rowNumber = 0;
+
+    for (const row of rows) {
+      rowNumber += 1;
+      const record = rowRecord(row);
+      const entries = allColumns.map((column) => [column, record[column]] as [string, unknown]);
+      const blocks = entries.map(([column, value]) => ({
+        label: wrapPdfLines(formatLabel(column), 28, 1),
+        value: wrapPdfLines(value, 42, 4),
+      }));
+      const pairHeights: number[] = [];
+      for (let index = 0; index < blocks.length; index += 2) {
+        const left = blocks[index];
+        const right = blocks[index + 1];
+        pairHeights.push(22 + Math.max(left.value.length, right?.value.length ?? 1) * 9);
+      }
+      const cardHeight = Math.max(48, 24 + pairHeights.reduce((total, height) => total + height, 0));
+
+      if (page.y - cardHeight < 70) {
+        finishPage(page, pageNumber);
+        pageNumber += 1;
+        page = createPage(pageNumber - 1);
+        page.textAt(42, page.y, "Suite des lignes detaillees", 13, [17, 24, 39], true);
+        page.y -= 28;
+      }
+
+      const cardTop = page.y;
+      const cardBottom = cardTop - cardHeight;
+      page.rect(42, cardBottom, 528, cardHeight, rowNumber % 2 ? [248, 250, 252] : [255, 255, 255]);
+      page.strokeRect(42, cardBottom, 528, cardHeight, [223, 230, 238]);
+      page.textAt(56, cardTop - 18, "Ligne " + rowNumber, 9, [15, 23, 42], true);
+
+      let entryY = cardTop - 38;
+      for (let index = 0; index < blocks.length; index += 2) {
+        const left = blocks[index];
+        const right = blocks[index + 1];
+        page.textLines(56, entryY, left.label, 7, [100, 116, 139], true, 8);
+        page.textLines(56, entryY - 10, left.value, 8, [51, 65, 85], false, 9);
+
+        if (right) {
+          page.textLines(314, entryY, right.label, 7, [100, 116, 139], true, 8);
+          page.textLines(314, entryY - 10, right.value, 8, [51, 65, 85], false, 9);
+        }
+
+        entryY -= pairHeights[Math.floor(index / 2)];
+      }
+
+      page.y = cardBottom - 14;
+    }
+  }
+
+  finishPage(page, pageNumber);
+
   const font1Ref = 3 + streams.length * 2;
   const font2Ref = font1Ref + 1;
   const pageRefs = streams.map((_, index) => 3 + index * 2);
@@ -268,7 +348,6 @@ function createReportPdfBlob(report: ReportJob) {
   pdf += "trailer\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF";
   return new Blob([pdf], { type: "application/pdf" });
 }
-
 function datesForRangePreset(preset: RangePreset) {
   const option = rangePresetOptions.find(item => item.value === preset) ?? rangePresetOptions[1];
   if (option.value === "custom") return null;
@@ -276,7 +355,6 @@ function datesForRangePreset(preset: RangePreset) {
   from.setDate(from.getDate() - option.days);
   return { from: from.toISOString().slice(0, 10), to: defaultToDate() };
 }
-
 function GenerateReportModal({ filters, devices, loading, onClose, onGenerate }: { filters: ReportFilters; devices: DeviceOption[]; loading: boolean; onClose: () => void; onGenerate: (filters: ReportFilters) => void }) {
   const [draft, setDraft] = useState(filters);
   const [rangePreset, setRangePreset] = useState<RangePreset>("last30");
@@ -324,7 +402,6 @@ function ViewReportModal({ report, onClose }: { report: ReportJob; onClose: () =
     </div>
   );
 }
-
 function Pager({ selectedCount, page, pageCount, rowsPerPage, onRowsPerPage, onPage }: { selectedCount: number; page: number; pageCount: number; rowsPerPage: number; onRowsPerPage: (value: number) => void; onPage: (value: number) => void }) {
   return <div className="flex items-center justify-between py-4 text-[12px] text-[#64748b]"><span>{selectedCount} ligne(s) selectionnee(s).</span><div className="flex items-center gap-4"><span className="font-semibold text-[#111827]">Lignes par page</span><select value={rowsPerPage} onChange={e => onRowsPerPage(Number(e.target.value))} className="h-8 rounded-[6px] border border-[#dfe6ee] bg-white px-3"><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select><span className="font-semibold text-[#111827]">Page {page} sur {pageCount}</span><div className="flex gap-2">{[{Icon:ChevronsLeft,p:1},{Icon:ChevronLeft,p:Math.max(1,page-1)},{Icon:ChevronRight,p:Math.min(pageCount,page+1)},{Icon:ChevronsRight,p:pageCount}].map(({Icon,p},i)=><button key={i} type="button" onClick={()=>onPage(p)} disabled={p===page} className="grid size-8 place-items-center rounded-[6px] bg-white text-[#94a3b8] disabled:opacity-40"><Icon size={14}/></button>)}</div></div></div>;
 }

@@ -265,6 +265,194 @@ function statusFromTab(tab: string) {
   return undefined;
 }
 
+type ExportSummaryItem = {
+  label: string;
+  value: string | number;
+};
+
+function sanitizeExportText(value: unknown) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeHtml(value: unknown) {
+  return sanitizeExportText(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function pdfText(value: unknown, maxLength = 80) {
+  const normalized = sanitizeExportText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "");
+  const shortened = normalized.length > maxLength ? normalized.slice(0, Math.max(0, maxLength - 3)) + "..." : normalized;
+  return shortened.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function pdfObjectDocument(streams: string[]) {
+  const objects: string[] = [];
+  const pageObjectIds = streams.map((_, index) => 4 + index * 2);
+  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[2] = `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${streams.length} >>`;
+  objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
+  streams.forEach((stream, index) => {
+    const pageId = 4 + index * 2;
+    const contentId = pageId + 1;
+    objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`;
+    objects[contentId] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+  });
+
+  let output = "%PDF-1.4\n";
+  const offsets = [0];
+  for (let index = 1; index < objects.length; index += 1) {
+    offsets[index] = output.length;
+    output += `${index} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = output.length;
+  output += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let index = 1; index < objects.length; index += 1) {
+    output += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  output += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return output;
+}
+
+function addPdfText(commands: string[], x: number, y: number, text: unknown, size = 10, color = "0.06 0.09 0.16") {
+  commands.push(`${color} rg BT /F1 ${size} Tf ${x} ${y} Td (${pdfText(text)}) Tj ET`);
+}
+
+function addPdfRect(commands: string[], x: number, y: number, width: number, height: number, color: string) {
+  commands.push(`${color} rg ${x} ${y} ${width} ${height} re f`);
+}
+
+function createAlarmsPdfBlob(alarms: AlarmRow[], summary: ExportSummaryItem[], subtitle: string) {
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 42;
+  const rowsPerPage = 18;
+  const totalPages = Math.max(1, Math.ceil(alarms.length / rowsPerPage));
+  const streams: string[] = [];
+
+  for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
+    const commands: string[] = [];
+    const pageRows = alarms.slice(pageIndex * rowsPerPage, (pageIndex + 1) * rowsPerPage);
+    addPdfRect(commands, 0, pageHeight - 86, pageWidth, 86, "0.04 0.10 0.18");
+    addPdfRect(commands, 0, pageHeight - 86, 8, 86, "0.16 0.62 0.56");
+    addPdfText(commands, margin, 792, "Registre des alarmes", 21, "1 1 1");
+    addPdfText(commands, margin, 770, subtitle, 10, "0.78 0.86 0.94");
+    addPdfText(commands, 462, 792, "Pad Lock", 16, "1 1 1");
+    addPdfText(commands, 462, 772, "Export securite", 9, "0.78 0.86 0.94");
+
+    if (pageIndex === 0) {
+      addPdfText(commands, margin, 720, "Synthese", 15, "0.04 0.10 0.18");
+      summary.forEach((item, index) => {
+        const x = margin + (index % 4) * 126;
+        const y = 674 - Math.floor(index / 4) * 54;
+        addPdfRect(commands, x, y, 112, 40, index % 2 === 0 ? "0.92 0.98 0.97" : "0.96 0.98 1");
+        addPdfText(commands, x + 10, y + 24, item.label, 7, "0.30 0.42 0.56");
+        addPdfText(commands, x + 10, y + 9, item.value, 14, "0.04 0.10 0.18");
+      });
+    }
+
+    const tableTop = pageIndex === 0 ? 578 : 720;
+    const columns = [margin, 120, 206, 276, 338, 420];
+    addPdfText(commands, margin, tableTop + 28, "Alarmes exportees", 14, "0.04 0.10 0.18");
+    addPdfRect(commands, margin, tableTop, 512, 24, "0.10 0.16 0.26");
+    ["Cadenas", "Type", "Severite", "Date", "Statut", "Description"].forEach((header, index) => {
+      addPdfText(commands, columns[index] + 4, tableTop + 8, header, 8, "1 1 1");
+    });
+
+    if (pageRows.length === 0) {
+      addPdfText(commands, margin + 4, tableTop - 28, "Aucune alarme ne correspond aux filtres selectionnes.", 10, "0.30 0.42 0.56");
+    }
+
+    pageRows.forEach((alarm, rowIndex) => {
+      const y = tableTop - 24 - rowIndex * 24;
+      addPdfRect(commands, margin, y, 512, 24, rowIndex % 2 === 0 ? "0.97 0.98 0.99" : "1 1 1");
+      addPdfText(commands, columns[0] + 4, y + 8, alarm.device, 7);
+      addPdfText(commands, columns[1] + 4, y + 8, alarm.type, 7);
+      addPdfText(commands, columns[2] + 4, y + 8, severityLabel(alarm.severity), 7);
+      addPdfText(commands, columns[3] + 4, y + 8, `${alarm.date} ${alarm.time}`, 7);
+      addPdfText(commands, columns[4] + 4, y + 8, statusLabel(alarm.status), 7);
+      addPdfText(commands, columns[5] + 4, y + 8, alarm.description, 7, "0.16 0.24 0.35");
+    });
+
+    addPdfText(commands, margin, 32, `Page ${pageIndex + 1} / ${totalPages}`, 8, "0.42 0.50 0.62");
+    streams.push(commands.join("\n"));
+  }
+
+  return new Blob([pdfObjectDocument(streams)], { type: "application/pdf" });
+}
+
+function createAlarmsExcelBlob(alarms: AlarmRow[], summary: ExportSummaryItem[], subtitle: string) {
+  const summaryHtml = summary
+    .map((item) => `<td class="summary"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></td>`)
+    .join("");
+  const rowsHtml = alarms
+    .map(
+      (alarm) => `
+        <tr>
+          <td>${escapeHtml(alarm.device)}</td>
+          <td>${escapeHtml(alarm.type)}</td>
+          <td>${escapeHtml(severityLabel(alarm.severity))}</td>
+          <td>${escapeHtml(alarm.date)} ${escapeHtml(alarm.time)}</td>
+          <td>${escapeHtml(statusLabel(alarm.status))}</td>
+          <td>${escapeHtml(alarm.description)}</td>
+          <td>${alarm.latitude === null ? "" : escapeHtml(alarm.latitude.toFixed(6))}</td>
+          <td>${alarm.longitude === null ? "" : escapeHtml(alarm.longitude.toFixed(6))}</td>
+        </tr>`,
+    )
+    .join("");
+  const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { font-family: Arial, sans-serif; color: #0f172a; }
+  .hero { background: #0b1728; color: white; padding: 22px 28px; border-left: 8px solid #2A9D90; }
+  .hero h1 { margin: 0 0 6px; font-size: 24px; }
+  .hero p { margin: 0; color: #cbd5e1; }
+  table { border-collapse: collapse; width: 100%; margin-top: 18px; }
+  .summary { background: #eefbf8; border: 1px solid #d9e5ef; padding: 12px; width: 25%; }
+  .summary span { display: block; color: #496383; font-size: 12px; }
+  .summary strong { display: block; margin-top: 4px; font-size: 18px; }
+  th { background: #172236; color: white; padding: 10px; text-align: left; font-size: 12px; }
+  td { border: 1px solid #d9e5ef; padding: 9px; font-size: 12px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+</style>
+</head>
+<body>
+  <div class="hero"><h1>Registre des alarmes</h1><p>${escapeHtml(subtitle)}</p></div>
+  <table><tr>${summaryHtml}</tr></table>
+  <table>
+    <thead><tr><th>Cadenas</th><th>Type</th><th>Severite</th><th>Date et heure</th><th>Statut</th><th>Description</th><th>Latitude</th><th>Longitude</th></tr></thead>
+    <tbody>${rowsHtml || `<tr><td colspan="8">Aucune alarme ne correspond aux filtres selectionnes.</td></tr>`}</tbody>
+  </table>
+</body>
+</html>`;
+  return new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+}
 async function persistAlarmStatus(alarmId: string, status: AlarmStatus) {
   const response = await apiFetch(`/alerts/${encodeURIComponent(alarmId)}/status`, {
     method: "PATCH",
@@ -443,7 +631,7 @@ export function AlarmsPanel() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [mapAlarm, setMapAlarm] = useState<AlarmRow | null>(null);
   const [pendingStatusIds, setPendingStatusIds] = useState<string[]>([]);
-  const [exported, setExported] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [sourceLabel, setSourceLabel] = useState("Chargement des alertes...");
   const [actionLabel, setActionLabel] = useState("");
   const [streamState, setStreamState] = useState<StreamState>("connecting");
@@ -686,6 +874,28 @@ export function AlarmsPanel() {
     });
   }, [alarms, query, range.from, range.to, severityFilter, tab, typeFilter]);
 
+  const exportSummary = useMemo(
+    () => [
+      { label: "Total alarmes", value: alarms.length },
+      { label: "Alarmes filtrees", value: filteredAlarms.length },
+      { label: "Critiques", value: filteredAlarms.filter((alarm) => alarm.severity === "Critical").length },
+      { label: "Non lues", value: filteredAlarms.filter((alarm) => alarm.status === "Unread").length },
+    ],
+    [alarms, filteredAlarms],
+  );
+
+  function exportCurrentAlarms(format: "pdf" | "excel") {
+    const subtitle = `${formatRange(range.from, range.to)} - ${filteredAlarms.length} alarme(s) exportee(s)`;
+    const filename = `registre-alarmes-${exportStamp()}.${format === "pdf" ? "pdf" : "xls"}`;
+    const blob =
+      format === "pdf"
+        ? createAlarmsPdfBlob(filteredAlarms, exportSummary, subtitle)
+        : createAlarmsExcelBlob(filteredAlarms, exportSummary, subtitle);
+
+    downloadBlob(blob, filename);
+    setExportMenuOpen(false);
+    setActionLabel(format === "pdf" ? "Export PDF prepare." : "Export Excel prepare.");
+  }
   const allSelected =
     filteredAlarms.length > 0 &&
     filteredAlarms.every((alarm) => selectedIds.includes(alarm.id));
@@ -925,14 +1135,27 @@ export function AlarmsPanel() {
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={() => setExported(true)}
-          className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"
-        >
-          <Upload size={14} />
-          {exported ? "Exporte" : "Exporter"}
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setExportMenuOpen((isOpen) => !isOpen)}
+            className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold shadow-sm transition hover:bg-[#f8fafc]"
+            aria-expanded={exportMenuOpen}
+          >
+            <Upload size={14} />
+            Exporter
+          </button>
+          {exportMenuOpen ? (
+            <div className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-[7px] border border-[#dfe6ee] bg-white py-1 text-[12px] font-semibold shadow-xl">
+              <button type="button" onClick={() => exportCurrentAlarms("pdf")} className="block h-9 w-full px-3 text-left hover:bg-[#eef4fa]">
+                Exporter en PDF
+              </button>
+              <button type="button" onClick={() => exportCurrentAlarms("excel")} className="block h-9 w-full px-3 text-left hover:bg-[#eef4fa]">
+                Exporter en Excel
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_140px_150px]">
