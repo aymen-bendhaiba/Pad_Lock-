@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { TcpConnectionsService } from '../tcp/tcp-connections.service';
 import { CreateLockDeviceDto } from './dto/create-lock-device.dto';
 import { FindLocksQueryDto } from './dto/find-locks-query.dto';
 import { UpdateLockDeviceDto } from './dto/update-lock-device.dto';
@@ -15,9 +16,12 @@ export class LocksService {
   constructor(
     @InjectRepository(LockDevice)
     private readonly lockDevicesRepository: Repository<LockDevice>,
+    private readonly tcpConnectionsService: TcpConnectionsService,
   ) {}
 
-  findAll(query: FindLocksQueryDto = {}): Promise<LockDevice[]> {
+  async findAll(query: FindLocksQueryDto = {}) {
+    await this.syncStatusesWithCurrentConnections();
+
     const builder = this.lockDevicesRepository
       .createQueryBuilder('lock')
       .select([
@@ -34,10 +38,6 @@ export class LocksService {
       .skip(((query.page ?? 1) - 1) * (query.limit ?? 100))
       .take(query.limit ?? 100);
 
-    if (query.status) {
-      builder.andWhere('lock.status = :status', { status: query.status });
-    }
-
     if (query.search?.trim()) {
       builder.andWhere(
         `(COALESCE(lock."terminalId", '') || ' ' || COALESCE(lock.name, '') ||
@@ -46,10 +46,16 @@ export class LocksService {
       );
     }
 
-    return builder.getMany();
+    const locks = (await builder.getMany()).map((lockDevice) =>
+      this.withCurrentConnectionState(lockDevice),
+    );
+
+    return query.status
+      ? locks.filter((lockDevice) => lockDevice.status === query.status)
+      : locks;
   }
 
-  async create(dto: CreateLockDeviceDto): Promise<LockDevice> {
+  async create(dto: CreateLockDeviceDto) {
     const terminalId = dto.terminalId.toUpperCase();
     const exists = await this.lockDevicesRepository.existsBy({ terminalId });
 
@@ -57,22 +63,25 @@ export class LocksService {
       throw new ConflictException('Lock terminal ID already exists');
     }
 
-    return this.lockDevicesRepository.save(
+    await this.lockDevicesRepository.save(
       this.lockDevicesRepository.create({
         ...dto,
         terminalId,
         imei: dto.imei ?? null,
       }),
     );
+
+    await this.syncStatusesWithCurrentConnections();
+
+    return this.findCurrentByTerminalIdOrFail(terminalId);
   }
 
-  async update(
-    terminalId: string,
-    dto: UpdateLockDeviceDto,
-  ): Promise<LockDevice> {
+  async update(terminalId: string, dto: UpdateLockDeviceDto) {
     const lockDevice = await this.findByTerminalIdOrFail(terminalId);
     Object.assign(lockDevice, dto);
-    return this.lockDevicesRepository.save(lockDevice);
+    await this.lockDevicesRepository.save(lockDevice);
+    await this.syncStatusesWithCurrentConnections();
+    return this.findCurrentByTerminalIdOrFail(terminalId);
   }
 
   async findByTerminalIdOrFail(terminalId: string): Promise<LockDevice> {
@@ -85,6 +94,50 @@ export class LocksService {
     }
 
     return lockDevice;
+  }
+
+  async findCurrentByTerminalIdOrFail(terminalId: string) {
+    await this.syncStatusesWithCurrentConnections();
+
+    return this.withCurrentConnectionState(
+      await this.findByTerminalIdOrFail(terminalId),
+    );
+  }
+
+  async syncStatusesWithCurrentConnections(): Promise<string[]> {
+    const connectedTerminalIds = this.tcpConnectionsService.terminalIds();
+
+    if (connectedTerminalIds.length === 0) {
+      await this.lockDevicesRepository.query(`
+        UPDATE lock_devices
+        SET status = 'offline', "updatedAt" = NOW()
+        WHERE status <> 'offline'
+      `);
+
+      return connectedTerminalIds;
+    }
+
+    await this.lockDevicesRepository.query(
+      `
+        UPDATE lock_devices
+        SET status = 'online', "updatedAt" = NOW()
+        WHERE "terminalId" = ANY($1::text[])
+          AND status <> 'online'
+      `,
+      [connectedTerminalIds],
+    );
+
+    await this.lockDevicesRepository.query(
+      `
+        UPDATE lock_devices
+        SET status = 'offline', "updatedAt" = NOW()
+        WHERE NOT ("terminalId" = ANY($1::text[]))
+          AND status <> 'offline'
+      `,
+      [connectedTerminalIds],
+    );
+
+    return connectedTerminalIds;
   }
 
   async findOrCreateFromTcp(
@@ -116,5 +169,21 @@ export class LocksService {
         lastSeenAt: new Date(),
       }),
     );
+  }
+
+  private withCurrentConnectionState(lockDevice: LockDevice) {
+    const connected = this.tcpConnectionsService.has(lockDevice.terminalId);
+    const status = connected
+      ? LockDeviceStatus.Online
+      : LockDeviceStatus.Offline;
+
+    return {
+      ...lockDevice,
+      status,
+      online: connected,
+      connected,
+      telemetryAvailable: connected,
+      connectionStatus: connected ? 'connected' : 'not_connected_over_tcp',
+    };
   }
 }

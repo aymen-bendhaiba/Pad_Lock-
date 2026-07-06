@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
   LockConfiguration,
   LockConfigurationSyncStatus,
@@ -198,6 +198,140 @@ describe('LockConfigurationsService', () => {
       apnPasswordConfigured: true,
     });
     expect(JSON.stringify(response)).not.toContain('network-password');
+  });
+
+  it('returns the saved configuration without querying a connected lock', async () => {
+    const { service, tcpGateway } = fixture({
+      existing: {
+        id: 'configuration-1',
+        lockDeviceId: 'lock-1',
+        sim1IpAddress: 'saved-main.example.com',
+        sim1Port: 10001,
+        sim1Apn: 'saved-apn',
+        sim1ApnUser: '',
+        sim1ApnPasswordEncrypted: null,
+        sim2IpAddress: null,
+        sim2Port: null,
+        sim2Apn: null,
+        sim2ApnUser: null,
+        sim2ApnPasswordEncrypted: null,
+        trackingUploadIntervalSeconds: 30,
+        wakeUpIntervalMinutes: 30,
+        vibrationLevelMg: 126,
+      },
+    });
+
+    const response = await service.findOne('8034400004');
+
+    expect(tcpGateway.sendCommand).not.toHaveBeenCalled();
+    expect(response.sim1).toMatchObject({
+      ipAddress: 'saved-main.example.com',
+      port: 10001,
+      apn: 'saved-apn',
+    });
+  });
+
+  it('queries connected locks for SIM configuration when refreshing', async () => {
+    const { service, tcpGateway, getStored } = fixture({ existing: null });
+    tcpGateway.sendCommand.mockImplementation(
+      (
+        _terminalId: string,
+        _commandWord: string,
+        command: string,
+        parser: (parts: string[]) => unknown,
+      ) => {
+        if (command === '(P06,0)') {
+          return Promise.resolve(
+            parser([
+              '8034400004',
+              'P06',
+              '0',
+              'jt701.jointcontrols.com',
+              '10001',
+              'CMIOT',
+              'user1',
+              'pass1',
+            ]),
+          );
+        }
+
+        return Promise.resolve(
+          parser([
+            '8034400004',
+            'P06',
+            '2',
+            '120.24.26.10',
+            '10001',
+            'internet',
+            '',
+            '',
+          ]),
+        );
+      },
+    );
+
+    const response = await service.refresh('8034400004');
+
+    expect(tcpGateway.sendCommand.mock.calls.map((call) => call[2])).toEqual([
+      '(P06,0)',
+      '(P06,2)',
+    ]);
+    expect(response.sim1).toEqual({
+      ipAddress: 'jt701.jointcontrols.com',
+      port: 10001,
+      apn: 'CMIOT',
+      apnUser: 'user1',
+      apnPasswordConfigured: true,
+    });
+    expect(response.sim2).toEqual({
+      ipAddress: '120.24.26.10',
+      port: 10001,
+      apn: 'internet',
+      apnUser: '',
+      apnPasswordConfigured: false,
+    });
+    expect(getStored()?.sim1IpAddress).toBe('jt701.jointcontrols.com');
+    expect(getStored()?.sim1ApnPasswordEncrypted).not.toBe('pass1');
+    expect(JSON.stringify(response)).not.toContain('pass1');
+  });
+
+  it('does not mark SIM refresh as failed when another P06 query is already pending', async () => {
+    const existing = {
+      id: 'configuration-1',
+      lockDeviceId: 'lock-1',
+      sim1IpAddress: 'saved-main.example.com',
+      sim1Port: 10001,
+      sim1Apn: 'saved-apn',
+      sim1ApnUser: '',
+      sim1ApnPasswordEncrypted: null,
+      sim1SyncStatus: LockConfigurationSyncStatus.Synced,
+      sim1SyncError: null,
+      sim1SyncedAt: new Date('2026-06-26T11:09:47.633Z'),
+      sim2IpAddress: 'saved-backup.example.com',
+      sim2Port: 10002,
+      sim2Apn: 'saved-backup-apn',
+      sim2ApnUser: '',
+      sim2ApnPasswordEncrypted: null,
+      sim2SyncStatus: LockConfigurationSyncStatus.Synced,
+      sim2SyncError: null,
+      sim2SyncedAt: new Date('2026-06-26T11:09:48.673Z'),
+      trackingUploadIntervalSeconds: 30,
+      wakeUpIntervalMinutes: 30,
+      vibrationLevelMg: 126,
+    };
+    const { service, tcpGateway, getStored } = fixture({ existing });
+    tcpGateway.sendCommand.mockRejectedValue(
+      new ConflictException(
+        'P06 command is already waiting for a response from lock 8034400004',
+      ),
+    );
+
+    await service.refresh('8034400004');
+
+    expect(getStored()?.sim1SyncStatus).toBe(
+      LockConfigurationSyncStatus.Synced,
+    );
+    expect(getStored()?.sim1SyncError).toBeNull();
   });
 
   it('rejects incomplete first-time SIM configuration and invalid vibration', async () => {

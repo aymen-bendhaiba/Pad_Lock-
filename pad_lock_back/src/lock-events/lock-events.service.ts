@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { interval, map, merge, Observable, Subject, filter } from 'rxjs';
 import { Repository } from 'typeorm';
 import { LocksService } from '../locks/locks.service';
+import { PositionsService } from '../positions/positions.service';
 import { CreateLockEventDto } from './dto/create-lock-event.dto';
 import { FindAlertsQueryDto } from './dto/find-alerts-query.dto';
 import { UpdateAlertStatusDto } from './dto/update-alert-status.dto';
@@ -26,6 +27,7 @@ export class LockEventsService {
     @InjectRepository(LockEvent)
     private readonly lockEventsRepository: Repository<LockEvent>,
     private readonly locksService: LocksService,
+    private readonly positionsService: PositionsService,
   ) {}
 
   async create(
@@ -33,6 +35,11 @@ export class LockEventsService {
     dto: CreateLockEventDto,
   ): Promise<LockEvent> {
     const lockDevice = await this.locksService.findOrCreateFromTcp(terminalId);
+    const position = await this.positionForAlert(
+      lockDevice.terminalId,
+      dto.latitude,
+      dto.longitude,
+    );
 
     const event = await this.lockEventsRepository.save(
       this.lockEventsRepository.create({
@@ -43,8 +50,8 @@ export class LockEventsService {
         status: LockEventStatus.Unread,
         source: dto.source ?? null,
         rfidCardNumber: dto.rfidCardNumber ?? null,
-        latitude: dto.latitude ?? null,
-        longitude: dto.longitude ?? null,
+        latitude: position.latitude,
+        longitude: position.longitude,
         rawPayload: dto.rawPayload ?? null,
         geofences: [],
         occurredAt: new Date(dto.occurredAt),
@@ -127,6 +134,11 @@ export class LockEventsService {
   ): Promise<LockEvent> {
     const lockDevice =
       await this.locksService.findByTerminalIdOrFail(terminalId);
+    const position = await this.positionForAlert(
+      lockDevice.terminalId,
+      input.latitude,
+      input.longitude,
+    );
 
     const event = await this.lockEventsRepository.save(
       this.lockEventsRepository.create({
@@ -137,8 +149,8 @@ export class LockEventsService {
         status: LockEventStatus.Unread,
         source: input.source ?? null,
         rfidCardNumber: input.rfidCardNumber ?? null,
-        latitude: input.latitude ?? null,
-        longitude: input.longitude ?? null,
+        latitude: position.latitude,
+        longitude: position.longitude,
         rawPayload: input.rawPayload ?? null,
         geofences: input.geofences ?? [],
         occurredAt: input.occurredAt,
@@ -189,6 +201,33 @@ export class LockEventsService {
 
   private emitAlert(event: LockEvent): void {
     this.alertSubject.next(event);
+  }
+
+  private async positionForAlert(
+    terminalId: string,
+    latitude?: number | null,
+    longitude?: number | null,
+  ): Promise<{ latitude: number | null; longitude: number | null }> {
+    if (
+      latitude !== null &&
+      latitude !== undefined &&
+      longitude !== null &&
+      longitude !== undefined
+    ) {
+      return { latitude, longitude };
+    }
+
+    const latestPosition =
+      await this.positionsService.findLatestForLock(terminalId);
+
+    if (!latestPosition?.isPositioned) {
+      return { latitude: latitude ?? null, longitude: longitude ?? null };
+    }
+
+    return {
+      latitude: latitude ?? latestPosition.latitude,
+      longitude: longitude ?? latestPosition.longitude,
+    };
   }
 }
 

@@ -2,10 +2,29 @@ import {
   Geofence,
   GeofenceAccessMode,
   GeofenceCoordinate,
+  GeofenceRules,
   GeofenceShapeType,
 } from './geofence.entity';
 
 const EARTH_RADIUS_METERS = 6371000;
+
+export const DEFAULT_GEOFENCE_RULES: GeofenceRules = {
+  smsAllowed: true,
+  gprsAllowed: true,
+  rfidAllowed: true,
+  serialAllowed: true,
+  bluetoothAllowed: true,
+  lockAccessAllowed: true,
+};
+
+export function normalizeGeofenceRules(
+  rules: Partial<GeofenceRules> | null | undefined,
+): GeofenceRules {
+  return {
+    ...DEFAULT_GEOFENCE_RULES,
+    ...(rules ?? {}),
+  };
+}
 
 export function isPointInGeofence(
   lat: number,
@@ -45,6 +64,47 @@ export function isLockAccessAllowedByGeofence(
   return geofence.accessMode === GeofenceAccessMode.AllowInside
     ? inside
     : !inside;
+}
+
+export function geofenceBlocksLimitedRfidAccess(
+  geofence: Pick<Geofence, 'accessMode' | 'rules'>,
+  inShape: boolean,
+): boolean {
+  const rules = normalizeGeofenceRules(geofence.rules);
+
+  if (
+    inShape &&
+    (rules.lockAccessAllowed === false || rules.rfidAllowed === false)
+  ) {
+    return true;
+  }
+
+  return geofence.accessMode === GeofenceAccessMode.AllowOutside && inShape;
+}
+
+export function isLimitedRfidAllowedByGeofences(
+  evaluatedGeofences: Array<{
+    geofence: Pick<Geofence, 'accessMode' | 'rules'>;
+    inShape: boolean;
+  }>,
+): boolean {
+  if (
+    evaluatedGeofences.some(({ geofence, inShape }) =>
+      geofenceBlocksLimitedRfidAccess(geofence, inShape),
+    )
+  ) {
+    return false;
+  }
+
+  const allowInsideGeofences = evaluatedGeofences.filter(
+    ({ geofence }) => geofence.accessMode === GeofenceAccessMode.AllowInside,
+  );
+
+  if (allowInsideGeofences.length === 0) {
+    return true;
+  }
+
+  return allowInsideGeofences.some(({ inShape }) => inShape);
 }
 
 function isPointInPolygon(

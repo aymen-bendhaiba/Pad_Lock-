@@ -16,6 +16,7 @@ import { Repository } from 'typeorm';
 import { LocksService } from '../locks/locks.service';
 import {
   buildReportingIntervalsSetCommand,
+  buildSimConfigurationQueryCommand,
   buildSimConfigurationSetCommand,
   buildVibrationLevelSetCommand,
 } from '../protocol/jt701d-commands';
@@ -28,10 +29,23 @@ import {
 
 type ConfigurationSection = 'reporting' | 'vibration' | 'sim1' | 'sim2';
 
+type SimConfigurationValues = {
+  sim: 1 | 2;
+  ipAddress: string;
+  port: number;
+  apn: string;
+  apnUser: string;
+  apnPassword: string;
+};
+
 @Injectable()
 export class LockConfigurationsService {
   private readonly encryptionKey: Buffer;
   private readonly retryingLocks = new Set<string>();
+  private readonly refreshingLocks = new Map<
+    string,
+    Promise<LockConfiguration>
+  >();
 
   constructor(
     @InjectRepository(LockConfiguration)
@@ -58,6 +72,26 @@ export class LockConfigurationsService {
     return this.toResponse(lockDevice.terminalId, configuration);
   }
 
+  async refresh(terminalId: string) {
+    const lockDevice =
+      await this.locksService.findByTerminalIdOrFail(terminalId);
+    const configuration = await this.configurationsRepository.findOneBy({
+      lockDeviceId: lockDevice.id,
+    });
+
+    if (!this.tcpGatewayService.isConnected(lockDevice.terminalId)) {
+      return this.toResponse(lockDevice.terminalId, configuration);
+    }
+
+    const refreshedConfiguration = await this.refreshSimConfigurationFromLock(
+      lockDevice.id,
+      lockDevice.terminalId,
+      configuration,
+    );
+
+    return this.toResponse(lockDevice.terminalId, refreshedConfiguration);
+  }
+
   async update(terminalId: string, dto: UpdateLockConfigurationDto) {
     this.assertPatchHasValues(dto);
     this.assertVibrationLevel(dto.vibrationLevelMg);
@@ -69,34 +103,7 @@ export class LockConfigurationsService {
     });
 
     if (!configuration) {
-      configuration = this.configurationsRepository.create({
-        lockDeviceId: lockDevice.id,
-        sim1IpAddress: null,
-        sim1Port: null,
-        sim1Apn: null,
-        sim1ApnUser: null,
-        sim1ApnPasswordEncrypted: null,
-        sim2IpAddress: null,
-        sim2Port: null,
-        sim2Apn: null,
-        sim2ApnUser: null,
-        sim2ApnPasswordEncrypted: null,
-        trackingUploadIntervalSeconds: 30,
-        wakeUpIntervalMinutes: 30,
-        vibrationLevelMg: 126,
-        sim1SyncStatus: null,
-        sim1SyncError: null,
-        sim1SyncedAt: null,
-        sim2SyncStatus: null,
-        sim2SyncError: null,
-        sim2SyncedAt: null,
-        reportingSyncStatus: null,
-        reportingSyncError: null,
-        reportingSyncedAt: null,
-        vibrationSyncStatus: null,
-        vibrationSyncError: null,
-        vibrationSyncedAt: null,
-      });
+      configuration = this.createDefaultConfiguration(lockDevice.id);
     }
 
     const changedSections = new Set<ConfigurationSection>();
@@ -253,6 +260,89 @@ export class LockConfigurationsService {
 
       await this.configurationsRepository.save(configuration);
     }
+  }
+
+  private async refreshSimConfigurationFromLock(
+    lockDeviceId: string,
+    terminalId: string,
+    configuration: LockConfiguration | null,
+  ): Promise<LockConfiguration> {
+    const normalizedTerminalId = terminalId.toUpperCase();
+    const inFlight = this.refreshingLocks.get(normalizedTerminalId);
+
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const refresh = this.doRefreshSimConfigurationFromLock(
+      lockDeviceId,
+      normalizedTerminalId,
+      configuration,
+    ).finally(() => {
+      this.refreshingLocks.delete(normalizedTerminalId);
+    });
+    this.refreshingLocks.set(normalizedTerminalId, refresh);
+
+    return refresh;
+  }
+
+  private async doRefreshSimConfigurationFromLock(
+    lockDeviceId: string,
+    terminalId: string,
+    configuration: LockConfiguration | null,
+  ): Promise<LockConfiguration> {
+    let current =
+      configuration ?? this.createDefaultConfiguration(lockDeviceId);
+
+    for (const sim of [1, 2] as const) {
+      try {
+        const values = await this.querySimConfiguration(terminalId, sim);
+        this.applyQueriedSimConfiguration(current, sim, values);
+        this.markSynced(current, sim === 1 ? 'sim1' : 'sim2');
+      } catch (error) {
+        if (!this.isCommandBusyError(error)) {
+          this.markFailed(current, sim === 1 ? 'sim1' : 'sim2', error);
+        }
+      }
+
+      current = await this.configurationsRepository.save(current);
+    }
+
+    return current;
+  }
+
+  private querySimConfiguration(terminalId: string, sim: 1 | 2) {
+    return this.tcpGatewayService.sendCommand(
+      terminalId,
+      'P06',
+      buildSimConfigurationQueryCommand(sim),
+      (parts) => parseSimConfigurationResponse(parts, sim),
+    );
+  }
+
+  private applyQueriedSimConfiguration(
+    configuration: LockConfiguration,
+    sim: 1 | 2,
+    values: SimConfigurationValues,
+  ): void {
+    if (sim === 1) {
+      configuration.sim1IpAddress = values.ipAddress;
+      configuration.sim1Port = values.port;
+      configuration.sim1Apn = values.apn;
+      configuration.sim1ApnUser = values.apnUser;
+      configuration.sim1ApnPasswordEncrypted = values.apnPassword
+        ? this.encrypt(values.apnPassword)
+        : null;
+      return;
+    }
+
+    configuration.sim2IpAddress = values.ipAddress;
+    configuration.sim2Port = values.port;
+    configuration.sim2Apn = values.apn;
+    configuration.sim2ApnUser = values.apnUser;
+    configuration.sim2ApnPasswordEncrypted = values.apnPassword
+      ? this.encrypt(values.apnPassword)
+      : null;
   }
 
   private sendSection(
@@ -473,6 +563,13 @@ export class LockConfigurationsService {
     );
   }
 
+  private isCommandBusyError(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      error.message.includes('command is already waiting for a response')
+    );
+  }
+
   private markPending(
     configuration: LockConfiguration,
     section: ConfigurationSection,
@@ -547,6 +644,37 @@ export class LockConfigurationsService {
         configuration.vibrationSyncedAt = syncedAt;
       }
     }
+  }
+
+  private createDefaultConfiguration(lockDeviceId: string): LockConfiguration {
+    return this.configurationsRepository.create({
+      lockDeviceId,
+      sim1IpAddress: null,
+      sim1Port: null,
+      sim1Apn: null,
+      sim1ApnUser: null,
+      sim1ApnPasswordEncrypted: null,
+      sim2IpAddress: null,
+      sim2Port: null,
+      sim2Apn: null,
+      sim2ApnUser: null,
+      sim2ApnPasswordEncrypted: null,
+      trackingUploadIntervalSeconds: 30,
+      wakeUpIntervalMinutes: 30,
+      vibrationLevelMg: 126,
+      sim1SyncStatus: null,
+      sim1SyncError: null,
+      sim1SyncedAt: null,
+      sim2SyncStatus: null,
+      sim2SyncError: null,
+      sim2SyncedAt: null,
+      reportingSyncStatus: null,
+      reportingSyncError: null,
+      reportingSyncedAt: null,
+      vibrationSyncStatus: null,
+      vibrationSyncError: null,
+      vibrationSyncedAt: null,
+    });
   }
 
   private encrypt(value: string): string {
@@ -687,4 +815,20 @@ export class LockConfigurationsService {
 
     return { status, error, syncedAt };
   }
+}
+
+function parseSimConfigurationResponse(
+  parts: string[],
+  expectedSim: 1 | 2,
+): SimConfigurationValues {
+  const valueOffset = ['0', '2'].includes(parts[2] ?? '') ? 3 : 2;
+
+  return {
+    sim: expectedSim,
+    ipAddress: parts[valueOffset] ?? '',
+    port: Number.parseInt(parts[valueOffset + 1] ?? '0', 10),
+    apn: parts[valueOffset + 2] ?? '',
+    apnUser: parts[valueOffset + 3] ?? '',
+    apnPassword: parts[valueOffset + 4] ?? '',
+  };
 }

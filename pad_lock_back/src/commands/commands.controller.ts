@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -15,7 +17,9 @@ import {
   ModifyPasswordDto,
   TerminalIdDto,
   UnlockDto,
+  VipPhoneDeleteDto,
   VipPhoneDto,
+  VipPhoneQueryDto,
   VipSmsDto,
 } from './dto/lock-command.dto';
 
@@ -72,6 +76,16 @@ export class CommandsController {
   @Post('vip/phone/set')
   setVipPhone(@Body() dto: VipPhoneDto) {
     return this.commandsService.setVipPhone(dto);
+  }
+
+  @Get('vip/phone')
+  queryVipPhoneList(@Query() query: VipPhoneQueryDto) {
+    return this.commandsService.queryVipPhones(query.terminalId, query.index);
+  }
+
+  @Delete('vip/phone')
+  deleteVipPhone(@Query() query: VipPhoneDeleteDto) {
+    return this.commandsService.deleteVipPhone(query.terminalId, query.index);
   }
 
   @Get('vip/phone/query/:terminalId/:index')

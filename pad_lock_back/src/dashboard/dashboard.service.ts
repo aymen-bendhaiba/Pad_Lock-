@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { LocksService } from '../locks/locks.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
 type CountRow = {
@@ -17,6 +18,7 @@ type LatestPositionRow = {
   terminalId: string;
   speedKmh: number | null;
   isLocked: boolean | null;
+  status?: string | null;
 };
 
 type ActivityRow = {
@@ -30,31 +32,67 @@ type AlarmRow = {
   count: string;
 };
 
+type EventTypeRow = {
+  type: string;
+  count: string;
+};
+
 type SyncRow = {
   status: string;
   count: string;
 };
 
+type TopRfidCardRow = {
+  cardNumber: string;
+  label: string | null;
+  role: string | null;
+  uses: string;
+};
+
+type TripHeatmapRow = {
+  name: string;
+  locked: string;
+  unlocked: string;
+  total: string;
+};
+
 type DashboardSnapshotRow = KpiRow & {
   latestPositions: LatestPositionRow[];
   alarmCount: string;
+  stoppedCount: string;
+  unlockedCount: string;
+  totalActivities: string;
   activityRows: ActivityRow[];
+  eventTypeRows: EventTypeRow[];
   topAlarms: AlarmRow[];
   syncRows: SyncRow[];
+  topRfidCards: TopRfidCardRow[];
+  tripHeatmapRows: TripHeatmapRow[];
 };
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly locksService: LocksService,
+  ) {}
 
   async summary(query: DashboardQueryDto) {
     const { from, to } = dateRange(query);
     const terminalId = query.terminalId?.toUpperCase() ?? null;
-    const snapshot = await this.dashboardSnapshot(from, to, terminalId);
+    const connectedTerminalIds =
+      await this.locksService.syncStatusesWithCurrentConnections();
+    const snapshot = await this.dashboardSnapshot(
+      from,
+      to,
+      terminalId,
+      connectedTerminalIds,
+    );
     const lockCounts = snapshot;
     const latestPositions = snapshot.latestPositions;
     const alarmCount = { count: snapshot.alarmCount };
     const activityRows = snapshot.activityRows;
+    const eventTypeRows = snapshot.eventTypeRows;
     const topAlarms = snapshot.topAlarms;
     const syncRows = snapshot.syncRows;
     const movement = movementCounts(latestPositions);
@@ -88,6 +126,16 @@ export class DashboardService {
         onlinePercent: connectionPercent,
       },
       lockActivity: {
+        totalActivities: Number(snapshot.totalActivities),
+        summary: {
+          alarms: Number(snapshot.alarmCount),
+          stopped: Number(snapshot.stoppedCount),
+          unlocked: Number(snapshot.unlockedCount),
+        },
+        ranking: eventTypeRows.map((row) => ({
+          type: row.type,
+          count: Number(row.count),
+        })),
         days: fillActivityDays(from, to, activityRows),
         pulse: {
           totalReports: activityRows.reduce(
@@ -112,6 +160,28 @@ export class DashboardService {
         status: row.status,
         count: Number(row.count),
       })),
+      topRfidCards: snapshot.topRfidCards.map((row) => ({
+        cardNumber: row.cardNumber,
+        label: row.label,
+        role: row.role,
+        uses: Number(row.uses),
+      })),
+      tripHeatmap: snapshot.tripHeatmapRows.map((row) => ({
+        name: row.name,
+        locked: Number(row.locked),
+        unlocked: Number(row.unlocked),
+        total: Number(row.total),
+      })),
+      heatMapTracks: snapshot.tripHeatmapRows.map((row) => ({
+        location: row.name.replace(/^Demo\s+/i, ''),
+        value: Number(row.total),
+        city: row.name.replace(/^Demo\s+/i, ''),
+        count: Number(row.total),
+        place: row.name.replace(/^Demo\s+/i, ''),
+        activity: Number(row.total),
+        name: row.name.replace(/^Demo\s+/i, ''),
+        events: Number(row.total),
+      })),
     };
   }
 
@@ -119,10 +189,12 @@ export class DashboardService {
     from: Date,
     to: Date,
     terminalId: string | null,
+    connectedTerminalIds: string[],
   ): Promise<DashboardSnapshotRow> {
     const terminalFilter = terminalId ? `AND "terminalId" = $3` : '';
     const lockFilter = terminalId ? `WHERE "terminalId" = $3` : '';
     const cardFilter = terminalId ? `AND lock."terminalId" = $3` : '';
+    const connectedIdsParameter = terminalId ? '$4' : '$3';
     const rows = await this.dataSource.query<DashboardSnapshotRow[]>(
       `
         WITH filtered_positions AS MATERIALIZED (
@@ -161,6 +233,14 @@ export class DashboardService {
             ${terminalFilter}
             AND type NOT IN ('locked', 'unlocked')
         ),
+        filtered_events AS MATERIALIZED (
+          SELECT type, "rfidCardNumber", geofences
+          FROM lock_events
+          WHERE "deletedAt" IS NULL
+            AND "occurredAt" >= $1
+            AND "occurredAt" <= $2
+            ${terminalFilter}
+        ),
         top_alarm_rows AS (
           SELECT type, COUNT(*)::int AS count
           FROM filtered_alarms
@@ -168,12 +248,54 @@ export class DashboardService {
           ORDER BY COUNT(*) DESC, type ASC
           LIMIT 5
         ),
+        event_type_rows AS (
+          SELECT type, COUNT(*)::int AS count
+          FROM filtered_events
+          GROUP BY type
+          ORDER BY COUNT(*) DESC, type ASC
+          LIMIT 6
+        ),
+        top_rfid_cards AS (
+          SELECT
+            event."rfidCardNumber" AS "cardNumber",
+            MAX(card.label) AS label,
+            MAX(card.role::text) AS role,
+            COUNT(*)::int AS uses
+          FROM filtered_events event
+          LEFT JOIN rfid_cards card
+            ON card."cardNumber" = event."rfidCardNumber"
+          WHERE event."rfidCardNumber" IS NOT NULL
+          GROUP BY event."rfidCardNumber"
+          ORDER BY COUNT(*) DESC, event."rfidCardNumber" ASC
+          LIMIT 6
+        ),
+        trip_heatmap_rows AS (
+          SELECT
+            COALESCE(site.name, 'Outside geofences') AS name,
+            COUNT(*) FILTER (WHERE event.type = 'locked')::int AS locked,
+            COUNT(*) FILTER (WHERE event.type = 'unlocked')::int AS unlocked,
+            COUNT(*)::int AS total
+          FROM filtered_events event
+          LEFT JOIN LATERAL (
+            SELECT value->>'name' AS name
+            FROM JSONB_ARRAY_ELEMENTS(event.geofences) value
+            LIMIT 1
+          ) site ON TRUE
+          WHERE event.type IN ('locked', 'unlocked')
+          GROUP BY COALESCE(site.name, 'Outside geofences')
+          ORDER BY COUNT(*) DESC, name ASC
+          LIMIT 12
+        ),
         lock_counts AS (
           SELECT
             COUNT(*)::text AS total,
-            COUNT(*) FILTER (WHERE status = 'online')::text AS online,
-            COUNT(*) FILTER (WHERE status = 'offline')::text AS offline,
-            COUNT(*) FILTER (WHERE status = 'unknown')::text AS unknown
+            COUNT(*) FILTER (
+              WHERE "terminalId" = ANY(${connectedIdsParameter}::text[])
+            )::text AS online,
+            COUNT(*) FILTER (
+              WHERE NOT ("terminalId" = ANY(${connectedIdsParameter}::text[]))
+            )::text AS offline,
+            '0'::text AS unknown
           FROM lock_devices
           ${lockFilter}
         )
@@ -185,16 +307,36 @@ export class DashboardService {
           COALESCE((
             SELECT JSONB_AGG(
               JSONB_BUILD_OBJECT(
-                'terminalId', "terminalId",
-                'speedKmh', "speedKmh",
-                'isLocked', "isLocked"
+                'terminalId', ranked_positions."terminalId",
+                'speedKmh',
+                  CASE
+                    WHEN lock."terminalId" = ANY(${connectedIdsParameter}::text[])
+                      THEN ranked_positions."speedKmh"
+                    ELSE NULL
+                  END,
+                'isLocked',
+                  CASE
+                    WHEN lock."terminalId" = ANY(${connectedIdsParameter}::text[])
+                      THEN ranked_positions."isLocked"
+                    ELSE NULL
+                  END,
+                'status',
+                  CASE
+                    WHEN lock."terminalId" = ANY(${connectedIdsParameter}::text[])
+                      THEN 'online'
+                    ELSE 'offline'
+                  END
               )
-              ORDER BY "terminalId"
+              ORDER BY ranked_positions."terminalId"
             )
             FROM ranked_positions
+            JOIN lock_devices lock ON lock."terminalId" = ranked_positions."terminalId"
             WHERE row_number = 1
           ), '[]'::jsonb) AS "latestPositions",
           (SELECT COUNT(*)::text FROM filtered_alarms) AS "alarmCount",
+          (SELECT COUNT(*)::text FROM filtered_events WHERE type = 'locked') AS "stoppedCount",
+          (SELECT COUNT(*)::text FROM filtered_events WHERE type = 'unlocked') AS "unlockedCount",
+          (SELECT COUNT(*)::text FROM filtered_events) AS "totalActivities",
           COALESCE((
             SELECT JSONB_AGG(
               JSONB_BUILD_OBJECT(
@@ -206,6 +348,13 @@ export class DashboardService {
             )
             FROM activity_rows
           ), '[]'::jsonb) AS "activityRows",
+          COALESCE((
+            SELECT JSONB_AGG(
+              JSONB_BUILD_OBJECT('type', type, 'count', count)
+              ORDER BY count DESC, type
+            )
+            FROM event_type_rows
+          ), '[]'::jsonb) AS "eventTypeRows",
           COALESCE((
             SELECT JSONB_AGG(
               JSONB_BUILD_OBJECT('type', type, 'count', count)
@@ -227,9 +376,36 @@ export class DashboardService {
               GROUP BY card."lastSyncStatus"
             ) sync_counts
           ), '[]'::jsonb) AS "syncRows"
+          ,
+          COALESCE((
+            SELECT JSONB_AGG(
+              JSONB_BUILD_OBJECT(
+                'cardNumber', "cardNumber",
+                'label', label,
+                'role', role,
+                'uses', uses
+              )
+              ORDER BY uses DESC, "cardNumber"
+            )
+            FROM top_rfid_cards
+          ), '[]'::jsonb) AS "topRfidCards",
+          COALESCE((
+            SELECT JSONB_AGG(
+              JSONB_BUILD_OBJECT(
+                'name', name,
+                'locked', locked,
+                'unlocked', unlocked,
+                'total', total
+              )
+              ORDER BY total DESC, name
+            )
+            FROM trip_heatmap_rows
+          ), '[]'::jsonb) AS "tripHeatmapRows"
         FROM lock_counts
       `,
-      terminalId ? [from, to, terminalId] : [from, to],
+      terminalId
+        ? [from, to, terminalId, connectedTerminalIds]
+        : [from, to, connectedTerminalIds],
     );
 
     return (
@@ -240,9 +416,15 @@ export class DashboardService {
         unknown: '0',
         latestPositions: [],
         alarmCount: '0',
+        stoppedCount: '0',
+        unlockedCount: '0',
+        totalActivities: '0',
         activityRows: [],
+        eventTypeRows: [],
         topAlarms: [],
         syncRows: [],
+        topRfidCards: [],
+        tripHeatmapRows: [],
       }
     );
   }
@@ -388,6 +570,10 @@ function daysBefore(date: Date, days: number): Date {
 function movementCounts(rows: LatestPositionRow[]) {
   return rows.reduce(
     (summary, row) => {
+      if (row.status && row.status !== 'online') {
+        return summary;
+      }
+
       if ((row.speedKmh ?? 0) > 0) {
         summary.moving += 1;
       } else {
@@ -403,7 +589,9 @@ function movementCounts(rows: LatestPositionRow[]) {
 function lockStateCounts(rows: LatestPositionRow[]) {
   return rows.reduce(
     (summary, row) => {
-      if (row.isLocked === true) {
+      if (row.status && row.status !== 'online') {
+        summary.unknown += 1;
+      } else if (row.isLocked === true) {
         summary.locked += 1;
       } else if (row.isLocked === false) {
         summary.unlocked += 1;

@@ -1,24 +1,28 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
   Geofence,
   GeofenceAccessMode,
   GeofenceShapeType,
 } from '../geofences/geofence.entity';
 import { RfidCardRole, RfidCardSyncStatus } from '../rfid/rfid-card.entity';
+import { TcpConnectionsService } from './tcp-connections.service';
 import { TcpGatewayService } from './tcp-gateway.service';
 
-function geofence(accessMode: GeofenceAccessMode): Geofence {
+function geofence(
+  accessMode: GeofenceAccessMode,
+  overrides: Partial<Geofence> = {},
+): Geofence {
   return {
-    id: 'geofence-1',
+    id: overrides.id ?? 'geofence-1',
     name: 'Test geofence',
     terminalIds: ['8034400004'],
     geoBoundaryId: null,
     shapeType: GeofenceShapeType.Circle,
-    coordinates: [{ lat: 33, lng: -7 }],
-    radiusMeters: 100,
+    coordinates: overrides.coordinates ?? [{ lat: 33, lng: -7 }],
+    radiusMeters: overrides.radiusMeters ?? 100,
     applyInside: accessMode === GeofenceAccessMode.AllowInside,
     accessMode,
-    rules: {
+    rules: overrides.rules ?? {
       smsAllowed: true,
       gprsAllowed: true,
       rfidAllowed: true,
@@ -36,6 +40,7 @@ function serviceFixture(input: {
     cardNumber: string;
     installedOnLock: boolean;
   }>;
+  positionsService?: unknown;
 }) {
   const rfidCardsRepository = {
     find: jest.fn().mockResolvedValue(
@@ -54,16 +59,21 @@ function serviceFixture(input: {
   const geofencesRepository = {
     find: jest.fn().mockResolvedValue(input.geofences ?? []),
   };
+  const connectedDevices = new TcpConnectionsService();
   const service = new TcpGatewayService(
-    { getOrThrow: jest.fn() },
+    { getOrThrow: jest.fn().mockReturnValue(5000) },
+    connectedDevices,
     {} as never,
-    {} as never,
+    (input.positionsService ?? {}) as never,
     {
+      findOrCreateFromTcp: jest
+        .fn()
+        .mockResolvedValue({ id: 'lock-1', terminalId: '8034400004' }),
       findByTerminalIdOrFail: jest
         .fn()
         .mockResolvedValue({ id: 'lock-1', terminalId: '8034400004' }),
     } as never,
-    { retryPendingForLock: jest.fn() } as never,
+    { retryPendingForLock: jest.fn().mockResolvedValue(undefined) } as never,
     {} as never,
     geofencesRepository as never,
     {
@@ -87,10 +97,56 @@ function serviceFixture(input: {
       cards: ['1234567890'],
     });
 
-  return { service, rfidCardsRepository, sendRfidCommandMock };
+  return {
+    service,
+    rfidCardsRepository,
+    sendRfidCommandMock,
+    connectedDevices,
+  };
 }
 
+describe('TcpGatewayService packet acknowledgements', () => {
+  it('acks a binary frame before persistence side effects finish', async () => {
+    const { service } = serviceFixture({
+      positionsService: {
+        recordFromTcp: jest.fn().mockRejectedValue(new Error('DB unavailable')),
+      },
+    });
+    const socket = {
+      buffer: Buffer.from(
+        '24 80 34 40 00 04 19 14 00 34 10 06 26 12 00 01 33 57 60 19 00 65 18 20 2B 01 6A 00 00 00 12 07 00 00 00 00 00 E0 45 FF 05 A0 28 1F 00 02 00 00 86 10 05 07 72 13 80 6F 01 87 02 5C 00 10'.replace(
+          / /g,
+          '',
+        ),
+        'hex',
+      ),
+      write: jest.fn(),
+    };
+
+    await service['processBuffer'](socket as never);
+
+    expect(socket.write).toHaveBeenCalledWith('(P69,0,16)');
+  });
+});
+
 describe('TcpGatewayService RFID geofence enforcement', () => {
+  it('defaults missing geofence rule channels to allowed when applying P59', async () => {
+    const partialRulesGeofence = geofence(GeofenceAccessMode.AllowInside, {
+      rules: { lockAccessAllowed: true } as Geofence['rules'],
+    });
+    const { service } = serviceFixture({
+      geofences: [partialRulesGeofence],
+    });
+    const socket = {
+      write: jest.fn(),
+    };
+    service['connectedDevices'].set('8034400004', socket as never);
+
+    await service['applyGeofenceRules']('8034400004', 33, -7);
+
+    expect(socket.write).toHaveBeenCalledWith('(P59,1,1,1,1,1,1)');
+  });
+
   it('removes installed limited cards when access is blocked inside allow_outside geofence', async () => {
     const { service, rfidCardsRepository, sendRfidCommandMock } =
       serviceFixture({
@@ -116,6 +172,26 @@ describe('TcpGatewayService RFID geofence enforcement', () => {
   it('restores limited cards when access becomes allowed again', async () => {
     const { service, sendRfidCommandMock } = serviceFixture({
       geofences: [geofence(GeofenceAccessMode.AllowInside)],
+      cards: [{ cardNumber: '1234567890', installedOnLock: false }],
+    });
+
+    await service['applyRfidGeofenceEnforcement']('8034400004', 33, -7);
+
+    expect(sendRfidCommandMock).toHaveBeenCalledWith(
+      '8034400004',
+      '(P41,1,1,1,1234567890)',
+    );
+  });
+
+  it('restores limited cards when inside one of several allow_inside geofences', async () => {
+    const { service, sendRfidCommandMock } = serviceFixture({
+      geofences: [
+        geofence(GeofenceAccessMode.AllowInside, { id: 'inside-zone' }),
+        geofence(GeofenceAccessMode.AllowInside, {
+          id: 'other-zone',
+          coordinates: [{ lat: 34, lng: -7 }],
+        }),
+      ],
       cards: [{ cardNumber: '1234567890', installedOnLock: false }],
     });
 
@@ -167,5 +243,38 @@ describe('TcpGatewayService RFID geofence enforcement', () => {
     await service['applyRfidGeofenceEnforcement']('8034400004', 33, -7);
 
     expect(sendRfidCommandMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('TcpGatewayService command requests', () => {
+  it('rejects duplicate pending commands with a conflict instead of superseding the first request', async () => {
+    const { service } = serviceFixture({});
+    const socket = {
+      write: jest.fn(),
+    };
+    service['connectedDevices'].set('8034400004', socket as never);
+
+    const first = service.sendCommand(
+      '8034400004',
+      'P43',
+      '(P43,888888)',
+      () => ({ success: true }),
+    );
+
+    expect(() =>
+      service.sendCommand('8034400004', 'P43', '(P43,888888)', () => ({
+        success: true,
+      })),
+    ).toThrow(ConflictException);
+
+    expect(socket.write).toHaveBeenCalledTimes(1);
+
+    const pending = service['pendingCommandRequests'].get('8034400004:P43');
+    expect(pending).toBeDefined();
+    clearTimeout(pending?.timeout);
+    service['pendingCommandRequests'].delete('8034400004:P43');
+    pending?.resolve({ success: true });
+
+    await expect(first).resolves.toEqual({ success: true });
   });
 });

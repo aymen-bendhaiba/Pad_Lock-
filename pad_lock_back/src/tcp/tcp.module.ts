@@ -9,6 +9,7 @@ import { LockConfigurationsModule } from '../lock-configurations/lock-configurat
 import { LocksModule } from '../locks/locks.module';
 import { PositionsModule } from '../positions/positions.module';
 import { RfidCard } from '../rfid/rfid-card.entity';
+import { TcpConnectionsModule } from './tcp-connections.module';
 import { TcpGatewayService } from './tcp-gateway.service';
 
 @Module({
@@ -21,11 +22,12 @@ import { TcpGatewayService } from './tcp-gateway.service';
       RfidCard,
     ]),
     LockEventsModule,
+    TcpConnectionsModule,
     forwardRef(() => LockConfigurationsModule),
     LocksModule,
-    PositionsModule,
+    forwardRef(() => PositionsModule),
   ],
   providers: [TcpGatewayService],
-  exports: [TcpGatewayService],
+  exports: [TcpConnectionsModule, TcpGatewayService],
 })
 export class TcpModule {}
