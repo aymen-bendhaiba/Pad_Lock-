@@ -1,5 +1,5 @@
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://192.168.0.104:3000/api";
+﻿export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend-api";
 
 const AUTH_TOKEN_KEY = "pad_lock_access_token";
 const AUTH_USER_KEY = "pad_lock_auth_user";
@@ -228,7 +228,7 @@ export async function loginWithCredentials(email: string, password: string) {
     const message =
       payload && "message" in payload && payload.message
         ? payload.message
-        : "Login failed. Please check your email and password.";
+        : "Connexion refusee. Verifiez votre email et votre mot de passe.";
 
     throw new Error(message);
   }
@@ -381,9 +381,8 @@ export async function warmAppCache() {
     "/dashboard/summary",
     "/devices",
     "/locks",
-    "/alerts",
-    "/geofences",
   ];
 
   await Promise.allSettled(endpoints.map((endpoint) => cachedApiJson(endpoint)));
 }
+

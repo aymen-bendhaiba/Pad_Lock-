@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   Bell,
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, buildAlertStreamUrl, cachedApiJson, getStoredAccessToken } from "../../lib/api";
+import { translateBackendValue, translateSentence } from "../../lib/translations";
 import { AlarmPositionMapShell } from "./alarm-position-map-shell";
 
 type AlarmSeverity = "Low" | "Medium" | "Critical";
@@ -179,6 +180,8 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
       textValue(record.source, record.name, record.sourceName, record.origin, record.sender, device?.name, lock?.name) ??
       "Source inconnue";
 
+    const rawDescription = textValue(record.description, record.message, record.reason, record.payload);
+
     alarms.push({
       id:
         textValue(record.id, record.uuid, record.eventId) ??
@@ -191,7 +194,7 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
       time: timestamp.time,
       timestampMs: timestamp.ms,
       description:
-        textValue(record.description, record.message, record.reason, record.payload) ??
+        rawDescription ? translateSentence(rawDescription, rawDescription) :
         (latitude !== null && longitude !== null
           ? "Position: " + latitude.toFixed(6) + ", " + longitude.toFixed(6)
           : "Alerte recue depuis un PadLock connecte"),
@@ -304,6 +307,8 @@ function backendValueLabel(value: string) {
   const key = normalized.toLowerCase().replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[\s-]+/g, "_");
   const mapped = backendLabelMap[key];
   if (mapped) return mapped;
+  const shared = translateBackendValue(normalized, normalized);
+  if (shared !== normalized) return shared;
   return normalized
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -709,6 +714,7 @@ export function AlarmsPanel() {
   const [alarms, setAlarms] = useState<AlarmRow[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("All sources");
   const [tab, setTab] = useState("Summary");
   const [typeFilter, setTypeFilter] = useState("All types");
   const [severityFilter, setSeverityFilter] = useState("All Severities");
@@ -747,20 +753,8 @@ export function AlarmsPanel() {
       setSourceLabel("Chargement des alertes...");
 
       try {
-        const [alertsPayload, locksPayload] = await Promise.all([
-          cachedApiJson(alertListPath, true),
-          cachedApiJson("/locks", true).catch(() => []),
-        ]);
-        const terminalIds = terminalIdsFromPayload(locksPayload);
-        const eventResults = await Promise.allSettled(
-          terminalIds.map((terminalId) =>
-            cachedApiJson("/locks/" + encodeURIComponent(terminalId) + "/events", true),
-          ),
-        );
-        const eventAlarms = eventResults.flatMap((result) =>
-          result.status === "fulfilled" ? normalizeAlarms(result.value) : [],
-        );
-        const normalized = mergeAlarmRows(normalizeAlarms(alertsPayload), eventAlarms);
+        const alertsPayload = await cachedApiJson(alertListPath);
+        const normalized = normalizeAlarms(alertsPayload);
 
         if (!isMounted) return;
 
@@ -915,6 +909,10 @@ export function AlarmsPanel() {
     () => ["All types", ...Array.from(new Set(alarms.map((alarm) => alarm.type)))],
     [alarms],
   );
+  const alarmSources = useMemo(
+    () => ["All sources", ...Array.from(new Set(alarms.map((alarm) => alarmSourceLabel(alarm.sourceName)))).sort((a, b) => a.localeCompare(b))],
+    [alarms],
+  );
 
   const metrics = useMemo(
     () => [
@@ -947,6 +945,7 @@ export function AlarmsPanel() {
       const matchesQuery = `${alarm.device} ${alarmSourceLabel(alarm.sourceName)} ${alarmTypeLabel(alarm.type)} ${severityLabel(alarm.severity)} ${alarm.description} ${statusLabel(alarm.status)}`
         .toLowerCase()
         .includes(query.trim().toLowerCase());
+      const matchesSource = sourceFilter === "All sources" || alarmSourceLabel(alarm.sourceName) === sourceFilter;
       const matchesTab =
         tab === "Summary" ||
         (tab === "Investigate" && alarm.status === "Investigating") ||
@@ -959,9 +958,9 @@ export function AlarmsPanel() {
         alarm.timestampMs === null ||
         (alarm.timestampMs >= range.from.getTime() && alarm.timestampMs <= range.to.getTime());
 
-      return matchesQuery && matchesTab && matchesType && matchesSeverity && matchesRange;
+      return matchesQuery && matchesSource && matchesTab && matchesType && matchesSeverity && matchesRange;
     });
-  }, [alarms, query, range.from, range.to, severityFilter, tab, typeFilter]);
+  }, [alarms, query, range.from, range.to, severityFilter, sourceFilter, tab, typeFilter]);
 
   const exportSummary = useMemo(
     () => [
@@ -1247,7 +1246,7 @@ export function AlarmsPanel() {
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_140px_150px]">
+      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(220px,1fr)_180px_140px_150px]">
         <label className="relative block">
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} />
           <input
@@ -1257,6 +1256,15 @@ export function AlarmsPanel() {
             placeholder="Rechercher"
           />
         </label>
+        <select
+          value={sourceFilter}
+          onChange={(event) => setSourceFilter(event.target.value)}
+          className="h-9 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-medium outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
+        >
+          {alarmSources.map((source) => (
+            <option key={source} value={source}>{source === "All sources" ? "Tous les noms" : source}</option>
+          ))}
+        </select>
         <select
           value={typeFilter}
           onChange={(event) => setTypeFilter(event.target.value)}
@@ -1382,3 +1390,5 @@ export function AlarmsPanel() {
     </div>
   );
 }
+
+

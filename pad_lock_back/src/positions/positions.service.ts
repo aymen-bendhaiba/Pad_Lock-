@@ -22,6 +22,12 @@ type RecordPositionInput = {
   recordedAt: Date;
 };
 
+type HistoryPoint = {
+  lat: number;
+  lng: number;
+  timestamp: string;
+};
+
 @Injectable()
 export class PositionsService {
   constructor(
@@ -151,7 +157,7 @@ export class PositionsService {
   async findHistory(
     terminalId: string,
     query: HistoryQueryDto = {},
-  ): Promise<number[][]> {
+  ): Promise<HistoryPoint[]> {
     const from = query.from ? new Date(query.from) : startOfUtcToday();
     const to = query.to ? new Date(query.to) : new Date();
     const maxPoints = query.maxPoints ?? 2000;
@@ -186,13 +192,14 @@ export class PositionsService {
         ? 1
         : Math.ceil((total - 1) / Math.max(1, maxPoints - 1));
     const positions = await this.positionsRepository.query<
-      Array<{ latitude: number; longitude: number }>
+      Array<{ latitude: number; longitude: number; recordedAt: Date | string }>
     >(
       `
         WITH ordered_positions AS (
           SELECT
             latitude,
             longitude,
+            "recordedAt",
             ROW_NUMBER() OVER (ORDER BY "recordedAt" ASC) AS row_number
           FROM lock_positions
           WHERE "terminalId" = $1
@@ -201,7 +208,7 @@ export class PositionsService {
             AND "deletedAt" IS NULL
             AND "isPositioned" = true
         )
-        SELECT latitude, longitude
+        SELECT latitude, longitude, "recordedAt"
         FROM ordered_positions
         WHERE MOD(row_number - 1, $4) = 0
            OR row_number = $5
@@ -210,10 +217,11 @@ export class PositionsService {
       [normalizedTerminalId, from, to, sampleStep, total],
     );
 
-    return positions.map((position) => [
-      Number(position.latitude),
-      Number(position.longitude),
-    ]);
+    return positions.map((position) => ({
+      lat: Number(position.latitude),
+      lng: Number(position.longitude),
+      timestamp: toIsoTimestamp(position.recordedAt),
+    }));
   }
 
   findLatestForLock(terminalId: string): Promise<LockPosition | null> {
@@ -228,4 +236,8 @@ function startOfUtcToday(): Date {
   const date = new Date();
   date.setUTCHours(0, 0, 0, 0);
   return date;
+}
+
+function toIsoTimestamp(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

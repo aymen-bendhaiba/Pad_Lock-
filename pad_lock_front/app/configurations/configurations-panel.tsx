@@ -373,8 +373,8 @@ export function ConfigurationsPanel() {
       setDeviceState("loading");
       try {
         const [devicesPayload, locksPayload] = await Promise.all([
-          cachedApiJson("/devices", true).catch(() => []),
-          cachedApiJson("/locks", true).catch(() => []),
+          cachedApiJson("/devices").catch(() => []),
+          cachedApiJson("/locks").catch(() => []),
         ]);
         const lockRows = rowsFromPayload(locksPayload);
         const locksByTerminal = new Map(lockRows.map((row) => [terminalIdFromRecord(row), row]));
@@ -421,9 +421,12 @@ export function ConfigurationsPanel() {
     configReadInFlightRef.current = terminalIdValue;
     setConfigState("loading");
     setActiveAction(action);
-    setMessage("Chargement de la configuration enregistree...");
+    setMessage(force ? "Lecture de la configuration depuis le PadLock..." : "Chargement de la configuration enregistree...");
     try {
-      const response = await apiFetch("/locks/" + encodeURIComponent(terminalIdValue) + "/configuration", { cache: "no-store" });
+      const response = await apiFetch(
+        "/locks/" + encodeURIComponent(terminalIdValue) + "/configuration" + (force ? "/refresh" : ""),
+        force ? { method: "POST", cache: "no-store" } : { cache: "no-store" },
+      );
       const payload = await response.json().catch(() => null) as ConfigResponse | { message?: string } | null;
       if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de lire la configuration."));
       const nextConfig = payload as ConfigResponse;
@@ -433,7 +436,7 @@ export function ConfigurationsPanel() {
       setSaveState("idle");
       lastAutoReadTerminalRef.current = terminalIdValue;
       void readPhones(terminalIdValue);
-      setMessage(nextConfig.configured ? "Configuration chargee depuis le serveur." : "Aucune configuration enregistree pour ce PadLock. Remplissez les champs puis ecrivez la section voulue.");
+      setMessage(nextConfig.configured ? (force ? "Configuration lue depuis le PadLock." : "Configuration chargee depuis le serveur.") : "Aucune configuration enregistree pour ce PadLock. Remplissez les champs puis ecrivez la section voulue.");
     } catch (error) {
       setConfigState("error");
       setSaveState("error");
@@ -668,7 +671,7 @@ export function ConfigurationsPanel() {
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
             <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
-              <SectionHeader icon={Router} title="Rythme de transmission" description="L'intervalle d'envoi des positions et l'intervalle de reveil sont envoyes ensemble avec la commande JT701D P04." sync={config?.sync?.reporting} />
+              <SectionHeader icon={Router} title="Rythme de transmission" description="" sync={config?.sync?.reporting} />
               <div className="grid gap-3 p-4">
                 <Field label="Intervalle d'envoi des positions" value={form.trackingUploadIntervalSeconds} onChange={(value) => setForm((current) => ({ ...current, trackingUploadIntervalSeconds: value }))} type="number" suffix="sec" />
                 <Field label="Intervalle de reveil" value={form.wakeUpIntervalMinutes} onChange={(value) => setForm((current) => ({ ...current, wakeUpIntervalMinutes: value }))} type="number" suffix="min" />
@@ -680,7 +683,7 @@ export function ConfigurationsPanel() {
             </section>
 
             <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
-              <SectionHeader icon={Waves} title="Sensibilite aux vibrations" description="Seuil de detection de mouvement envoye avec P37. Utilisez 0 pour desactiver la detection." sync={config?.sync?.vibration} />
+              <SectionHeader icon={Waves} title="Sensibilite aux vibrations" description="" sync={config?.sync?.vibration} />
               <div className="p-4">
                 <Field label="Niveau de vibration" value={form.vibrationLevelMg} onChange={(value) => setForm((current) => ({ ...current, vibrationLevelMg: value }))} type="number" suffix="mg" />
                 <div className="mt-4 rounded-[8px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#64748b]">
@@ -709,3 +712,4 @@ export function ConfigurationsPanel() {
     </div>
   );
 }
+

@@ -81,6 +81,7 @@ Protected lock-management routes require `Authorization: Bearer <accessToken>`:
 - `GET /api/locks/:terminalId`
 - `PATCH /api/locks/:terminalId`
 - `GET /api/locks/:terminalId/configuration`
+- `POST /api/locks/:terminalId/configuration/refresh`
 - `PATCH /api/locks/:terminalId/configuration`
 - `GET /api/locks/:terminalId/rfid-cards`
 - `POST /api/locks/:terminalId/rfid-cards`
@@ -219,12 +220,25 @@ The API never returns an APN password. If the lock returns an APN password durin
 
 #### GET /api/locks/:terminalId/configuration
 
-Loads the configuration saved by the backend. If the lock is connected over TCP, the API first queries the physical lock for SIM settings with `P06,0` for SIM1 and `P06,2` for SIM2, saves the returned IP address, port, APN, and APN user, then returns the refreshed configuration.
+Loads the configuration saved by the backend without querying the physical lock. This endpoint is intended to be fast and database-only.
 
 Request:
 
 ```http
 GET /api/locks/8034400004/configuration
+Authorization: Bearer <accessToken>
+```
+
+No request body or query parameters are expected.
+
+#### POST /api/locks/:terminalId/configuration/refresh
+
+Queries a connected physical lock for SIM settings with `P06,0` for SIM1 and `P06,2` for SIM2, saves the returned IP address, port, APN, and APN user, then returns the refreshed configuration. This endpoint can wait on TCP device responses and may take up to `TCP_COMMAND_TIMEOUT_MS` per SIM query when the lock is slow or does not answer.
+
+Request:
+
+```http
+POST /api/locks/8034400004/configuration/refresh
 Authorization: Bearer <accessToken>
 ```
 
@@ -872,8 +886,18 @@ GET /api/history/8034400004?from=2026-06-01T00:00:00.000Z&to=2026-06-23T23:59:59
 ```
 
 Long routes are evenly sampled in chronological order while preserving the
-first and last points. The query reads only latitude and longitude and excludes
-soft-deleted or invalid/unpositioned GPS rows.
+first and last points. Each returned point includes the GPS timestamp from
+`recordedAt`, and soft-deleted or invalid/unpositioned GPS rows are excluded.
+
+```json
+[
+  {
+    "lat": 33.594,
+    "lng": -7.62,
+    "timestamp": "2026-06-01T08:00:00.000Z"
+  }
+]
+```
 
 Create a lock record before expecting events to persist:
 

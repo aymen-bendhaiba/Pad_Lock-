@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Pause, Play, RotateCcw, Search, X } from "lucide-react";
@@ -7,9 +7,10 @@ import { LIVE_MAP_COLORS, type LiveMapAsset, type LiveMapLockState, type LiveMap
 import { LiveMapShell } from "./live-map-shell";
 import { apiFetch, cachedApiJson } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
+import { translateBackendValue, translateFieldLabel } from "../../lib/translations";
 
 type ApiRecord = Record<string, unknown>;
-type AssetFilter = "all" | "moving" | "idle" | "alarm" | "offline" | "locked" | "unlocked";
+type AssetFilter = "all" | "online" | "moving" | "charging" | "idle" | "alarm" | "offline" | "locked" | "unlocked";
 
 function rowsFromPayload(payload: unknown): ApiRecord[] {
   if (Array.isArray(payload)) {
@@ -271,7 +272,8 @@ function formatDeviceValue(value: unknown) {
   }
 
   if (typeof value === "string") {
-    return value.trim() || undefined;
+    const text = value.trim();
+    return text ? translateBackendValue(text, text) : undefined;
   }
 
   return undefined;
@@ -310,24 +312,25 @@ function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
   const locationName = extractPlaceName(record) ?? (lock ? extractPlaceName(lock) : undefined);
 
   if (locationName) {
-    details.push({ label: "Location", value: locationName });
+    details.push({ label: "Localisation", value: locationName });
   }
 
   if (!telemetryAvailable) {
     details.push({ label: "Connexion", value: "Hors ligne" });
   }
   const preferredFields: { label: string; keys: string[] }[] = [
-    { label: "Terminal ID", keys: ["terminalId", "terminalID", "deviceId", "lockId", "id"] },
-    { label: "Device", keys: ["name", "assetName", "deviceName", "label"] },
-    { label: "Status", keys: ["status", "state", "movementStatus", "motion"] },
-    { label: "Battery", keys: ["battery", "batteryLevel", "power", "batteryPercent"] },
-    { label: "Locked", keys: ["locked", "isLocked", "lockState", "statusLock"] },
-    { label: "Online", keys: ["online", "isOnline", "connected"] },
-    { label: "Speed", keys: ["speed", "speedKph", "velocity"] },
+    { label: "PadLock", keys: ["terminalId", "terminalID", "deviceId", "lockId", "id"] },
+    { label: "Equipement", keys: ["name", "assetName", "deviceName", "label"] },
+    { label: "Statut", keys: ["status", "state", "movementStatus", "motion"] },
+    { label: "Batterie", keys: ["battery", "batteryLevel", "power", "batteryPercent"] },
+    { label: "Charge", keys: ["isCharging", "charging", "charge", "chargingState", "chargerConnected"] },
+    { label: "Verrouillage", keys: ["locked", "isLocked", "lockState", "statusLock"] },
+    { label: "Connexion", keys: ["online", "isOnline", "connected"] },
+    { label: "Vitesse", keys: ["speed", "speedKph", "velocity"] },
   ];
 
   for (const field of preferredFields) {
-    if (!telemetryAvailable && ["Status", "Battery", "Locked", "Speed"].includes(field.label)) {
+    if (!telemetryAvailable && ["Statut", "Batterie", "Charge", "Verrouillage", "Vitesse"].includes(field.label)) {
       field.keys.forEach((fieldKey) => usedKeys.add(fieldKey));
       continue;
     }
@@ -351,7 +354,7 @@ function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
 
     if (value) {
       details.push({
-        label: key.replace(/([A-Z])/g, " $1").replace(/^./, (char) => char.toUpperCase()),
+        label: translateFieldLabel(key),
         value,
       });
     }
@@ -441,6 +444,23 @@ function normalizeSignal(record: ApiRecord, lock?: ApiRecord) {
   return value >= 70 ? "Excellent" : value >= 40 ? "Moyen" : "Faible";
 }
 
+function normalizeCharging(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)) {
+  if (!telemetryAvailable) {
+    return false;
+  }
+
+  const bool = readNestedBoolean(record, ["isCharging", "charging", "charge", "chargerConnected"])
+    ?? readNestedBoolean(lock, ["isCharging", "charging", "charge", "chargerConnected"]);
+
+  if (bool !== undefined) {
+    return bool;
+  }
+
+  const raw = (readNestedString(record, ["charging", "charge", "chargingState", "chargingStatus", "powerStatus"])
+    ?? readNestedString(lock, ["charging", "charge", "chargingState", "chargingStatus", "powerStatus"]))?.toLowerCase();
+
+  return Boolean(raw && ["charging", "charge", "on_charge", "plugged", "plugged_in", "connected"].some((value) => raw.includes(value)));
+}
 function normalizeLockState(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)): LiveMapLockState {
   if (!telemetryAvailable) {
     return "Unknown";
@@ -461,13 +481,13 @@ function normalizeLockState(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
   return "Unknown";
 }
 
-function normalizeStatus(record: ApiRecord, activeAlert: boolean, telemetryAvailable = isTelemetryAvailable(record)): LiveMapStatus {
+function normalizeStatus(record: ApiRecord, _activeAlert: boolean, telemetryAvailable = isTelemetryAvailable(record), isCharging = false): LiveMapStatus {
   if (!telemetryAvailable) {
     return "Offline";
   }
 
-  if (activeAlert) {
-    return "Alarm";
+  if (isCharging) {
+    return "Charging";
   }
 
   const raw = readString(record, ["status", "state", "movementStatus", "motion", "online"]);
@@ -480,15 +500,19 @@ function normalizeStatus(record: ApiRecord, activeAlert: boolean, telemetryAvail
       return "Alarm";
     }
 
+    if (status.includes("charging") || status.includes("charge")) {
+      return "Charging";
+    }
+
     if (status.includes("moving") || status.includes("motion")) {
       return "Moving";
     }
 
-    if (status.includes("idle") || status.includes("stopped")) {
-      return "Idle";
+    if (status.includes("idle") || status.includes("stopped") || status.includes("online") || status === "true") {
+      return "Online";
     }
 
-    if (status.includes("offline") || status.includes("disconnected")) {
+    if (status.includes("offline") || status.includes("disconnected") || status === "false") {
       return "Offline";
     }
   }
@@ -497,21 +521,22 @@ function normalizeStatus(record: ApiRecord, activeAlert: boolean, telemetryAvail
     return "Offline";
   }
 
-  return "Moving";
+  return "Online";
 }
 
-function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecord>, alerts: ApiRecord[]): LiveMapAsset {
+function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecord>): LiveMapAsset {
   const terminalId = getTerminalId(record);
   const lock = locksByTerminal.get(terminalId);
-  const activeAlert = hasActiveAlert(terminalId, alerts);
+  const activeAlert = false;
   const telemetryAvailable = isTelemetryAvailable(record, lock);
-  const status = normalizeStatus(record, activeAlert, telemetryAvailable);
+  const isCharging = normalizeCharging(record, lock, telemetryAvailable);
+  const status = normalizeStatus(record, activeAlert, telemetryAvailable, isCharging);
   const name = readString(record, ["name", "assetName", "deviceName", "label"])
     ?? readString(lock, ["name", "assetName", "deviceName", "label"])
     ?? `PadLock-${terminalId}`;
 
   const deviceDetails = buildDeviceDetails(record, lock, telemetryAvailable);
-  const batteryFromDevice = deviceDetails.find((detail) => detail.label === "Battery")?.value;
+  const batteryFromDevice = deviceDetails.find((detail) => detail.label === "Batterie")?.value;
 
   return {
     id: terminalId,
@@ -523,6 +548,7 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
     battery: batteryFromDevice ?? normalizeBattery(record, lock, telemetryAvailable),
     signal: normalizeSignal(record, lock),
     lock: normalizeLockState(record, lock, telemetryAvailable),
+    isCharging,
     position: extractPosition(record) ?? (lock ? extractPosition(lock) : undefined),
     updatedAt: readString(record, ["updatedAt", "lastSeenAt", "timestamp", "createdAt"]),
     deviceDetails,
@@ -530,19 +556,17 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
 }
 
 async function loadLiveAssets(force = false) {
-  const [devicesPayload, locksPayload, alertsPayload] = await Promise.all([
+  const [devicesPayload, locksPayload] = await Promise.all([
     cachedApiJson("/devices", force),
     cachedApiJson("/locks", force).catch(() => []),
-    cachedApiJson("/alerts", force).catch(() => []),
   ]);
 
   const devices = rowsFromPayload(devicesPayload);
   const locks = rowsFromPayload(locksPayload);
-  const alerts = rowsFromPayload(alertsPayload);
   const locksByTerminal = keyByTerminal(locks);
   const sourceRows = devices.length ? devices : locks;
 
-  const assets = sourceRows.map((row) => normalizeAsset(row, locksByTerminal, alerts));
+  const assets = sourceRows.map((row) => normalizeAsset(row, locksByTerminal));
 
   return assets;
 }
@@ -741,6 +765,14 @@ function matchesFilter(asset: LiveMapAsset, filter: AssetFilter) {
     return true;
   }
 
+  if (filter === "online") {
+    return asset.status === "Online";
+  }
+
+  if (filter === "charging") {
+    return asset.isCharging || asset.status === "Charging";
+  }
+
   if (filter === "locked") {
     return asset.lock === "Locked";
   }
@@ -893,7 +925,9 @@ export function LiveMapPanel() {
 
   const stats = useMemo(() => ({
     all: assets.length,
+    online: assets.filter((asset) => asset.status === "Online").length,
     moving: assets.filter((asset) => asset.status === "Moving").length,
+    charging: assets.filter((asset) => asset.isCharging || asset.status === "Charging").length,
     idle: assets.filter((asset) => asset.status === "Idle").length,
     offline: assets.filter((asset) => asset.status === "Offline").length,
     alarm: assets.filter((asset) => asset.status === "Alarm").length,
@@ -939,7 +973,9 @@ export function LiveMapPanel() {
           <div className="flex flex-wrap gap-x-5 gap-y-2">
             {[
               ["Tous", stats.all, "bg-[#34C759]"],
+              ["En ligne", stats.online, "bg-[#22c55e]"],
               ["Mouvement", stats.moving, "bg-[#3b82f6]"],
+              ["En charge", stats.charging, "bg-[#8b5cf6]"],
               ["Arret", stats.idle, "bg-[#f97316]"],
               ["Hors ligne", stats.offline, "bg-[#94a3b8]"],
               ["Alarme", stats.alarm, "bg-[#ef4444]"],
@@ -986,7 +1022,9 @@ export function LiveMapPanel() {
             onChange={(event) => setFilter(event.target.value as AssetFilter)}
           >
             <option value="all">Tous</option>
+            <option value="online">En ligne</option>
             <option value="moving">En mouvement</option>
+            <option value="charging">En charge</option>
             <option value="idle">A l&apos;arret</option>
             <option value="alarm">Alarme</option>
             <option value="offline">Hors ligne</option>

@@ -10,9 +10,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Fleet Intelligence Platform",
+  title: "Plateforme de gestion intelligente",
   description:
-    "Monitor, secure, and manage trucks in real-time with smart lock integration.",
+    "Surveillez, securisez et gerez les PadLock en temps reel.",
 };
 
 export default function RootLayout({
@@ -40,3 +40,4 @@ export default function RootLayout({
     </html>
   );
 }
+

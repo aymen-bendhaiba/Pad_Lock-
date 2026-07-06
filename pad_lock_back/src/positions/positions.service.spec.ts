@@ -4,7 +4,7 @@ import { PositionsService } from './positions.service';
 
 function fixture(
   total: number,
-  rows: Array<{ latitude: number; longitude: number }>,
+  rows: Array<{ latitude: number; longitude: number; recordedAt: Date | string }>,
 ) {
   const repository = {
     query: jest
@@ -26,10 +26,18 @@ function fixture(
 }
 
 describe('PositionsService history', () => {
-  it('uses bounded coordinate-only sampling for a date range', async () => {
+  it('uses bounded timestamped point sampling for a date range', async () => {
     const { service, repository } = fixture(6730, [
-      { latitude: 33.594, longitude: -7.62 },
-      { latitude: 33.595, longitude: -7.619 },
+      {
+        latitude: 33.594,
+        longitude: -7.62,
+        recordedAt: new Date('2026-06-01T08:00:00.000Z'),
+      },
+      {
+        latitude: 33.595,
+        longitude: -7.619,
+        recordedAt: '2026-06-01T08:05:00.000Z',
+      },
     ]);
 
     const result = await service.findHistory('8034400004', {
@@ -39,8 +47,16 @@ describe('PositionsService history', () => {
     });
 
     expect(result).toEqual([
-      [33.594, -7.62],
-      [33.595, -7.619],
+      {
+        lat: 33.594,
+        lng: -7.62,
+        timestamp: '2026-06-01T08:00:00.000Z',
+      },
+      {
+        lat: 33.595,
+        lng: -7.619,
+        timestamp: '2026-06-01T08:05:00.000Z',
+      },
     ]);
     expect(repository.query).toHaveBeenLastCalledWith(
       expect.stringContaining('ROW_NUMBER()'),

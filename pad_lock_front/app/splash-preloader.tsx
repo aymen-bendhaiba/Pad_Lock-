@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
@@ -42,7 +42,7 @@ export function SplashPreloader() {
       if (getStoredAccessToken()) {
         window.setTimeout(() => {
           void warmAppCache();
-        }, 500);
+        }, 2500);
       }
 
       if (tasks.length === 0) {
@@ -112,3 +112,4 @@ export function SplashPreloader() {
     </div>
   );
 }
+

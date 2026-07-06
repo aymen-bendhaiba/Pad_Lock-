@@ -200,7 +200,38 @@ describe('LockConfigurationsService', () => {
     expect(JSON.stringify(response)).not.toContain('network-password');
   });
 
-  it('queries connected locks for SIM configuration before returning it', async () => {
+  it('returns the saved configuration without querying a connected lock', async () => {
+    const { service, tcpGateway } = fixture({
+      existing: {
+        id: 'configuration-1',
+        lockDeviceId: 'lock-1',
+        sim1IpAddress: 'saved-main.example.com',
+        sim1Port: 10001,
+        sim1Apn: 'saved-apn',
+        sim1ApnUser: '',
+        sim1ApnPasswordEncrypted: null,
+        sim2IpAddress: null,
+        sim2Port: null,
+        sim2Apn: null,
+        sim2ApnUser: null,
+        sim2ApnPasswordEncrypted: null,
+        trackingUploadIntervalSeconds: 30,
+        wakeUpIntervalMinutes: 30,
+        vibrationLevelMg: 126,
+      },
+    });
+
+    const response = await service.findOne('8034400004');
+
+    expect(tcpGateway.sendCommand).not.toHaveBeenCalled();
+    expect(response.sim1).toMatchObject({
+      ipAddress: 'saved-main.example.com',
+      port: 10001,
+      apn: 'saved-apn',
+    });
+  });
+
+  it('queries connected locks for SIM configuration when refreshing', async () => {
     const { service, tcpGateway, getStored } = fixture({ existing: null });
     tcpGateway.sendCommand.mockImplementation(
       (
@@ -239,7 +270,7 @@ describe('LockConfigurationsService', () => {
       },
     );
 
-    const response = await service.findOne('8034400004');
+    const response = await service.refresh('8034400004');
 
     expect(tcpGateway.sendCommand.mock.calls.map((call) => call[2])).toEqual([
       '(P06,0)',
@@ -295,7 +326,7 @@ describe('LockConfigurationsService', () => {
       ),
     );
 
-    await service.findOne('8034400004');
+    await service.refresh('8034400004');
 
     expect(getStored()?.sim1SyncStatus).toBe(
       LockConfigurationSyncStatus.Synced,

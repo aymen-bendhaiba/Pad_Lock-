@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { UpdateLockConfigurationDto } from './dto/update-lock-configuration.dto';
 import { LockConfigurationsService } from './lock-configurations.service';
@@ -13,6 +21,11 @@ export class LockConfigurationsController {
   @Get()
   findOne(@Param('terminalId') terminalId: string) {
     return this.lockConfigurationsService.findOne(terminalId);
+  }
+
+  @Post('refresh')
+  refresh(@Param('terminalId') terminalId: string) {
+    return this.lockConfigurationsService.refresh(terminalId);
   }
 
   @Patch()

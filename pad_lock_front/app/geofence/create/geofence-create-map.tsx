@@ -1,7 +1,6 @@
 "use client";
 
 import { DivIcon, LatLngExpression, Marker as LeafletMarker } from "leaflet";
-import { useState } from "react";
 import {
   Circle,
   MapContainer,
@@ -18,40 +17,12 @@ import type { LatLngTuple } from "../geofence-types";
 
 const moroccoCenter: LatLngExpression = [31.7917, -7.0926];
 
-type MapLayerMode = "plan" | "satellite";
-
-const PLAN_LAYER = {
-  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+const GOOGLE_MAP_LAYER = {
+  attribution: "Donnees cartographiques &copy; Google",
   maxNativeZoom: 20,
   maxZoom: 20,
-  url: "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
+  url: "https://mt1.google.com/vt/lyrs=y&hl=fr&gl=MA&x={x}&y={y}&z={z}",
 };
-
-const SATELLITE_LAYER = {
-  attribution: "Tiles &copy; Esri",
-  maxNativeZoom: 17,
-  maxZoom: 17,
-  url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-};
-
-function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerMode; onLayerChange: (layer: MapLayerMode) => void }) {
-  return (
-    <div className="leaflet-top leaflet-right">
-      <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
-        {[{ key: "plan" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => onLayerChange(item.key)}
-            className={"h-8 rounded-[6px] px-3 transition " + (activeLayer === item.key ? "bg-[#111827] text-white" : "text-[#475569] hover:bg-[#f3f7fa]")}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function redPinIcon(label?: string) {
   return new DivIcon({
@@ -123,8 +94,7 @@ export function GeofenceCreateMap({
   onDraftPointsChange,
 }: GeofenceCreateMapProps) {
   const circleCenter = draftPoints[0];
-  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("plan");
-  const tileLayer = activeLayer === "plan" ? PLAN_LAYER : SATELLITE_LAYER;
+  const tileLayer = GOOGLE_MAP_LAYER;
 
   function movePoint(index: number, marker: LeafletMarker) {
     const position = marker.getLatLng();
@@ -140,7 +110,7 @@ export function GeofenceCreateMap({
       center={moroccoCenter}
       zoom={6}
       minZoom={2}
-      maxZoom={17}
+      maxZoom={tileLayer.maxZoom}
       scrollWheelZoom
       zoomControl={false}
       className="absolute inset-0 z-0"
@@ -153,7 +123,6 @@ export function GeofenceCreateMap({
         url={tileLayer.url}
       />
       <ZoomControl position="topleft" />
-      <MapLayerSwitch activeLayer={activeLayer} onLayerChange={setActiveLayer} />
       <DrawingEvents
         draftPoints={draftPoints}
         shapeMode={shapeMode}

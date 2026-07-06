@@ -141,7 +141,7 @@ function normalizeLockOption(record: Record<string, unknown>, index: number): Lo
 
   return {
     id,
-    name: name || `Lock ${id || index + 1}`,
+    name: name || `PadLock ${id || index + 1}`,
   };
 }
 
@@ -523,13 +523,13 @@ export function GeofenceCreateWorkspace() {
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#dfe6ee] bg-white px-5 py-3 text-[11px] text-[#52657d]">
         <div className="flex flex-wrap gap-5">
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-[#34C759]" /> All (253)
+            <span className="size-2 rounded-full bg-[#34C759]" /> Tous (253)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-[#3b82f6]" /> Motion (172)
+            <span className="size-2 rounded-full bg-[#3b82f6]" /> Mouvement (172)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-[#f97316]" /> Idle (56)
+            <span className="size-2 rounded-full bg-[#f97316]" /> A l'arret (56)
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-[#94a3b8]" /> Hors ligne (32)

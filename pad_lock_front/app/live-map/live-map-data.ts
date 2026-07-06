@@ -1,4 +1,4 @@
-export type LiveMapStatus = "Moving" | "Idle" | "Offline" | "Alarm";
+export type LiveMapStatus = "Online" | "Moving" | "Charging" | "Idle" | "Offline" | "Alarm";
 export type LiveMapLockState = "Locked" | "Unlocked" | "Unknown";
 
 export type LiveMapPlaybackPoint = {
@@ -22,13 +22,16 @@ export type LiveMapAsset = {
   battery: string;
   signal: string;
   lock: LiveMapLockState;
+  isCharging: boolean;
   position?: [number, number];
   updatedAt?: string;
   deviceDetails: LiveMapDeviceDetail[];
 };
 
 export const LIVE_MAP_COLORS: Record<LiveMapStatus, string> = {
-  Moving: "#047857",
+  Online: "#16a34a",
+  Moving: "#2563eb",
+  Charging: "#8b5cf6",
   Idle: "#f59e0b",
   Offline: "#94a3b8",
   Alarm: "#dc2626",

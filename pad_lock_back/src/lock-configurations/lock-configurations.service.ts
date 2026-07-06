@@ -80,6 +80,26 @@ export class LockConfigurationsService {
     return this.toResponse(lockDevice.terminalId, configuration);
   }
 
+  async refresh(terminalId: string) {
+    const lockDevice =
+      await this.locksService.findByTerminalIdOrFail(terminalId);
+    const configuration = await this.configurationsRepository.findOneBy({
+      lockDeviceId: lockDevice.id,
+    });
+
+    if (!this.tcpGatewayService.isConnected(lockDevice.terminalId)) {
+      return this.toResponse(lockDevice.terminalId, configuration);
+    }
+
+    const refreshedConfiguration = await this.refreshSimConfigurationFromLock(
+      lockDevice.id,
+      lockDevice.terminalId,
+      configuration,
+    );
+
+    return this.toResponse(lockDevice.terminalId, refreshedConfiguration);
+  }
+
   async update(terminalId: string, dto: UpdateLockConfigurationDto) {
     this.assertPatchHasValues(dto);
     this.assertVibrationLevel(dto.vibrationLevelMg);

@@ -13,23 +13,16 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import type { LiveMapAsset, LiveMapPlaybackPoint } from "./live-map-data";
+import { translateBackendValue, translateFieldLabel } from "../../lib/translations";
 
-const PLAN_LAYER = {
-  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+const GOOGLE_MAP_LAYER = {
+  attribution: "Donnees cartographiques &copy; Google",
   maxNativeZoom: 20,
   maxZoom: 20,
-  url: "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-};
-
-const SATELLITE_LAYER = {
-  attribution: "Tiles &copy; Esri",
-  maxNativeZoom: 17,
-  maxZoom: 17,
-  url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  url: "https://mt1.google.com/vt/lyrs=y&hl=fr&gl=MA&x={x}&y={y}&z={z}",
 };
 
 const MIN_MAP_ZOOM = 3;
-type MapLayerMode = "plan" | "satellite";
 
 const markerIconCache = new globalThis.Map<string, DivIcon>();
 
@@ -38,11 +31,15 @@ const reverseGeocodeMemory = new globalThis.Map<string, string>();
 function statusLabel(status: LiveMapAsset["status"]) {
   return status === "Moving"
     ? "En mouvement"
-    : status === "Idle"
-      ? "A l'arret"
-      : status === "Offline"
-        ? "Hors ligne"
-        : "Alarme";
+    : status === "Charging"
+      ? "En charge"
+      : status === "Online"
+        ? "En ligne"
+      : status === "Idle"
+          ? "A l'arret"
+          : status === "Offline"
+            ? "Hors ligne"
+            : "Alarme";
 }
 
 function detailLabel(label: string) {
@@ -52,20 +49,22 @@ function detailLabel(label: string) {
     Device: "PadLock",
     Status: "Statut",
     Battery: "Batterie",
+    Charging: "Recharge",
     Locked: "Verrouillage",
     Online: "En ligne",
     Speed: "Vitesse",
   };
 
-  return labels[label] ?? label;
+  return labels[label] ?? translateFieldLabel(label);
 }
 
 function detailValue(label: string, value: string) {
   if (value === "Yes") return "Oui";
   if (value === "No") return "Non";
-  if (label === "Status") return value === "Moving" ? "En mouvement" : value === "Idle" ? "A l'arret" : value === "Offline" ? "Hors ligne" : value === "Alarm" ? "Alarme" : value;
+  if (label === "Status") return value === "Moving" ? "En mouvement" : value === "Charging" ? "En charge" : value === "Online" ? "En ligne" : value === "Idle" ? "A l'arret" : value === "Offline" ? "Hors ligne" : value === "Alarm" ? "Alarme" : value;
   if (label === "Locked") return value === "Locked" ? "Verrouille" : value === "Unlocked" ? "Deverrouille" : value;
-  return value;
+  if (label === "Charging") return value === "true" || value === "Yes" ? "En charge" : value === "false" || value === "No" ? "Non" : value;
+  return translateBackendValue(value, value);
 }
 
 function reverseGeocodeKey(position: [number, number]) {
@@ -229,16 +228,41 @@ function AssetFocusHandler() {
 
 function FitVisibleAssets({ assets }: { assets: LiveMapAsset[] }) {
   const map = useMap();
+  const didAutoFitRef = useRef(false);
+  const userMovedMapRef = useRef(false);
   const positionedAssets = useMemo(
     () => assets.filter((asset) => asset.position),
     [assets],
   );
 
   useEffect(() => {
+    const container = map.getContainer();
+    const markUserMove = () => {
+      userMovedMapRef.current = true;
+    };
+
+    container.addEventListener("wheel", markUserMove, { passive: true });
+    container.addEventListener("pointerdown", markUserMove);
+    container.addEventListener("touchstart", markUserMove, { passive: true });
+
+    return () => {
+      container.removeEventListener("wheel", markUserMove);
+      container.removeEventListener("pointerdown", markUserMove);
+      container.removeEventListener("touchstart", markUserMove);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (didAutoFitRef.current || userMovedMapRef.current) {
+      return;
+    }
+
     if (!positionedAssets.length) {
       map.setView([31.7917, -7.0926], 6);
       return;
     }
+
+    didAutoFitRef.current = true;
 
     if (positionedAssets.length === 1) {
       map.setView(positionedAssets[0].position!, 12);
@@ -252,33 +276,14 @@ function FitVisibleAssets({ assets }: { assets: LiveMapAsset[] }) {
   return null;
 }
 
-function MapLayerSwitch({ activeLayer, onLayerChange }: { activeLayer: MapLayerMode; onLayerChange: (layer: MapLayerMode) => void }) {
-  return (
-    <div className="leaflet-top leaflet-right">
-      <div className="leaflet-control mr-3 mt-3 flex overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white/95 p-1 text-[11px] font-bold shadow-sm backdrop-blur">
-        {[{ key: "plan" as const, label: "Plan" }, { key: "satellite" as const, label: "Satellite" }].map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => onLayerChange(item.key)}
-            className={"h-8 rounded-[6px] px-3 transition " + (activeLayer === item.key ? "bg-[#111827] text-white" : "text-[#475569] hover:bg-[#f3f7fa]")}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function MapControls() {
   const map = useMap();
 
   useEffect(() => {
     map.setMinZoom(MIN_MAP_ZOOM);
-    map.setMaxZoom(SATELLITE_LAYER.maxZoom);
+    map.setMaxZoom(GOOGLE_MAP_LAYER.maxZoom);
 
-    if (map.getZoom() > SATELLITE_LAYER.maxZoom) map.setZoom(SATELLITE_LAYER.maxZoom);
+    if (map.getZoom() > GOOGLE_MAP_LAYER.maxZoom) map.setZoom(GOOGLE_MAP_LAYER.maxZoom);
     if (map.getZoom() < MIN_MAP_ZOOM) map.setZoom(MIN_MAP_ZOOM);
   }, [map]);
 
@@ -457,8 +462,7 @@ type LiveMapViewProps = {
 
 export function LiveMapView({ assets, playbackPoints, playbackIndex, playbackAsset, isPlaybackOpen }: LiveMapViewProps) {
   const positionedAssets = useMemo(() => assets.filter((asset) => asset.position), [assets]);
-  const [activeLayer, setActiveLayer] = useState<MapLayerMode>("plan");
-  const tileLayer = activeLayer === "plan" ? PLAN_LAYER : SATELLITE_LAYER;
+  const tileLayer = GOOGLE_MAP_LAYER;
 
   return (
     <MapContainer
@@ -478,7 +482,6 @@ export function LiveMapView({ assets, playbackPoints, playbackIndex, playbackAss
         url={tileLayer.url}
       />
       <MapControls />
-      <MapLayerSwitch activeLayer={activeLayer} onLayerChange={setActiveLayer} />
       {!playbackPoints.length ? <FitVisibleAssets assets={assets} /> : null}
       <AssetFocusHandler />
       <PlaybackOverlay points={playbackPoints} index={playbackIndex} playbackAsset={playbackAsset} />

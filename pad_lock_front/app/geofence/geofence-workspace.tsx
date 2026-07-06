@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import {
@@ -26,15 +26,6 @@ import type { BoundarySummary, GeofenceAccessMode, LatLngTuple, LockMapAsset, Sa
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type ApiRecord = Record<string, unknown>;
-type CustomGeoFeature = {
-  type?: string;
-  properties?: ApiRecord;
-  geometry?: unknown;
-  bbox?: unknown;
-};
-
-const customGeoPath = "/images/data/custom_geo.json";
-
 const continentOptions = [
   "Africa",
   "Asia",
@@ -44,6 +35,24 @@ const continentOptions = [
   "Oceania",
   "Antarctica",
 ];
+
+function continentLabel(continent: string) {
+  const labels: Record<string, string> = {
+    Africa: "Afrique",
+    Asia: "Asie",
+    Europe: "Europe",
+    "North America": "Amerique du Nord",
+    "South America": "Amerique du Sud",
+    Oceania: "Oceanie",
+    Antarctica: "Antarctique",
+  };
+
+  return labels[continent] ?? continent;
+}
+
+function geofenceShapeLabel(shapeType: SavedGeofence["shapeType"]) {
+  return shapeType === "circle" ? "cercle" : shapeType === "route" ? "ligne" : "polygone";
+}
 
 function rowsFromPayload(payload: unknown) {
   if (Array.isArray(payload)) {
@@ -337,7 +346,7 @@ function normalizeLockAsset(record: ApiRecord, lock?: ApiRecord): LockMapAsset |
 
   return {
     id,
-    name: firstNestedString(record, ["name", "assetName", "deviceName", "label"]) ?? firstNestedString(lock, ["name", "assetName", "deviceName", "label"]) ?? "Device-" + id,
+    name: firstNestedString(record, ["name", "assetName", "deviceName", "label"]) ?? firstNestedString(lock, ["name", "assetName", "deviceName", "label"]) ?? "Equipement " + id,
     status: normalizeLockStatus(record, telemetryAvailable),
     lock: normalizeLockState(record, lock, telemetryAvailable),
     battery: normalizeBattery(record, lock, telemetryAvailable),
@@ -437,72 +446,6 @@ function normalizeBoundaries(payload: unknown): BoundarySummary[] {
   }, []);
 }
 
-function normalizeGeoKey(value: unknown) {
-  return stringValue(value)?.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || undefined;
-}
-
-function customGeoKeysForFeature(feature: CustomGeoFeature) {
-  const properties = feature.properties;
-
-  return [
-    properties?.iso_a3,
-    properties?.iso_a3_eh,
-    properties?.adm0_a3,
-    properties?.adm0_iso,
-    properties?.gu_a3,
-    properties?.sov_a3,
-    properties?.iso_a2,
-    properties?.iso_a2_eh,
-    properties?.postal,
-    properties?.name,
-    properties?.name_en,
-    properties?.name_fr,
-    properties?.name_long,
-    properties?.admin,
-    properties?.geounit,
-    properties?.sovereignt,
-  ]
-    .map(normalizeGeoKey)
-    .filter((key): key is string => Boolean(key));
-}
-
-function customGeoKeysForBoundary(country: BoundarySummary) {
-  return [country.countryCode, country.name]
-    .map(normalizeGeoKey)
-    .filter((key): key is string => Boolean(key));
-}
-
-function indexCustomGeoFeatures(payload: unknown) {
-  const record = asRecord(payload);
-  const features = Array.isArray(record?.features) ? record.features : [];
-  const index = new Map<string, CustomGeoFeature>();
-
-  for (const value of features) {
-    const feature = asRecord(value) as CustomGeoFeature | undefined;
-
-    if (!feature) continue;
-
-    for (const key of customGeoKeysForFeature(feature)) {
-      if (!index.has(key)) {
-        index.set(key, feature);
-      }
-    }
-  }
-
-  return index;
-}
-
-function findCustomGeoFeature(country: BoundarySummary | undefined, index: Map<string, CustomGeoFeature>) {
-  if (!country) return undefined;
-
-  for (const key of customGeoKeysForBoundary(country)) {
-    const feature = index.get(key);
-
-    if (feature) return feature;
-  }
-
-  return undefined;
-}
 function toLatLngTuple(value: unknown): LatLngTuple | null {
   if (Array.isArray(value) && value.length >= 2) {
     const longitude = Number(value[0]);
@@ -1060,7 +1003,7 @@ export function GeofenceWorkspace() {
   const [countryRings, setCountryRings] = useState<LatLngTuple[][]>([]);
   const [countryPresetGeofence, setCountryPresetGeofence] =
     useState<SavedGeofence | null>(null);
-  const [customGeoIndex, setCustomGeoIndex] = useState<Map<string, CustomGeoFeature>>(new Map());
+  const [boundaryLoading, setBoundaryLoading] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [message, setMessage] = useState("Chargement des geofences.");
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
@@ -1071,41 +1014,14 @@ export function GeofenceWorkspace() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadCustomGeo() {
-      try {
-        const response = await fetch(customGeoPath, { cache: "force-cache" });
-        if (!response.ok) throw new Error("Custom geography file unavailable.");
-
-        const payload = await response.json();
-        const index = indexCustomGeoFeatures(payload);
-
-        if (isMounted) {
-          setCustomGeoIndex(index);
-        }
-      } catch {
-        if (isMounted) {
-          setCustomGeoIndex(new Map());
-        }
-      }
-    }
-
-    loadCustomGeo();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-  useEffect(() => {
-    let isMounted = true;
-
     async function loadCatalog() {
       setLoadState("loading");
 
       try {
         const [geofencePayload, devicesPayload, locksPayload] = await Promise.all([
-          cachedApiJson("/geofences", true),
-          cachedApiJson("/devices", true).catch(() => []),
-          cachedApiJson("/locks", true).catch(() => []),
+          cachedApiJson("/geofences"),
+          cachedApiJson("/devices").catch(() => []),
+          cachedApiJson("/locks").catch(() => []),
         ]);
         const normalizedGeofences = normalizeGeofences(geofencePayload);
         const locks = apiRowsFromPayload(locksPayload);
@@ -1156,20 +1072,19 @@ export function GeofenceWorkspace() {
             continent: selectedContinent,
             limit: 100,
           },
-          true,
         );
         const normalizedPays = normalizeBoundaries(payload);
 
         if (isMounted) {
           setPays(normalizedPays);
-          setSelectedCountryId(normalizedPays[0]?.id ?? "");
+          setSelectedCountryId("");
           setSelectedGeofenceId(null);
           setCountryPresetGeofence(null);
           setCountrySearch("");
           setMessage(
             normalizedPays.length > 0
-              ? `Pays de ${selectedContinent} charges.`
-              : `No countries returned for ${selectedContinent}.`,
+              ? `Pays de ${continentLabel(selectedContinent)} charges. Selectionnez un pays pour afficher ses coordonnees.`
+              : `Aucun pays retourne pour ${continentLabel(selectedContinent)}.`,
           );
         }
       } catch {
@@ -1177,7 +1092,7 @@ export function GeofenceWorkspace() {
           setPays([]);
           setSelectedCountryId("");
           setSelectedGeofenceId(null);
-          setMessage(`Impossible de charger les pays de ${selectedContinent}.`);
+          setMessage(`Impossible de charger les pays de ${continentLabel(selectedContinent)}.`);
         }
       }
     }
@@ -1261,43 +1176,73 @@ export function GeofenceWorkspace() {
     countryCenter;
 
   useEffect(() => {
+    let isMounted = true;
     const frame = window.requestAnimationFrame(() => {
       if (!selectedCountryId || !selectedCountry) {
         setCountryCenter(null);
         setCountryRings([]);
         setCountryPresetGeofence(null);
+        setBoundaryLoading(false);
         return;
       }
 
-      const feature = findCustomGeoFeature(selectedCountry, customGeoIndex);
-      const geometryRings = ringsFromGeometry(feature?.geometry);
-      const bboxRings = feature?.bbox
-        ? [bboxToRing(feature.bbox)].filter((ring) => ring.length >= 4)
-        : [];
-      const rings = geometryRings.length > 0 ? geometryRings : bboxRings;
-      const nextCenter = rings[0]?.[0] ?? null;
+      setBoundaryLoading(true);
+      setCountryCenter(null);
+      setCountryRings([]);
+      setCountryPresetGeofence(null);
+      setMessage(`Chargement des coordonnees de ${selectedCountry.name}...`);
 
-      setCountryCenter(nextCenter);
-      setCountryRings(rings);
-      setCountryPresetGeofence(
-        rings.length > 0
-          ? {
-              ...boundaryToGeofence(selectedCountry),
-              name: `${selectedCountry.name} boundary geofence`,
-              description: "Zone creee a partir des coordonnees locales du pays.",
-              area: "Limite du pays",
-              rings,
-            }
-          : null,
-      );
+      void (async () => {
+        try {
+          const response = await apiFetch(`/geo-boundaries/${encodeURIComponent(selectedCountry.id)}`, {
+            cache: "force-cache",
+          });
+      if (!response.ok) throw new Error("Coordonnees du pays indisponibles.");
+          const boundary = (await response.json()) as ApiRecord;
+          const geometryRings = ringsFromGeometry(boundary.geometry ?? geometryFromRecord(boundary));
+          const bboxRings = [bboxToRing(boundary.bbox), bboxToRing(boundary.boundingBox)].filter(
+            (ring) => ring.length >= 4,
+          );
+          const rings = geometryRings.length > 0 ? geometryRings : bboxRings;
+          const nextCenter = rings[0]?.[0] ?? null;
 
-      if (rings.length === 0 && customGeoIndex.size > 0) {
-        setMessage(`Coordonnees locales introuvables pour ${selectedCountry.name}.`);
-      }
+          if (!isMounted) return;
+
+          setCountryCenter(nextCenter);
+          setCountryRings(rings);
+          setCountryPresetGeofence(
+            rings.length > 0
+              ? {
+                  ...boundaryToGeofence(selectedCountry),
+                  name: `Geofence limite - ${selectedCountry.name}`,
+                  description: "Zone creee a partir des coordonnees du pays.",
+                  area: "Limite du pays",
+                  rings,
+                }
+              : null,
+          );
+          setMessage(
+            rings.length > 0
+              ? `Coordonnees de ${selectedCountry.name} chargees.`
+              : `Coordonnees introuvables pour ${selectedCountry.name}.`,
+          );
+        } catch {
+          if (!isMounted) return;
+          setCountryCenter(null);
+          setCountryRings([]);
+          setCountryPresetGeofence(null);
+          setMessage(`Impossible de charger les coordonnees de ${selectedCountry.name}.`);
+        } finally {
+          if (isMounted) setBoundaryLoading(false);
+        }
+      })();
     });
 
-    return () => window.cancelAnimationFrame(frame);
-  }, [customGeoIndex, selectedCountry, selectedCountryId]);
+    return () => {
+      isMounted = false;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [selectedCountry, selectedCountryId]);
 
   function selectContinent(continent: string) {
     setSelectedContinent(continent);
@@ -1388,7 +1333,7 @@ export function GeofenceWorkspace() {
           {continentOptions.map((continent) => {
             return (
               <button
-                key={continent}
+                key={continentLabel(continent)}
                 type="button"
                 onClick={() => selectContinent(continent)}
                 className={`flex w-full items-center justify-between rounded-[7px] border px-3 py-3 text-left transition ${
@@ -1400,7 +1345,7 @@ export function GeofenceWorkspace() {
                 <span className="flex min-w-0 items-center gap-2">
                   <Globe2 size={15} />
                   <span className="truncate text-[13px] font-semibold">
-                    {continent}
+                    {continentLabel(continent)}
                   </span>
                 </span>
                 <span className="rounded-full bg-[#eef3f7] px-2 py-0.5 text-[10px] font-bold text-[#52657d]">
@@ -1449,7 +1394,7 @@ export function GeofenceWorkspace() {
                     <span className="truncate">{geofence.name}</span>
                   </span>
                   <span className="mt-1 block text-[10px] text-[#718096]">
-                    {geofence.shapeType} - {geofence.area}
+                    {geofenceShapeLabel(geofence.shapeType)} - {geofence.area}
                   </span>
                 </button>
                 <div className="mt-3 flex gap-2">
@@ -1496,7 +1441,7 @@ export function GeofenceWorkspace() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[16px] font-bold text-black">
-              {selectedContinent || "Pays"}
+              {selectedContinent ? continentLabel(selectedContinent) : "Pays"}
             </h2>
             <p className="mt-1 text-[12px] text-[#63758d]">
               Selectionnez un pays pour afficher ses geofences.
@@ -1530,6 +1475,9 @@ export function GeofenceWorkspace() {
                 setSelectedCountryId(country.id);
                 setSelectedGeofenceId(null);
                 setCountryPresetGeofence(null);
+                setCountryCenter(null);
+                setCountryRings([]);
+                setMessage(`Chargement des coordonnees de ${country.name}...`);
               }}
               className={`w-full rounded-[7px] border px-3 py-3 text-left transition ${
                 selectedCountryId === country.id
@@ -1637,7 +1585,9 @@ export function GeofenceWorkspace() {
             <h2 className="text-[18px] font-bold text-black">
               {selectedCountry?.name ?? "Carte des geofences"}
             </h2>
-            <p className="mt-1 text-[12px] text-[#63758d]">{message}</p>
+            <p className="mt-1 text-[12px] text-[#63758d]">
+              {boundaryLoading ? "Chargement des coordonnees du pays..." : message}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 rounded-[7px] border border-[#dfe6ee] bg-[#f8fafc] px-3 py-2 text-[12px] font-semibold text-[#52657d]">
@@ -1689,3 +1639,8 @@ export function GeofenceWorkspace() {
     </div>
   );
 }
+
+
+
+
+

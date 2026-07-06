@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { cachedApiJson } from "../../lib/api";
+import { translateBackendValue } from "../../lib/translations";
 
 type SummaryRecord = Record<string, unknown>;
 type LoadState = "loading" | "ready" | "error";
@@ -97,7 +98,7 @@ function translateDashboardLabel(label: string) {
     other: "Autres",
   };
 
-  return translations[normalized] ?? label;
+  return translations[normalized] ?? translateBackendValue(label, label);
 }
 
 function numberValue(...values: unknown[]) {
