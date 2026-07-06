@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { loginWithCredentials } from "../lib/api";
 import { userFriendlyError } from "../lib/error-messages";
 
@@ -12,15 +12,10 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isReady, setIsReady] = useState(false);
-
-  useEffect(() => {
-    setIsReady(true);
-  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isReady || isSubmitting) return;
+    if (isSubmitting) return;
 
     setError("");
     setIsSubmitting(true);
@@ -105,7 +100,7 @@ export function LoginForm() {
       <div className="mt-5">
         <button
           type="submit"
-          disabled={!isReady || isSubmitting}
+          disabled={isSubmitting}
           className="h-9 w-full rounded-[4px] bg-[#1c1c21] text-[12px] font-medium text-white transition hover:bg-[#0C4E71] focus:outline-none focus:ring-2 focus:ring-[#1E9ADA]/35 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-[#1E9ADA] dark:hover:bg-[#167db4]"
         >
           {isSubmitting ? "Connexion..." : "Se connecter"}

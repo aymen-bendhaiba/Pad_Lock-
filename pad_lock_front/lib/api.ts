@@ -1,5 +1,5 @@
 ﻿export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend-api";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 const AUTH_TOKEN_KEY = "pad_lock_access_token";
 const AUTH_USER_KEY = "pad_lock_auth_user";
