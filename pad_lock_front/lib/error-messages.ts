@@ -26,7 +26,12 @@ function cleanTechnicalDetails(message: string) {
 }
 
 export function userFriendlyError(error: unknown, fallback = "Une erreur est survenue. Reessayez dans quelques instants.") {
-  const raw = cleanTechnicalDetails(textFromUnknown(error));
+  const original = textFromUnknown(error);
+  if (/cannot\s+(get|post|patch|delete)\s+/i.test(original)) {
+    return "Cette action n'est pas disponible sur le serveur actuel. Actualisez les donnees ou contactez l'administrateur technique.";
+  }
+
+  const raw = cleanTechnicalDetails(original);
   const lower = raw.toLowerCase();
 
   if (!raw) return fallback;
