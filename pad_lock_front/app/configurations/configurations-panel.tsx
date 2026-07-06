@@ -668,7 +668,7 @@ export function ConfigurationsPanel() {
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
             <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
-              <SectionHeader icon={Router} title="Rythme de transmission" description="L'intervalle d'envoi des positions et l'intervalle de reveil sont envoyes ensemble avec la commande JT701D P04." sync={config?.sync?.reporting} />
+              <SectionHeader icon={Router} title="Rythme de transmission" description="" sync={config?.sync?.reporting} />
               <div className="grid gap-3 p-4">
                 <Field label="Intervalle d'envoi des positions" value={form.trackingUploadIntervalSeconds} onChange={(value) => setForm((current) => ({ ...current, trackingUploadIntervalSeconds: value }))} type="number" suffix="sec" />
                 <Field label="Intervalle de reveil" value={form.wakeUpIntervalMinutes} onChange={(value) => setForm((current) => ({ ...current, wakeUpIntervalMinutes: value }))} type="number" suffix="min" />
@@ -680,7 +680,7 @@ export function ConfigurationsPanel() {
             </section>
 
             <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
-              <SectionHeader icon={Waves} title="Sensibilite aux vibrations" description="Seuil de detection de mouvement envoye avec P37. Utilisez 0 pour desactiver la detection." sync={config?.sync?.vibration} />
+              <SectionHeader icon={Waves} title="Sensibilite aux vibrations" description="" sync={config?.sync?.vibration} />
               <div className="p-4">
                 <Field label="Niveau de vibration" value={form.vibrationLevelMg} onChange={(value) => setForm((current) => ({ ...current, vibrationLevelMg: value }))} type="number" suffix="mg" />
                 <div className="mt-4 rounded-[8px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#64748b]">
@@ -709,3 +709,4 @@ export function ConfigurationsPanel() {
     </div>
   );
 }
+

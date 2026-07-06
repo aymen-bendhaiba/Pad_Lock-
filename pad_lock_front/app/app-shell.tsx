@@ -91,10 +91,10 @@ export function AppShell({
   headerZIndex = "z-20",
 }: AppShellProps) {
   return (
-    <main className={"min-h-screen text-[#0f172a] " + mainClassName}>
+    <main className={"app-shell-root min-h-screen text-[#0f172a] " + mainClassName}>
       <div className="grid min-h-screen lg:grid-cols-[286px_1fr]">
-        <aside className="sticky top-0 hidden h-screen border-r border-[#dfe6ee] bg-white lg:block">
-          <div className="flex h-14 items-center justify-between border-b border-[#dfe6ee] px-5">
+        <aside className="app-shell-sidebar sticky top-0 hidden h-screen border-r border-[#dfe6ee] bg-white lg:block">
+          <div className="app-shell-brand flex h-14 items-center justify-between border-b border-[#dfe6ee] px-5">
             <div className="flex items-center gap-2">
               <Image
                 src={logo}
@@ -112,7 +112,7 @@ export function AppShell({
             </div>
           </div>
 
-          <nav className="space-y-1 px-4 py-3">
+          <nav className="app-shell-nav space-y-1 px-4 py-3">
             {navItems.map((item) => {
               const active = isActiveLink(activeHref, item.href);
               return (
@@ -120,9 +120,9 @@ export function AppShell({
                   key={item.label}
                   href={item.href}
                   className={
-                    "flex h-10 items-center justify-between rounded-[7px] px-4 text-[13px] font-medium transition " +
+                    "app-shell-nav-item flex h-10 items-center justify-between rounded-[7px] px-4 text-[13px] font-medium transition " +
                     (active
-                      ? "bg-[#edf2f7] text-[#111827]"
+                      ? "is-active bg-[#edf2f7] text-[#111827]"
                       : "text-[#5b6b84] hover:bg-[#f3f7fa] hover:text-[#111827]")
                   }
                 >
@@ -141,12 +141,12 @@ export function AppShell({
           </nav>
         </aside>
 
-        <section className="min-w-0">
-          <header className={`sticky top-0 ${headerZIndex} flex h-14 items-center justify-between gap-4 border-b border-[#dfe6ee] bg-white/95 px-4 backdrop-blur md:px-6`}>
+        <section className="app-shell-content min-w-0">
+          <header className={`app-shell-header sticky top-0 ${headerZIndex} flex h-14 items-center justify-between gap-4 border-b border-[#dfe6ee] bg-white/95 px-4 backdrop-blur md:px-6`}>
             <HeaderLeft searchPlaceholder={headerSearchPlaceholder} customContent={headerLeft} />
 
             <div className="flex items-center gap-4">
-              <span className="hidden h-7 items-center rounded-full bg-[#eaf8ef] px-3 text-[12px] font-semibold text-[#16883f] sm:flex">
+              <span className="app-shell-live-chip hidden h-7 items-center rounded-full bg-[#eaf8ef] px-3 text-[12px] font-semibold text-[#16883f] sm:flex">
                 <LiveLocksBadge />
               </span>
               <ThemeToggle />

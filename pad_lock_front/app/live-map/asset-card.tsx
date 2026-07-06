@@ -6,11 +6,15 @@ import type { LiveMapAsset } from "./live-map-data";
 function statusLabel(status: LiveMapAsset["status"]) {
   return status === "Moving"
     ? "En mouvement"
-    : status === "Idle"
-      ? "A l'arret"
-      : status === "Offline"
-        ? "Hors ligne"
-        : "Alarme";
+    : status === "Charging"
+      ? "En charge"
+      : status === "Online"
+        ? "En ligne"
+      : status === "Idle"
+          ? "A l'arret"
+          : status === "Offline"
+            ? "Hors ligne"
+            : "Alarme";
 }
 
 function lockLabel(lock: LiveMapAsset["lock"]) {
@@ -90,9 +94,11 @@ export function AssetCard({ asset, isSelected = false, onSelect }: AssetCardProp
               ? "bg-[#fff1f2] text-[#ef4444]"
               : asset.status === "Offline"
                 ? "bg-[#f1f5f9] text-[#64748b]"
-                : asset.status === "Idle"
-                  ? "bg-[#fff7ed] text-[#f97316]"
-                  : "bg-[#ecfdf5] text-[#16883f]"
+                : asset.status === "Moving"
+                  ? "bg-[#eff6ff] text-[#2563eb]"
+                  : asset.status === "Charging"
+                    ? "bg-[#f5f3ff] text-[#7c3aed]"
+                    : "bg-[#ecfdf5] text-[#16883f]"
           }`}
         >
           {statusLabel(asset.status)}

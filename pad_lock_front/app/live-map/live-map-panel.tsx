@@ -9,7 +9,7 @@ import { apiFetch, cachedApiJson } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
 
 type ApiRecord = Record<string, unknown>;
-type AssetFilter = "all" | "online" | "moving" | "idle" | "alarm" | "offline" | "locked" | "unlocked";
+type AssetFilter = "all" | "online" | "moving" | "charging" | "idle" | "alarm" | "offline" | "locked" | "unlocked";
 
 function rowsFromPayload(payload: unknown): ApiRecord[] {
   if (Array.isArray(payload)) {
@@ -321,13 +321,14 @@ function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
     { label: "Device", keys: ["name", "assetName", "deviceName", "label"] },
     { label: "Status", keys: ["status", "state", "movementStatus", "motion"] },
     { label: "Battery", keys: ["battery", "batteryLevel", "power", "batteryPercent"] },
+    { label: "Charging", keys: ["isCharging", "charging", "charge", "chargingState", "chargerConnected"] },
     { label: "Locked", keys: ["locked", "isLocked", "lockState", "statusLock"] },
     { label: "Online", keys: ["online", "isOnline", "connected"] },
     { label: "Speed", keys: ["speed", "speedKph", "velocity"] },
   ];
 
   for (const field of preferredFields) {
-    if (!telemetryAvailable && ["Status", "Battery", "Locked", "Speed"].includes(field.label)) {
+    if (!telemetryAvailable && ["Status", "Battery", "Charging", "Locked", "Speed"].includes(field.label)) {
       field.keys.forEach((fieldKey) => usedKeys.add(fieldKey));
       continue;
     }
@@ -441,6 +442,23 @@ function normalizeSignal(record: ApiRecord, lock?: ApiRecord) {
   return value >= 70 ? "Excellent" : value >= 40 ? "Moyen" : "Faible";
 }
 
+function normalizeCharging(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)) {
+  if (!telemetryAvailable) {
+    return false;
+  }
+
+  const bool = readNestedBoolean(record, ["isCharging", "charging", "charge", "chargerConnected"])
+    ?? readNestedBoolean(lock, ["isCharging", "charging", "charge", "chargerConnected"]);
+
+  if (bool !== undefined) {
+    return bool;
+  }
+
+  const raw = (readNestedString(record, ["charging", "charge", "chargingState", "chargingStatus", "powerStatus"])
+    ?? readNestedString(lock, ["charging", "charge", "chargingState", "chargingStatus", "powerStatus"]))?.toLowerCase();
+
+  return Boolean(raw && ["charging", "charge", "on_charge", "plugged", "plugged_in", "connected"].some((value) => raw.includes(value)));
+}
 function normalizeLockState(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)): LiveMapLockState {
   if (!telemetryAvailable) {
     return "Unknown";
@@ -461,13 +479,13 @@ function normalizeLockState(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
   return "Unknown";
 }
 
-function normalizeStatus(record: ApiRecord, activeAlert: boolean, telemetryAvailable = isTelemetryAvailable(record)): LiveMapStatus {
+function normalizeStatus(record: ApiRecord, _activeAlert: boolean, telemetryAvailable = isTelemetryAvailable(record), isCharging = false): LiveMapStatus {
   if (!telemetryAvailable) {
     return "Offline";
   }
 
-  if (activeAlert) {
-    return "Alarm";
+  if (isCharging) {
+    return "Charging";
   }
 
   const raw = readString(record, ["status", "state", "movementStatus", "motion", "online"]);
@@ -480,15 +498,19 @@ function normalizeStatus(record: ApiRecord, activeAlert: boolean, telemetryAvail
       return "Alarm";
     }
 
+    if (status.includes("charging") || status.includes("charge")) {
+      return "Charging";
+    }
+
     if (status.includes("moving") || status.includes("motion")) {
       return "Moving";
     }
 
-    if (status.includes("idle") || status.includes("stopped")) {
-      return "Idle";
+    if (status.includes("idle") || status.includes("stopped") || status.includes("online") || status === "true") {
+      return "Online";
     }
 
-    if (status.includes("offline") || status.includes("disconnected")) {
+    if (status.includes("offline") || status.includes("disconnected") || status === "false") {
       return "Offline";
     }
   }
@@ -497,7 +519,7 @@ function normalizeStatus(record: ApiRecord, activeAlert: boolean, telemetryAvail
     return "Offline";
   }
 
-  return "Moving";
+  return "Online";
 }
 
 function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecord>, alerts: ApiRecord[]): LiveMapAsset {
@@ -505,7 +527,8 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
   const lock = locksByTerminal.get(terminalId);
   const activeAlert = hasActiveAlert(terminalId, alerts);
   const telemetryAvailable = isTelemetryAvailable(record, lock);
-  const status = normalizeStatus(record, activeAlert, telemetryAvailable);
+  const isCharging = normalizeCharging(record, lock, telemetryAvailable);
+  const status = normalizeStatus(record, activeAlert, telemetryAvailable, isCharging);
   const name = readString(record, ["name", "assetName", "deviceName", "label"])
     ?? readString(lock, ["name", "assetName", "deviceName", "label"])
     ?? `PadLock-${terminalId}`;
@@ -523,6 +546,7 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
     battery: batteryFromDevice ?? normalizeBattery(record, lock, telemetryAvailable),
     signal: normalizeSignal(record, lock),
     lock: normalizeLockState(record, lock, telemetryAvailable),
+    isCharging,
     position: extractPosition(record) ?? (lock ? extractPosition(lock) : undefined),
     updatedAt: readString(record, ["updatedAt", "lastSeenAt", "timestamp", "createdAt"]),
     deviceDetails,
@@ -742,7 +766,11 @@ function matchesFilter(asset: LiveMapAsset, filter: AssetFilter) {
   }
 
   if (filter === "online") {
-    return asset.status !== "Offline";
+    return asset.status === "Online";
+  }
+
+  if (filter === "charging") {
+    return asset.isCharging || asset.status === "Charging";
   }
 
   if (filter === "locked") {
@@ -897,8 +925,9 @@ export function LiveMapPanel() {
 
   const stats = useMemo(() => ({
     all: assets.length,
-    online: assets.filter((asset) => asset.status !== "Offline").length,
+    online: assets.filter((asset) => asset.status === "Online").length,
     moving: assets.filter((asset) => asset.status === "Moving").length,
+    charging: assets.filter((asset) => asset.isCharging || asset.status === "Charging").length,
     idle: assets.filter((asset) => asset.status === "Idle").length,
     offline: assets.filter((asset) => asset.status === "Offline").length,
     alarm: assets.filter((asset) => asset.status === "Alarm").length,
@@ -946,6 +975,7 @@ export function LiveMapPanel() {
               ["Tous", stats.all, "bg-[#34C759]"],
               ["En ligne", stats.online, "bg-[#22c55e]"],
               ["Mouvement", stats.moving, "bg-[#3b82f6]"],
+              ["En charge", stats.charging, "bg-[#8b5cf6]"],
               ["Arret", stats.idle, "bg-[#f97316]"],
               ["Hors ligne", stats.offline, "bg-[#94a3b8]"],
               ["Alarme", stats.alarm, "bg-[#ef4444]"],
@@ -994,6 +1024,7 @@ export function LiveMapPanel() {
             <option value="all">Tous</option>
             <option value="online">En ligne</option>
             <option value="moving">En mouvement</option>
+            <option value="charging">En charge</option>
             <option value="idle">A l&apos;arret</option>
             <option value="alarm">Alarme</option>
             <option value="offline">Hors ligne</option>

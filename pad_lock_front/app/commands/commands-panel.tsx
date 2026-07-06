@@ -33,8 +33,9 @@ type CommandDevice = {
   name: string;
   battery: string;
   batteryValue: number | null;
-  status: "Moving" | "Idle" | "Offline" | "Alarm";
+  status: "Moving" | "Charging" | "Idle" | "Offline" | "Alarm";
   lock: "Locked" | "Unlocked" | "Unknown";
+  isCharging: boolean;
 };
 
 type CommandResult = { state: CommandState; message: string };
@@ -173,6 +174,23 @@ function normalizeBattery(record: ApiRecord, lock?: ApiRecord, telemetryAvailabl
   return { label: String(normalized).padStart(2, "0") + "%", value: normalized };
 }
 
+function normalizeCharging(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)) {
+  if (!telemetryAvailable) {
+    return false;
+  }
+
+  const bool = readBoolean(record, ["isCharging", "charging", "charge", "chargerConnected"])
+    ?? readBoolean(lock, ["isCharging", "charging", "charge", "chargerConnected"]);
+
+  if (bool !== undefined) {
+    return bool;
+  }
+
+  const raw = (readString(record, ["charging", "charge", "chargingState", "chargingStatus", "powerStatus"])
+    ?? readString(lock, ["charging", "charge", "chargingState", "chargingStatus", "powerStatus"]))?.toLowerCase();
+
+  return Boolean(raw && ["charging", "charge", "on_charge", "plugged", "plugged_in", "connected"].some((value) => raw.includes(value)));
+}
 function normalizeLock(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)): CommandDevice["lock"] {
   if (!telemetryAvailable) {
     return "Unknown";
@@ -187,10 +205,14 @@ function normalizeLock(record: ApiRecord, lock?: ApiRecord, telemetryAvailable =
   return "Unknown";
 }
 
-function normalizeStatus(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)): CommandDevice["status"] {
+function normalizeStatus(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock), isCharging = false): CommandDevice["status"] {
   if (!telemetryAvailable) {
     return "Offline";
   }
+  if (isCharging) {
+    return "Charging";
+  }
+
   const raw = readString(record, ["status", "state", "movementStatus", "motion", "online"])
     ?? readString(lock, ["status", "state", "movementStatus", "motion", "online"]);
   const online = readBoolean(record, ["online", "isOnline", "connected"])
@@ -199,6 +221,7 @@ function normalizeStatus(record: ApiRecord, lock?: ApiRecord, telemetryAvailable
   if (raw) {
     const status = raw.toLowerCase();
     if (status.includes("alarm") || status.includes("alert")) return "Alarm";
+    if (status.includes("charging") || status.includes("charge")) return "Charging";
     if (status.includes("moving") || status.includes("motion")) return "Moving";
     if (status.includes("idle") || status.includes("stopped")) return "Idle";
     if (status.includes("offline") || status.includes("disconnected")) return "Offline";
@@ -211,6 +234,7 @@ function normalizeDevice(record: ApiRecord, lock?: ApiRecord): CommandDevice {
   const id = terminalId(record);
   const telemetryAvailable = isTelemetryAvailable(record, lock);
   const battery = normalizeBattery(record, lock, telemetryAvailable);
+  const isCharging = normalizeCharging(record, lock, telemetryAvailable);
 
   return {
     terminalId: id,
@@ -219,8 +243,9 @@ function normalizeDevice(record: ApiRecord, lock?: ApiRecord): CommandDevice {
       ?? "PadLock-" + id,
     battery: battery.label,
     batteryValue: battery.value,
-    status: normalizeStatus(record, lock, telemetryAvailable),
+    status: normalizeStatus(record, lock, telemetryAvailable, isCharging),
     lock: normalizeLock(record, lock, telemetryAvailable),
+    isCharging,
   };
 }
 
@@ -247,7 +272,8 @@ function batteryColor(value: number | null) {
 
 function statusLabel(value: CommandDevice["status"]) {
   if (value === "Moving") return "En mouvement";
-  if (value === "Idle") return "Ã€ l'arret";
+  if (value === "Charging") return "En charge";
+  if (value === "Idle") return "A l'arret";
   if (value === "Offline") return "Hors ligne";
   return "Alerte";
 }
@@ -359,6 +385,7 @@ function FooterLegend({ devices }: { devices: CommandDevice[] }) {
   const stats = {
     all: devices.length,
     moving: devices.filter((device) => device.status === "Moving").length,
+    charging: devices.filter((device) => device.isCharging || device.status === "Charging").length,
     idle: devices.filter((device) => device.status === "Idle").length,
     offline: devices.filter((device) => device.status === "Offline").length,
     alarm: devices.filter((device) => device.status === "Alarm").length,
@@ -371,6 +398,7 @@ function FooterLegend({ devices }: { devices: CommandDevice[] }) {
       <div className="flex flex-wrap gap-x-5 gap-y-2">
         <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#34C759]" />Tous ({stats.all})</span>
         <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#3b82f6]" />Mouvement ({stats.moving})</span>
+        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#8b5cf6]" />En charge ({stats.charging})</span>
         <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#f97316]" />Arret ({stats.idle})</span>
         <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#94a3b8]" />Hors ligne ({stats.offline})</span>
         <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#ef4444]" />Alerte ({stats.alarm})</span>
@@ -760,7 +788,7 @@ export function CommandsPanel() {
                 <div key={device.terminalId} className="flex flex-col gap-3 rounded-[6px] bg-white px-3 py-3 text-[12px] font-medium xl:flex-row xl:items-center">
                   <DeviceIdentity device={device} />
                   <DeviceMeta device={device} />
-                  <span className="w-[90px] shrink-0 font-semibold text-[#64748b]">{statusLabel(device.status)}</span>
+                  <span className={"w-[100px] shrink-0 font-semibold " + (device.status === "Charging" ? "text-[#7c3aed]" : "text-[#64748b]")}>{statusLabel(device.status)}</span>
                   <div className="flex flex-wrap gap-2 xl:ml-auto">
                     <button
                       type="button"

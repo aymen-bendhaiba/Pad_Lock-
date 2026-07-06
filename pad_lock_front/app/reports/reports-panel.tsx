@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   ChevronLeft,
@@ -24,7 +24,7 @@ import { userFriendlyError } from "../../lib/error-messages";
 type ApiRecord = Record<string, unknown>;
 type ReportStatut = "Ready" | "Processing" | "Error";
 type GroupBy = "day" | "week" | "month";
-type ReportKind = "alerts" | "geofences" | "unlocks" | "mileage" | "battery";
+type ReportKind = "alerts" | "geofences" | "unlocks" | "mileage" | "battery" | "locations";
 type ReportOutputFormat = "pdf" | "excel";
 
 type ReportDefinition = { key: ReportKind; label: string; endpoint: string; type: string; description: string };
@@ -40,6 +40,7 @@ const reportDefinitions: ReportDefinition[] = [
   { key: "unlocks", label: "Rapport des deverrouillages", endpoint: "/reports/unlocks", type: "Securite", description: "Ouvertures, methodes utilisees, totaux RFID/mots de passe, coordonnees, geofences et chronologie." },
   { key: "mileage", label: "Rapport de kilometrage", endpoint: "/reports/mileage", type: "Operationnel", description: "Kilometres totaux et par PadLock, kilometrage initial, final, distance calculee et horodatage." },
   { key: "battery", label: "Rapport de batterie", endpoint: "/reports/battery", type: "Maintenance", description: "Niveaux moyen, minimum, maximum et dernier niveau de batterie, batteries faibles et charges par PadLock." },
+  { key: "locations", label: "Rapport de localisation", endpoint: "/history", type: "Localisation", description: "Toutes les positions GPS parcourues par un PadLock sur la periode choisie." },
 ];
 const methodOptions = ["", "rfid", "static_password", "dynamic_password", "bluetooth", "other"];
 const alertTypeOptions = ["", "locked", "unlock_rejected", "tamper", "geofence", "low_battery", "offline", "other"];
@@ -52,25 +53,221 @@ const rangePresetOptions = [
   { value: "custom", label: "Periode personnalisee", days: 0 },
 ] as const;
 type RangePreset = typeof rangePresetOptions[number]["value"];
+const CREATED_REPORTS_STORAGE_KEY = "pad_lock_created_reports";
 
 function defaultFromDate() { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); }
 function defaultToDate() { return new Date().toISOString().slice(0, 10); }
 function defaultFilters(kind: ReportKind = "alerts"): ReportFilters { return { kind, from: defaultFromDate(), to: defaultToDate(), terminalId: "", groupBy: "day", page: 1, limit: 100, type: "", severity: "", status: "", geofenceId: "", method: "", below: "", outputFormat: "pdf" }; }
+function reportDefinitionFor(kind: unknown) { return reportDefinitions.find(definition => definition.key === kind) ?? reportDefinitions[0]; }
+function hydrateStoredReport(value: unknown): ReportJob | null {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as ApiRecord : null;
+  const filtersRecord = record?.filters && typeof record.filters === "object" && !Array.isArray(record.filters) ? record.filters as Partial<ReportFilters> : null;
+  const definitionRecord = record?.definition && typeof record.definition === "object" && !Array.isArray(record.definition) ? record.definition as ApiRecord : null;
+  const definition = reportDefinitionFor(filtersRecord?.kind ?? definitionRecord?.key);
+  const filters = { ...defaultFilters(definition.key), ...filtersRecord, kind: definition.key };
+  const status = record?.status === "Processing" || record?.status === "Error" ? record.status : "Ready";
+
+  return {
+    id: textValue(record?.id) ?? definition.key + "-stored-" + Math.random().toString(36).slice(2),
+    name: textValue(record?.name) ?? definition.label,
+    status,
+    type: textValue(record?.type) ?? definition.type,
+    date: textValue(record?.date) ?? timestampParts().date,
+    time: textValue(record?.time) ?? timestampParts().time,
+    size: textValue(record?.size) ?? "--",
+    definition,
+    filters,
+    response: record?.response && typeof record.response === "object" && !Array.isArray(record.response) ? record.response as ReportResponse : undefined,
+    error: textValue(record?.error),
+  };
+}
+function loadCreatedReports() {
+  if (typeof window === "undefined") return [] as ReportJob[];
+  try {
+    const stored = window.localStorage.getItem(CREATED_REPORTS_STORAGE_KEY);
+    const rows = stored ? JSON.parse(stored) as unknown[] : [];
+    return Array.isArray(rows) ? rows.map(hydrateStoredReport).filter((report): report is ReportJob => Boolean(report)) : [];
+  } catch {
+    window.localStorage.removeItem(CREATED_REPORTS_STORAGE_KEY);
+    return [] as ReportJob[];
+  }
+}
+function saveCreatedReports(reports: ReportJob[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CREATED_REPORTS_STORAGE_KEY, JSON.stringify(reports));
+  } catch {
+    const lighterReports = reports.map(report => ({ ...report, response: undefined }));
+    window.localStorage.setItem(CREATED_REPORTS_STORAGE_KEY, JSON.stringify(lighterReports));
+  }
+}
+function upsertCreatedReport(report: ReportJob) {
+  const reports = loadCreatedReports().filter(item => item.id !== report.id);
+  saveCreatedReports([report, ...reports]);
+}
+function removeCreatedReport(id: string) {
+  saveCreatedReports(loadCreatedReports().filter(report => report.id !== id));
+}
 function asRecord(value: unknown): ApiRecord | undefined { return value && typeof value === "object" && !Array.isArray(value) ? value as ApiRecord : undefined; }
 function rowsFromPayload(payload: unknown): unknown[] { if (Array.isArray(payload)) return payload; const r = asRecord(payload); if (!r) return []; for (const k of ["data", "items", "results", "devices", "locks", "rows"]) if (Array.isArray(r[k])) return r[k] as unknown[]; return []; }
 function textValue(...values: unknown[]) { for (const v of values) { if (typeof v === "string" && v.trim()) return v.trim(); if (typeof v === "number" && Number.isFinite(v)) return String(v); if (typeof v === "boolean") return v ? "Oui" : "Non"; } return undefined; }
 function terminalIdFromRecord(record: ApiRecord) { return textValue(record.terminalId, record.terminalID, record.deviceId, record.lockId, record.id, record.imei) ?? "unknown"; }
 function normalizeDevice(row: unknown, index: number): DeviceOption | null { const r = asRecord(row); if (!r) return null; const id = terminalIdFromRecord(r); if (id === "unknown") return null; return { id, name: textValue(r.name, r.assetName, r.deviceName, r.label) ?? "PadLock-" + index }; }
 function formatValue(value: unknown): string { if (value === null || value === undefined || value === "") return "--"; if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2); if (typeof value === "boolean") return value ? "Oui" : "Non"; if (typeof value === "string") return optionLabel(value); if (Array.isArray(value)) return value.length + " element" + (value.length === 1 ? "" : "s"); if (typeof value === "object") return JSON.stringify(value); return String(value); }
-function formatLabel(key: string) { const labels: Record<string, string> = { total: "Total", totalAlerts: "Total alarmes", totalOpenings: "Total ouvertures", totalOpened: "Total ouvertures", totalGeofences: "Total geofences", samples: "Echantillons", entries: "Entrees", exits: "Sorties", totalKilometers: "Kilometres totaux", affectedLocks: "PadLock concernes", unresolved: "Non resolues", critical: "Critiques", averagePercentage: "Batterie moyenne", lowSamples: "Batteries faibles", movingSamples: "Positions en mouvement", terminalId: "PadLock", type: "Type", severity: "Severite", status: "Statut", createdAt: "Date creation", timestamp: "Horodatage", latitude: "Latitude", longitude: "Longitude", method: "Methode", geofenceId: "Geofence" }; return labels[key] ?? key.replace(/([A-Z])/g, " $1").replace(/[_-]+/g, " ").replace(/^./, c => c.toUpperCase()); }
+function formatLabel(key: string) { const labels: Record<string, string> = { total: "Total", totalAlerts: "Total alarmes", totalOpenings: "Total ouvertures", totalOpened: "Total ouvertures", totalGeofences: "Total geofences", samples: "Echantillons", entries: "Entrees", exits: "Sorties", totalKilometers: "Kilometres totaux", affectedLocks: "PadLock concernes", unresolved: "Non resolues", critical: "Critiques", averagePercentage: "Batterie moyenne", lowSamples: "Batteries faibles", movingSamples: "Positions en mouvement", terminalId: "PadLock", type: "Type", severity: "Severite", status: "Statut", createdAt: "Date creation", timestamp: "Horodatage", receivedAt: "Recu le", latitude: "Latitude", longitude: "Longitude", method: "Methode", geofenceId: "Geofence", point: "Point", position: "Position", location: "Localisation", recordedAt: "Horodatage", dateTime: "Date et heure", coordinates: "Coordonnees", totalPositions: "Positions", firstPosition: "Premiere position", lastPosition: "Derniere position" }; return labels[key] ?? key.replace(/([A-Z])/g, " $1").replace(/[_-]+/g, " ").replace(/^./, c => c.toUpperCase()); }
 function rowRecord(row: unknown): ApiRecord { return asRecord(row) ?? { value: row }; }
 function rowColumns(rows: unknown[]) { const keys = new Set<string>(); for (const row of rows.slice(0, 20)) Object.keys(rowRecord(row)).forEach(k => keys.add(k)); return Array.from(keys).filter(k => k !== "deletedAt"); }
 function reportTotal(response?: ReportResponse) { const summary = response?.summary; const total = Number(response?.pagination?.total ?? summary?.total ?? summary?.totalAlerts ?? summary?.totalOpenings ?? response?.rows?.length ?? 0); return Number.isFinite(total) ? total : 0; }
 function hasReportData(response?: ReportResponse) { if (!response) return false; if ((response.rows?.length ?? 0) > 0) return true; if ((response.timeline?.length ?? 0) > 0) return true; return Object.values(response.summary ?? {}).some(value => Number(value) > 0); }
-function summaryTotal(summary?: ApiRecord) { if (!summary) return 0; for (const key of ["total", "totalAlerts", "totalOpenings", "totalOpened", "totalGeofences", "samples", "entries", "totalKilometers", "affectedLocks"]) { const value = Number(summary[key]); if (Number.isFinite(value) && value > 0) return value; } return 0; }
+function summaryTotal(summary?: ApiRecord) { if (!summary) return 0; for (const key of ["total", "totalAlerts", "totalOpenings", "totalOpened", "totalGeofences", "samples", "entries", "totalKilometers", "affectedLocks", "totalPositions"]) { const value = Number(summary[key]); if (Number.isFinite(value) && value > 0) return value; } return 0; }
 function formatSize(response?: ReportResponse) { const rowCount = Number(response?.pagination?.total ?? response?.rows?.length ?? 0); if (Number.isFinite(rowCount) && rowCount > 0) return String(rowCount) + " lignes"; const total = reportTotal(response) || summaryTotal(response?.summary); return total ? String(total) + " au total" : "--"; }
 function timestampParts() { const d = new Date(); return { date: d.toISOString().slice(0, 10), time: d.toTimeString().slice(0, 8) }; }
-function buildReportPath(filters: ReportFilters) { const def = reportDefinitions.find(d => d.key === filters.kind) ?? reportDefinitions[0]; const p = new URLSearchParams(); if (filters.from) p.set("from", new Date(filters.from + "T00:00:00.000Z").toISOString()); if (filters.to) p.set("to", new Date(filters.to + "T23:59:59.999Z").toISOString()); if (filters.terminalId) p.set("terminalId", filters.terminalId); p.set("groupBy", filters.groupBy); p.set("page", String(filters.page)); p.set("limit", String(filters.limit)); if (filters.kind === "alerts") { if (filters.type) p.set("type", filters.type); if (filters.severity) p.set("severity", filters.severity); if (filters.status) p.set("status", filters.status); } if ((filters.kind === "geofences" || filters.kind === "unlocks") && filters.geofenceId) p.set("geofenceId", filters.geofenceId); if (filters.kind === "unlocks" && filters.method) p.set("method", filters.method); if (filters.kind === "battery" && filters.below) p.set("below", filters.below); return def.endpoint + "?" + p.toString(); }
+function numberFromValue(value: unknown) { if (typeof value === "number" && Number.isFinite(value)) return value; if (typeof value === "string" && value.trim()) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : undefined; } return undefined; }
+function positionFromPair(value: unknown): [number, number] | null { if (!Array.isArray(value) || value.length < 2) return null; const lat = numberFromValue(value[0]); const lng = numberFromValue(value[1]); return lat === undefined || lng === undefined ? null : [lat, lng]; }
+function timestampFromPair(value: unknown) { return Array.isArray(value) ? textValue(value[2], value[3]) : undefined; }
+function positionFromRecord(record: ApiRecord): [number, number] | null { const nested = positionFromPair(record.coordinates) ?? positionFromPair(record.coords) ?? positionFromPair(record.position) ?? positionFromPair(record.location) ?? positionFromPair(record.gps); if (nested) return nested; const lat = numberFromValue(record.latitude ?? record.lat ?? record.gpsLat ?? record.gpsLatitude); const lng = numberFromValue(record.longitude ?? record.lng ?? record.lon ?? record.gpsLng ?? record.gpsLongitude); return lat === undefined || lng === undefined ? null : [lat, lng]; }
+function locationTimestamp(record: ApiRecord) { return textValue(record.recordedAt, record.receivedAt, record.timestamp, record.createdAt, record.updatedAt, record.time, record.date, record.occurredAt); }
+function splitDateTime(value?: string) {
+  if (!value) return { date: undefined, time: undefined, dateTime: undefined };
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return {
+      date: parsed.toLocaleDateString("fr-FR"),
+      time: parsed.toLocaleTimeString("fr-FR"),
+      dateTime: parsed.toLocaleString("fr-FR"),
+    };
+  }
+
+  const parts = value.trim().split(/[T\s]+/);
+  return { date: parts[0], time: parts[1]?.replace(/Z$/, ""), dateTime: value };
+}
+
+function arrayFromRecord(record: ApiRecord | undefined, keys: string[]) {
+  if (!record) return [] as unknown[];
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [] as unknown[];
+}
+
+function timestampAt(record: ApiRecord | undefined, index: number) {
+  const timestamps = arrayFromRecord(record, ["timestamps", "timestamp", "recordedAt", "recordedAts", "receivedAt", "receivedAts", "received_at", "recorded_at", "times", "dates", "createdAt", "createdAts"]);
+  return textValue(timestamps[index]);
+}
+function locationLabel(position: [number, number]) { return position[0].toFixed(6) + ", " + position[1].toFixed(6); }
+function coordinateKey(position: [number, number]) { return position[0].toFixed(6) + "," + position[1].toFixed(6); }
+function positionTimestamp(record: ApiRecord, fallback?: unknown) {
+  const recordedAt = textValue(record.recordedAt, record.recorded_at, record.timestamp, record.createdAt, record.created_at, record.time, record.date, record.occurredAt, fallback);
+  const receivedAt = textValue(record.receivedAt, record.received_at);
+  return { dateTime: splitDateTime(recordedAt ?? receivedAt).dateTime, receivedAt: receivedAt ? splitDateTime(receivedAt).dateTime : undefined };
+}
+function timestampedPositionsFromPayload(payload: unknown) {
+  const payloadRecord = asRecord(payload);
+  const coordinateSource = Array.isArray(payload)
+    ? payload
+    : arrayFromRecord(payloadRecord, ["message", "coordinates", "positions", "points", "history", "rows", "data", "items", "results", "records"]);
+
+  return coordinateSource.map((row, index) => {
+    const record = rowRecord(row);
+    const position = positionFromPair(row) ?? positionFromRecord(record);
+    if (!position) return null;
+    const timestamps = positionTimestamp(record, timestampFromPair(row) ?? timestampAt(payloadRecord, index));
+
+    return { position, dateTime: timestamps.dateTime, receivedAt: timestamps.receivedAt };
+  }).filter(Boolean) as { position: [number, number]; dateTime?: string; receivedAt?: string }[];
+}
+function enrichLocationRowsWithTimestamps(rows: ApiRecord[], positionsPayload?: unknown) {
+  if (!positionsPayload) return rows;
+  const positions = timestampedPositionsFromPayload(positionsPayload).filter(item => item.dateTime || item.receivedAt);
+  if (!positions.length) return rows;
+  const byCoordinate = new Map<string, { dateTime?: string; receivedAt?: string }>();
+  positions.forEach(item => {
+    const key = coordinateKey(item.position);
+    if (!byCoordinate.has(key)) byCoordinate.set(key, item);
+  });
+
+  return rows.map((row, index) => {
+    const rowPosition = positionFromRecord(row);
+    const match = rowPosition ? byCoordinate.get(coordinateKey(rowPosition)) : undefined;
+    const timestamp = match ?? positions[index];
+    if (!timestamp) return row;
+
+    return { ...row, dateTime: timestamp.dateTime ?? row.dateTime, receivedAt: timestamp.receivedAt ?? row.receivedAt };
+  });
+}
+function locationRowsFromPayload(payload: unknown, filters: ReportFilters, positionsPayload?: unknown) {
+  const fallbackDateTime = "Horodatage non fourni";
+  const payloadRecord = asRecord(payload);
+  const coordinateSource = Array.isArray(payload)
+    ? payload
+    : arrayFromRecord(payloadRecord, ["message", "coordinates", "positions", "points", "history", "rows", "data", "items", "results", "records"]);
+  const directPairs = coordinateSource.map(positionFromPair).filter((position): position is [number, number] => Boolean(position));
+  if (directPairs.length) {
+    const rows = directPairs.map((position, index) => {
+      const timestamp = timestampFromPair(coordinateSource[index]) ?? timestampAt(payloadRecord, index);
+      const dateParts = splitDateTime(timestamp);
+      return { point: index + 1, terminalId: filters.terminalId, dateTime: dateParts.dateTime ?? fallbackDateTime, latitude: position[0], longitude: position[1], coordinates: locationLabel(position) };
+    });
+    return enrichLocationRowsWithTimestamps(rows, positionsPayload);
+  }
+
+  const rows = rowsFromPayload(payload);
+  const mappedRows = rows.map((row, index) => {
+    const record = rowRecord(row);
+    const position = positionFromPair(row) ?? positionFromRecord(record);
+    if (!position) return null;
+    const recordedAt = textValue(record.recordedAt, record.recorded_at, record.timestamp, record.createdAt, record.created_at, record.time, record.date, record.occurredAt);
+    const receivedAt = textValue(record.receivedAt, record.received_at);
+    const timestamp = recordedAt ?? receivedAt;
+    const dateParts = splitDateTime(timestamp);
+    return {
+      point: index + 1,
+      terminalId: textValue(record.terminalId, record.terminalID, record.deviceId, record.lockId) ?? filters.terminalId,
+      dateTime: dateParts.dateTime ?? fallbackDateTime,
+      receivedAt: receivedAt ? splitDateTime(receivedAt).dateTime : undefined,
+      latitude: position[0],
+      longitude: position[1],
+      coordinates: locationLabel(position),
+      source: textValue(record.source, record.name, record.locationName, record.placeName),
+    };
+  }).filter(Boolean) as ApiRecord[];
+  return enrichLocationRowsWithTimestamps(mappedRows, positionsPayload);
+}
+function buildLocationHistoryPath(filters: ReportFilters) { const p = new URLSearchParams(); p.set("from", filters.from); p.set("to", filters.to); p.set("maxPoints", "10000"); return "/history/" + encodeURIComponent(filters.terminalId) + "?" + p.toString(); }
+function buildLocationPositionPaths(filters: ReportFilters) {
+  const base = new URLSearchParams();
+  base.set("terminalId", filters.terminalId);
+  base.set("from", filters.from);
+  base.set("to", filters.to);
+  base.set("limit", "10000");
+  const scoped = new URLSearchParams();
+  scoped.set("from", filters.from);
+  scoped.set("to", filters.to);
+  scoped.set("limit", "10000");
+
+  return [
+    "/positions?" + base.toString(),
+    "/locks/" + encodeURIComponent(filters.terminalId) + "/positions?" + scoped.toString(),
+    "/lock-positions?" + base.toString(),
+  ];
+}
+function locationReportResponse(filters: ReportFilters, payload: unknown, positionsPayload?: unknown): ReportResponse {
+  const rows = locationRowsFromPayload(payload, filters, positionsPayload);
+  return {
+    range: { from: filters.from, to: filters.to },
+    filters: { terminalId: filters.terminalId },
+    summary: {
+      totalPositions: rows.length,
+      firstPosition: rows[0]?.coordinates ?? "--",
+      lastPosition: rows[rows.length - 1]?.coordinates ?? "--",
+    },
+    timeline: rows,
+    pagination: { page: 1, limit: rows.length, total: rows.length },
+    rows,
+  };
+}
+function buildReportPath(filters: ReportFilters) { if (filters.kind === "locations") return buildLocationHistoryPath(filters); const def = reportDefinitions.find(d => d.key === filters.kind) ?? reportDefinitions[0]; const p = new URLSearchParams(); if (filters.from) p.set("from", new Date(filters.from + "T00:00:00.000Z").toISOString()); if (filters.to) p.set("to", new Date(filters.to + "T23:59:59.999Z").toISOString()); if (filters.terminalId) p.set("terminalId", filters.terminalId); p.set("groupBy", filters.groupBy); p.set("page", String(filters.page)); p.set("limit", String(filters.limit)); if (filters.kind === "alerts") { if (filters.type) p.set("type", filters.type); if (filters.severity) p.set("severity", filters.severity); if (filters.status) p.set("status", filters.status); } if ((filters.kind === "geofences" || filters.kind === "unlocks") && filters.geofenceId) p.set("geofenceId", filters.geofenceId); if (filters.kind === "unlocks" && filters.method) p.set("method", filters.method); if (filters.kind === "battery" && filters.below) p.set("below", filters.below); return def.endpoint + "?" + p.toString(); }
 function buildReportsSummaryPath(filters: Pick<ReportFilters, "from" | "to" | "terminalId" | "groupBy">) { const p = new URLSearchParams(); if (filters.from) p.set("from", filters.from); if (filters.to) p.set("to", filters.to); if (filters.terminalId) p.set("terminalId", filters.terminalId); if (filters.groupBy) p.set("groupBy", filters.groupBy); return "/reports?" + p.toString(); }
 function statusClass(status: ReportStatut) { if (status === "Ready") return "bg-[#eaf8ef] text-[#16883f]"; if (status === "Processing") return "bg-[#fff7d6] text-[#a16207]"; return "bg-[#feecec] text-[#ef4444]"; }
 function statusLabel(status: ReportStatut) { if (status === "Ready") return "Pret"; if (status === "Processing") return "En cours"; return "Erreur"; }
@@ -91,6 +288,7 @@ function reportRowTitle(kind: ReportKind, record: ApiRecord, index: number) {
   if (kind === "geofences") return ["Geofence", site, padLock].filter(Boolean).join(" - ") + suffix;
   if (kind === "mileage") return ["Kilometrage", padLock, status ? optionLabel(status) : undefined].filter(Boolean).join(" - ") + suffix;
   if (kind === "battery") return ["Etat batterie", padLock, textValue(record.latest, record.latestPercentage, record.percentage, record.battery, record.averagePercentage)].filter(Boolean).join(" - ") + suffix;
+  if (kind === "locations") return ["Localisation", padLock, textValue(record.coordinates, record.source)].filter(Boolean).join(" - ") + suffix;
   return ["Enregistrement", padLock, type ? optionLabel(type) : undefined].filter(Boolean).join(" - ") || "Enregistrement " + index;
 }
 
@@ -478,7 +676,7 @@ function GenerateReportModal({ filters, devices, loading, onClose, onGenerate }:
           <div className="block text-[12px] font-medium"><span>Periode <span className="text-[#ef4444]">*</span></span><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_112px_112px]"><select value={rangePreset} onChange={e => chooseRange(e.target.value as RangePreset)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none">{rangePresetOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select><input value={draft.from} onChange={e => updateDate({ from: e.target.value })} disabled={!isCustomRange} type="date" className="h-9 w-full rounded-[6px] border border-[#dfe6ee] px-2 text-[11px] outline-none disabled:bg-[#f8fafc] disabled:text-[#94a3b8]" /><input value={draft.to} onChange={e => updateDate({ to: e.target.value })} disabled={!isCustomRange} type="date" className="h-9 w-full rounded-[6px] border border-[#dfe6ee] px-2 text-[11px] outline-none disabled:bg-[#f8fafc] disabled:text-[#94a3b8]" /></div></div>
           <label className="block text-[12px] font-medium">Regrouper par<select value={draft.groupBy} onChange={e => update({ groupBy: e.target.value as GroupBy })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none"><option value="day">Jour</option><option value="week">Semaine</option><option value="month">Mois</option></select></label>
           <div className="border-t border-[#dfe6ee] pt-4"><p className="text-[12px] font-medium">Selection des PadLock</p><p className="mt-1 text-[11px] text-[#64748b]">Selectionnez les PadLock a inclure</p></div>
-          <label className="block text-[12px] font-medium">Selectionner un PadLock <span className="text-[#ef4444]">*</span><select value={draft.terminalId} onChange={e => update({ terminalId: e.target.value })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none"><option value="">Tous les PadLock</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name} - {device.id}</option>)}</select></label>
+          <label className="block text-[12px] font-medium">Selectionner un PadLock <span className="text-[#ef4444]">*</span><select value={draft.terminalId} onChange={e => update({ terminalId: e.target.value })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 outline-none"><option value="">{draft.kind === "locations" ? "Selectionnez un PadLock" : "Tous les PadLock"}</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name} - {device.id}</option>)}</select></label>
           {draft.kind === "alerts" ? <div className="grid grid-cols-3 gap-2"><select value={draft.type} onChange={e => update({ type: e.target.value })} className="h-9 rounded-[6px] border border-[#dfe6ee] px-2 text-[11px]">{alertTypeOptions.map(item => <option key={item} value={item}>{item ? optionLabel(item) : "Tous les types"}</option>)}</select><select value={draft.severity} onChange={e => update({ severity: e.target.value })} className="h-9 rounded-[6px] border border-[#dfe6ee] px-2 text-[11px]">{severityOptions.map(item => <option key={item} value={item}>{item ? optionLabel(item) : "Toutes les severites"}</option>)}</select><select value={draft.status} onChange={e => update({ status: e.target.value })} className="h-9 rounded-[6px] border border-[#dfe6ee] px-2 text-[11px]">{alertStatutOptions.map(item => <option key={item} value={item}>{item ? optionLabel(item) : "Tous les statuts"}</option>)}</select></div> : null}
           {draft.kind === "unlocks" ? <select value={draft.method} onChange={e => update({ method: e.target.value })} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] px-3 text-[12px]">{methodOptions.map(method => <option key={method} value={method}>{method ? optionLabel(method) : "Toutes les methodes"}</option>)}</select> : null}
           <label className="block text-[12px] font-medium">Format de sortie<select value={draft.outputFormat} onChange={e => update({ outputFormat: e.target.value as ReportOutputFormat })} className="mt-2 h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white px-3 outline-none focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"><option value="pdf">PDF</option><option value="excel">Excel</option></select></label>
@@ -516,6 +714,7 @@ export function ReportsPanel() {
   const [reports, setReports] = useState<ReportJob[]>([]);
   const [devices, setDevices] = useState<DeviceOption[]>([]);
   const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
   const [reportTypeFilter, setReportTypeFilter] = useState("All");
   const [lockFilter, setLockFilter] = useState("All");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -531,27 +730,69 @@ export function ReportsPanel() {
 
   useEffect(() => { void loadDevices(); }, []);
   useEffect(() => { void loadDefaultReports(lockFilter === "All" ? "" : lockFilter); }, [lockFilter]);
-  useEffect(() => setPage(1), [query, reportTypeFilter, lockFilter, rowsPerPage]);
+  useEffect(() => setPage(1), [query, sourceFilter, reportTypeFilter, lockFilter, rowsPerPage]);
 
   async function loadDevices() { const [d,l] = await Promise.all([cachedApiJson("/devices", true).catch(()=>[]), cachedApiJson("/locks", true).catch(()=>[])]); const rows = rowsFromPayload(d).length ? rowsFromPayload(d) : rowsFromPayload(l); setDevices(rows.map(normalizeDevice).filter((x): x is DeviceOption => Boolean(x))); }
   async function fetchReportsSummary(filters: Pick<ReportFilters, "from" | "to" | "terminalId" | "groupBy">) { const res = await withTimeout(apiFetch(buildReportsSummaryPath(filters), { cache: "no-store" }), 9000, "Le resume des rapports a pris trop de temps"); const payload = await res.json().catch(()=>null) as ReportsSummaryResponse | { message?: string | string[]; error?: string } | null; if (!res.ok) { const raw = payload && "message" in payload ? payload.message : payload && "error" in payload ? payload.error : undefined; const detail = userFriendlyError(raw, "Impossible de charger le resume des rapports."); throw new Error(detail); } return payload as ReportsSummaryResponse; }
   async function fetchReportPath(path: string, timeoutMs = 9000) { const res = await withTimeout(apiFetch(path, { cache: "no-store" }), timeoutMs, "La demande de rapport a pris trop de temps"); const payload = await res.json().catch(()=>null) as ReportResponse | { message?: string | string[]; error?: string; statusCode?: number } | null; if (!res.ok) { const raw = payload && "message" in payload ? payload.message : payload && "error" in payload ? payload.error : undefined; const detail = userFriendlyError(raw, "Impossible de charger le rapport."); throw new Error(detail); } return payload as ReportResponse; }
   function relaxedReportFilters(filters: ReportFilters) { const retry = { ...filters, terminalId: "", type: "", severity: "", status: "", geofenceId: "", method: "", below: filters.kind === "battery" ? "" : filters.below, page: 1, limit: Math.min(Math.max(filters.limit, 100), 100) }; const from = new Date(); from.setDate(from.getDate() - (filters.kind === "unlocks" ? 180 : 90)); retry.from = from.toISOString().slice(0, 10); retry.to = defaultToDate(); return retry; }
-  function minimalReportPath(filters: ReportFilters) { const def = reportDefinitions.find(d => d.key === filters.kind) ?? reportDefinitions[0]; const p = new URLSearchParams(); const from = new Date(); from.setDate(from.getDate() - (filters.kind === "unlocks" ? 180 : 90)); p.set("from", new Date(from.toISOString().slice(0, 10) + "T00:00:00.000Z").toISOString()); p.set("to", new Date(defaultToDate() + "T23:59:59.999Z").toISOString()); p.set("page", "1"); p.set("limit", "100"); return def.endpoint + "?" + p.toString(); }
-  function reportRequestPaths(filters: ReportFilters, allowFallbacks = true) { if (!allowFallbacks) return [buildReportPath(filters)]; const relaxed = relaxedReportFilters(filters); return Array.from(new Set([buildReportPath(filters), buildReportPath(relaxed), minimalReportPath(filters)])); }
+  function minimalReportPath(filters: ReportFilters) { if (filters.kind === "locations") return buildLocationHistoryPath(filters); const def = reportDefinitions.find(d => d.key === filters.kind) ?? reportDefinitions[0]; const p = new URLSearchParams(); const from = new Date(); from.setDate(from.getDate() - (filters.kind === "unlocks" ? 180 : 90)); p.set("from", new Date(from.toISOString().slice(0, 10) + "T00:00:00.000Z").toISOString()); p.set("to", new Date(defaultToDate() + "T23:59:59.999Z").toISOString()); p.set("page", "1"); p.set("limit", "100"); return def.endpoint + "?" + p.toString(); }
+  function reportRequestPaths(filters: ReportFilters, allowFallbacks = true) { if (filters.kind === "locations") return [buildReportPath(filters)]; if (!allowFallbacks) return [buildReportPath(filters)]; const relaxed = relaxedReportFilters(filters); return Array.from(new Set([buildReportPath(filters), buildReportPath(relaxed), minimalReportPath(filters)])); }
   function pathWithPage(path: string, page: number) { const [base, query = ""] = path.split("?"); const params = new URLSearchParams(query); params.set("page", String(page)); params.set("limit", "100"); return base + "?" + params.toString(); }
   async function fetchAllReportPages(path: string, first: ReportResponse) { const total = Number(first.pagination?.total ?? first.rows?.length ?? 0); const firstRows = first.rows ?? []; const limit = Math.max(1, Number(first.pagination?.limit ?? 100)); const pageCount = Math.ceil(total / limit); if (!Number.isFinite(total) || pageCount <= 1 || firstRows.length >= total) return first; const rest = await Promise.all(Array.from({ length: pageCount - 1 }, (_, index) => fetchReportPath(pathWithPage(path, index + 2)).catch(() => undefined))); const rows = [...firstRows, ...rest.flatMap(response => response?.rows ?? [])].slice(0, total || undefined); return { ...first, rows, pagination: { ...first.pagination, page: 1, limit, total } }; }
-  async function fetchReport(filters: ReportFilters, includeAllPages = true, allowFallbacks = true) { let emptyResponse: ReportResponse | undefined; let lastError: Error | undefined; for (const path of reportRequestPaths(filters, allowFallbacks)) { try { const firstPage = await fetchReportPath(path); const response = includeAllPages ? await fetchAllReportPages(path, firstPage) : firstPage; if (hasReportData(response)) return response; emptyResponse = emptyResponse ?? response; } catch (error) { lastError = error instanceof Error ? error : new Error("Impossible de charger le rapport."); } } if (emptyResponse) return emptyResponse; throw lastError ?? new Error("Impossible de charger le rapport."); }
+  async function fetchLocationPositions(filters: ReportFilters) {
+    for (const path of buildLocationPositionPaths(filters)) {
+      try {
+        const res = await withTimeout(apiFetch(path, { cache: "no-store" }), 6000, "Le chargement des horodatages a pris trop de temps");
+        if (!res.ok) continue;
+        const payload = await res.json().catch(() => null);
+        if (timestampedPositionsFromPayload(payload).length) return payload;
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+  async function fetchLocationReport(filters: ReportFilters) { if (!filters.terminalId) throw new Error("Selectionnez un PadLock pour le rapport de localisation."); const [historyResult, positionsPayload] = await Promise.all([withTimeout(apiFetch(buildLocationHistoryPath(filters), { cache: "no-store" }), 12000, "Le chargement des localisations a pris trop de temps"), fetchLocationPositions(filters)]); const payload = await historyResult.json().catch(()=>null); if (!historyResult.ok) { const raw = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as ApiRecord).message : undefined; throw new Error(userFriendlyError(raw, "Impossible de charger les localisations.")); } return locationReportResponse(filters, payload, positionsPayload); }
+  async function fetchReport(filters: ReportFilters, includeAllPages = true, allowFallbacks = true) { if (filters.kind === "locations") return fetchLocationReport(filters); let emptyResponse: ReportResponse | undefined; let lastError: Error | undefined; for (const path of reportRequestPaths(filters, allowFallbacks)) { try { const firstPage = await fetchReportPath(path); const response = includeAllPages ? await fetchAllReportPages(path, firstPage) : firstPage; if (hasReportData(response)) return response; emptyResponse = emptyResponse ?? response; } catch (error) { lastError = error instanceof Error ? error : new Error("Impossible de charger le rapport."); } } if (emptyResponse) return emptyResponse; throw lastError ?? new Error("Impossible de charger le rapport."); }
   function jobFrom(definition: ReportDefinition, filters: ReportFilters, response?: ReportResponse, error?: string): ReportJob { const time = timestampParts(); return { id: definition.key + "-" + Date.now() + "-" + Math.random().toString(36).slice(2), name: definition.label, status: error ? "Error" : response ? "Ready" : "Processing", type: definition.type, date: time.date, time: time.time, size: response ? formatSize(response) : "--", definition, filters, response, error }; }
-  async function loadDefaultReports(nextTerminalId = lockFilter === "All" ? "" : lockFilter) { setLoading(true); setMessageTone("info"); setMessage("Chargement de l'historique des rapports..."); const baseFilters = { ...defaultFilters(), terminalId: nextTerminalId }; const baseJobs = reportDefinitions.map(definition => jobFrom(definition, { ...baseFilters, kind: definition.key })); setReports(baseJobs); try { const summaryPayload = await fetchReportsSummary(baseFilters); const jobs = reportDefinitions.map(definition => { const filters = { ...baseFilters, kind: definition.key }; const summary = summaryPayload.reports?.[definition.key] ?? {}; const response: ReportResponse = { range: summaryPayload.range, filters: summaryPayload.filters, summary, rows: [], timeline: [] }; return jobFrom(definition, filters, response); }); setReports(jobs); setMessage("Historique des rapports"); } catch (error) { setReports(baseJobs.map(job => ({ ...job, status: "Error" as ReportStatut, error: userFriendlyError(error, "Echec"), size: "--" }))); setMessage(userFriendlyError(error, "Impossible de charger l'historique des rapports.")); } finally { setLoading(false); } }
-  async function generateReport(filters: ReportFilters) { const definition = reportDefinitions.find(d => d.key === filters.kind) ?? reportDefinitions[0]; setLoading(true); setMessageTone("info"); setMessage("Generation du rapport..."); const pending = jobFrom(definition, filters); setReports(current => [pending, ...current]); try { const response = await fetchReport(filters); setReports(current => current.map(item => item.id === pending.id ? { ...item, status: "Ready", response, size: formatSize(response), date: timestampParts().date, time: timestampParts().time } : item)); setShowModal(false); setMessage("Rapport genere."); } catch (error) { setReports(current => current.map(item => item.id === pending.id ? { ...item, status: "Error", error: userFriendlyError(error, "Echec"), size: "--" } : item)); setMessage(userFriendlyError(error, "Impossible de generer le rapport.")); } finally { setLoading(false); } }
-  function deleteReport(id: string) { setReports(current => current.filter(item => item.id !== id)); setSelectedIds(current => current.filter(item => item !== id)); setOpenMenuId(null); }
+  async function loadDefaultReports(nextTerminalId = lockFilter === "All" ? "" : lockFilter) { setLoading(true); setMessageTone("info"); setMessage("Chargement de l'historique des rapports..."); const createdReports = loadCreatedReports(); const baseFilters = { ...defaultFilters(), terminalId: nextTerminalId }; const baseJobs = reportDefinitions.map(definition => jobFrom(definition, { ...baseFilters, kind: definition.key })); setReports([...createdReports, ...baseJobs]); try { const summaryPayload = await fetchReportsSummary(baseFilters); const jobs = reportDefinitions.map(definition => { const filters = { ...baseFilters, kind: definition.key }; const summary = summaryPayload.reports?.[definition.key] ?? {}; const response: ReportResponse = { range: summaryPayload.range, filters: summaryPayload.filters, summary, rows: [], timeline: [] }; return jobFrom(definition, filters, response); }); setReports([...loadCreatedReports(), ...jobs]); setMessage("Historique des rapports"); } catch (error) { setReports([...loadCreatedReports(), ...baseJobs.map(job => ({ ...job, status: "Error" as ReportStatut, error: userFriendlyError(error, "Echec"), size: "--" }))]); setMessage(userFriendlyError(error, "Impossible de charger l'historique des rapports.")); } finally { setLoading(false); } }
+  async function generateReport(filters: ReportFilters) { if (filters.kind === "locations" && !filters.terminalId) { setMessageTone("error"); setMessage("Selectionnez un PadLock pour generer le rapport de localisation."); return; } const definition = reportDefinitions.find(d => d.key === filters.kind) ?? reportDefinitions[0]; setLoading(true); setMessageTone("info"); setMessage("Generation du rapport..."); const pending = jobFrom(definition, filters); setReports(current => [pending, ...current]); try { const response = await fetchReport(filters); const time = timestampParts(); const readyReport: ReportJob = { ...pending, status: "Ready", response, size: formatSize(response), date: time.date, time: time.time }; upsertCreatedReport(readyReport); setReports(current => current.map(item => item.id === pending.id ? readyReport : item)); setShowModal(false); setMessage("Rapport genere."); } catch (error) { const failedReport: ReportJob = { ...pending, status: "Error", error: userFriendlyError(error, "Echec"), size: "--" }; upsertCreatedReport(failedReport); setReports(current => current.map(item => item.id === pending.id ? failedReport : item)); setMessage(userFriendlyError(error, "Impossible de generer le rapport.")); } finally { setLoading(false); } }
+  function deleteReport(id: string) { removeCreatedReport(id); setReports(current => current.filter(item => item.id !== id)); setSelectedIds(current => current.filter(item => item !== id)); setOpenMenuId(null); }
   function hasDetailedReport(report: ReportJob) { return Boolean((report.response?.rows?.length ?? 0) > 0 || (report.response?.timeline?.length ?? 0) > 0); }
-  async function loadReportDetails(report: ReportJob) { if (hasDetailedReport(report)) return report; setLoading(true); setMessageTone("info"); setMessage("Chargement des details du rapport..."); try { const response = await fetchReport(report.filters); const detailed = { ...report, status: "Ready" as ReportStatut, response, size: formatSize(response), error: undefined }; setReports(current => current.map(item => item.id === report.id ? detailed : item)); return detailed; } finally { setLoading(false); } }
+  async function loadReportDetails(report: ReportJob) { if (hasDetailedReport(report)) return report; setLoading(true); setMessageTone("info"); setMessage("Chargement des details du rapport..."); try { const response = await fetchReport(report.filters); const detailed = { ...report, status: "Ready" as ReportStatut, response, size: formatSize(response), error: undefined }; if (loadCreatedReports().some(item => item.id === report.id)) upsertCreatedReport(detailed); setReports(current => current.map(item => item.id === report.id ? detailed : item)); return detailed; } finally { setLoading(false); } }
   async function openReport(report: ReportJob) { setOpenMenuId(null); try { setViewReport(await loadReportDetails(report)); setMessage("Historique des rapports"); } catch (error) { setMessage(userFriendlyError(error, "Impossible de charger les details du rapport.")); } }
   async function downloadReport(report: ReportJob, format: ReportOutputFormat = report.filters.outputFormat ?? "pdf") { try { const detailed = await loadReportDetails(report); const blob = format === "excel" ? createReportExcelBlob(detailed) : createReportPdfBlob(detailed); downloadBlob(blob, safeReportFilename(detailed, format)); setOpenMenuId(null); setMessageTone("info"); setMessage("Historique des rapports"); } catch (error) { setMessageTone("error"); setMessage(userFriendlyError(error, "Impossible de telecharger le rapport.")); } }
   async function exportSelectedReport(format: ReportOutputFormat) { const selectedReports = selectedIds.map(id => reports.find(report => report.id === id)).filter((report): report is ReportJob => Boolean(report)); if (!selectedReports.length) { setMessageTone("error"); setMessage("Selectionnez un rapport avant d'exporter."); return; } setMessageTone("info"); setMessage("Export de " + selectedReports.length + " rapport(s) en cours..."); for (const report of selectedReports) { await downloadReport(report, format); } setMessage("Export termine : " + selectedReports.length + " rapport(s) telecharge(s)."); }
-  const filteredReports = useMemo(() => reports.filter(report => { const matchesQuery = (report.name + " " + report.type + " " + report.status).toLowerCase().includes(query.toLowerCase()); const matchesType = reportTypeFilter === "All" || report.definition.key === reportTypeFilter; const matchesLock = lockFilter === "All" || report.filters.terminalId === lockFilter; return matchesQuery && matchesType && matchesLock; }), [reports, query, reportTypeFilter, lockFilter]);
+  function reportSourceText(report: ReportJob) {
+    const rowSources = (report.response?.rows ?? []).slice(0, 80).map(row => {
+      const record = rowRecord(row);
+      return [record.source, record.name, record.label, record.eventName, record.alertName, record.type, record.method, record.terminalId, record.lockId, record.deviceId].map(value => formatValue(value)).join(" ");
+    }).join(" ");
+
+    return [
+      report.name,
+      report.definition.label,
+      report.definition.description,
+      report.type,
+      report.filters.type,
+      report.filters.method,
+      report.filters.severity,
+      report.filters.status,
+      rowSources,
+    ].filter(Boolean).join(" ").toLowerCase();
+  }
+
+  const filteredReports = useMemo(() => reports.filter(report => {
+    const queryText = (report.name + " " + report.type + " " + report.status).toLowerCase();
+    const sourceText = reportSourceText(report);
+    const matchesQuery = queryText.includes(query.toLowerCase());
+    const matchesSource = !sourceFilter.trim() || sourceText.includes(sourceFilter.trim().toLowerCase());
+    const matchesType = reportTypeFilter === "All" || report.definition.key === reportTypeFilter;
+    const matchesLock = lockFilter === "All" || report.filters.terminalId === lockFilter;
+    return matchesQuery && matchesSource && matchesType && matchesLock;
+  }), [reports, query, sourceFilter, reportTypeFilter, lockFilter]);
   const pageCount = Math.max(1, Math.ceil(filteredReports.length / rowsPerPage)); const pagedReports = filteredReports.slice((page - 1) * rowsPerPage, page * rowsPerPage); const allSelected = pagedReports.length > 0 && pagedReports.every(report => selectedIds.includes(report.id));
   function toggleSelected(id: string) { setSelectedIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]); }
   function toggleAll() { setSelectedIds(current => allSelected ? current.filter(id => !pagedReports.some(report => report.id === id)) : Array.from(new Set([...current, ...pagedReports.map(report => report.id)]))); }
@@ -559,7 +800,7 @@ export function ReportsPanel() {
   return (
     <div className="w-full px-4 py-7 md:px-6">
       <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-start"><div><h1 className="text-[26px] font-bold tracking-normal text-black">Rapports et analyses</h1><p className="mt-2 text-[13px] text-[#64748b]">Consultez et telechargez les donnees historiques et les indicateurs de performance.</p></div><button type="button" onClick={() => setShowModal(true)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] bg-[#111111] px-3 text-[12px] font-semibold text-white"><FileText size={14} />Generer un rapport</button></div>
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div className="flex flex-col gap-3 md:flex-row md:flex-wrap"><label className="relative block w-full md:w-[300px]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} /><input value={query} onChange={e => setQuery(e.target.value)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher un rapport" /></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><SlidersHorizontal size={14} /><select value={reportTypeFilter} onChange={e => setReportTypeFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les types de rapports</option>{reportDefinitions.map(definition => <option key={definition.key} value={definition.key}>{definition.label}</option>)}</select></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><select value={lockFilter} onChange={e => setLockFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les PadLock</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select></label></div><div className="flex gap-2"><button type="button" onClick={() => void loadDefaultReports(lockFilter === "All" ? "" : lockFilter)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">{loading ? <Loader2 size={14} className="animate-spin" /> : null}Actualiser</button><label className="flex h-9 w-fit items-center rounded-[6px] border border-[#dfe6ee] bg-white px-2 text-[12px] font-semibold"><select value={exportFormat} onChange={e => setExportFormat(e.target.value as ReportOutputFormat)} className="bg-transparent outline-none"><option value="pdf">PDF</option><option value="excel">Excel</option></select></label><button type="button" onClick={() => void exportSelectedReport(exportFormat)} aria-disabled={selectedIds.length === 0} className={("flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] px-3 text-[12px] font-semibold transition " + (selectedIds.length === 0 ? "bg-[#f8fafc] text-[#94a3b8]" : "bg-white text-[#111827] hover:bg-[#f8fafc]"))}><Upload size={14} />Exporter</button></div></div>
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div className="flex flex-col gap-3 md:flex-row md:flex-wrap"><label className="relative block w-full md:w-[270px]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} /><input value={query} onChange={e => setQuery(e.target.value)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher un rapport" /></label><label className="relative block w-full md:w-[250px]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} /><input value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Filtrer par nom/source" /></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><SlidersHorizontal size={14} /><select value={reportTypeFilter} onChange={e => setReportTypeFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les types de rapports</option>{reportDefinitions.map(definition => <option key={definition.key} value={definition.key}>{definition.label}</option>)}</select></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><select value={lockFilter} onChange={e => setLockFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les PadLock</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select></label></div><div className="flex gap-2"><button type="button" onClick={() => void loadDefaultReports(lockFilter === "All" ? "" : lockFilter)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">{loading ? <Loader2 size={14} className="animate-spin" /> : null}Actualiser</button><label className="flex h-9 w-fit items-center rounded-[6px] border border-[#dfe6ee] bg-white px-2 text-[12px] font-semibold"><select value={exportFormat} onChange={e => setExportFormat(e.target.value as ReportOutputFormat)} className="bg-transparent outline-none"><option value="pdf">PDF</option><option value="excel">Excel</option></select></label><button type="button" onClick={() => void exportSelectedReport(exportFormat)} aria-disabled={selectedIds.length === 0} className={("flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] px-3 text-[12px] font-semibold transition " + (selectedIds.length === 0 ? "bg-[#f8fafc] text-[#94a3b8]" : "bg-white text-[#111827] hover:bg-[#f8fafc]"))}><Upload size={14} />Exporter</button></div></div>
       {message ? <p className={("mb-4 rounded-[7px] px-3 py-2 text-[12px] " + (messageTone === "error" ? "bg-red-50 text-red-700" : "bg-[#f8fafc] text-[#64748b]"))}>{message}</p> : null}
       <div className="overflow-visible rounded-[7px] border border-[#dfe6ee] bg-white"><div className="grid grid-cols-[48px_2fr_1fr_1fr_1.3fr_1fr_70px] border-b border-[#dfe6ee] px-4 py-3 text-[12px] font-medium text-[#496383]"><input checked={allSelected} onChange={toggleAll} type="checkbox" aria-label="Selectionner tous les rapports" /><span>Nom du rapport</span><span>Statut</span><span>Type</span><span>Date de generation</span><span>Taille</span><span>Actions</span></div>
         {loading && reports.length === 0 ? <div className="grid h-44 place-items-center text-[13px] font-medium text-[#64748b]"><span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Chargement des rapports...</span></div> : null}
@@ -573,3 +814,39 @@ export function ReportsPanel() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

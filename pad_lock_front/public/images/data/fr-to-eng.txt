@@ -1,0 +1,57 @@
+English : Francais
+
+Fleet Intelligence Platform : Gestion intelligente de flotte
+Monitor, secure, and manage your trucks in real-time with smart lock integration. : Surveillez, securisez et gerez vos camions en temps reel avec l'integration des PadLock intelligents.
+Welcome back : Bon retour
+Vehicles Connected : Vehicules connectes
+Trips Tracked Monthly : Trajets suivis par mois
+Lock Security Success Rate : Taux de securite PadLock
+Platform Uptime : Disponibilite plateforme
+All Rights Reserved : Tous droits reserves
+
+All : Tous
+Motion : Mouvement
+Moving : En mouvement
+Idle : A l'arret
+Online : En ligne
+Offline : Hors ligne
+Alarm : Alarme
+Charging : En charge
+Locked : Verrouille
+Unlocked : Deverrouille
+Unknown : Inconnu
+Lock : Verrouillage
+Battery : Batterie
+Last update : Derniere mise a jour
+Location : Lieu
+Status : Statut
+Device : PadLock
+Terminal ID : ID terminal
+Speed : Vitesse
+
+Africa : Afrique
+Asia : Asie
+Europe : Europe
+North America : Amerique du Nord
+South America : Amerique du Sud
+Oceania : Oceanie
+Antarctica : Antarctique
+No countries returned : Aucun pays retourne
+boundary geofence : Geofence limite
+circle : cercle
+polygon : polygone
+route : ligne
+line : ligne
+custom geofences : Geofences personnalisees
+
+Other : Autre
+Illegal RFID Card : Badge RFID illegal
+Back Cover Opened : Ouverture du capot arriere
+Wrong Password : Mot de passe incorrect
+Long Unlock : Deverrouillage prolonge
+Low Battery : Batterie faible
+Vibration : Vibration
+Lock Rope Cut : Cable de verrouillage coupe
+Automatically Locked : Verrouillage automatique
+Swipe Illegal RFID Card : Passage d'un badge RFID non autorise
+Lock is not connected over TCP : Le PadLock n'est pas connecte au serveur TCP

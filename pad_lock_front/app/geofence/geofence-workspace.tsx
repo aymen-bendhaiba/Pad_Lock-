@@ -45,6 +45,24 @@ const continentOptions = [
   "Antarctica",
 ];
 
+function continentLabel(continent: string) {
+  const labels: Record<string, string> = {
+    Africa: "Afrique",
+    Asia: "Asie",
+    Europe: "Europe",
+    "North America": "Amerique du Nord",
+    "South America": "Amerique du Sud",
+    Oceania: "Oceanie",
+    Antarctica: "Antarctique",
+  };
+
+  return labels[continent] ?? continent;
+}
+
+function geofenceShapeLabel(shapeType: SavedGeofence["shapeType"]) {
+  return shapeType === "circle" ? "cercle" : shapeType === "route" ? "ligne" : "polygone";
+}
+
 function rowsFromPayload(payload: unknown) {
   if (Array.isArray(payload)) {
     return payload;
@@ -1168,8 +1186,8 @@ export function GeofenceWorkspace() {
           setCountrySearch("");
           setMessage(
             normalizedPays.length > 0
-              ? `Pays de ${selectedContinent} charges.`
-              : `No countries returned for ${selectedContinent}.`,
+              ? `Pays de ${continentLabel(selectedContinent)} charges.`
+              : `Aucun pays retourne pour ${continentLabel(selectedContinent)}.`,
           );
         }
       } catch {
@@ -1177,7 +1195,7 @@ export function GeofenceWorkspace() {
           setPays([]);
           setSelectedCountryId("");
           setSelectedGeofenceId(null);
-          setMessage(`Impossible de charger les pays de ${selectedContinent}.`);
+          setMessage(`Impossible de charger les pays de ${continentLabel(selectedContinent)}.`);
         }
       }
     }
@@ -1283,7 +1301,7 @@ export function GeofenceWorkspace() {
         rings.length > 0
           ? {
               ...boundaryToGeofence(selectedCountry),
-              name: `${selectedCountry.name} boundary geofence`,
+              name: `Geofence limite - ${selectedCountry.name}`,
               description: "Zone creee a partir des coordonnees locales du pays.",
               area: "Limite du pays",
               rings,
@@ -1388,7 +1406,7 @@ export function GeofenceWorkspace() {
           {continentOptions.map((continent) => {
             return (
               <button
-                key={continent}
+                key={continentLabel(continent)}
                 type="button"
                 onClick={() => selectContinent(continent)}
                 className={`flex w-full items-center justify-between rounded-[7px] border px-3 py-3 text-left transition ${
@@ -1400,7 +1418,7 @@ export function GeofenceWorkspace() {
                 <span className="flex min-w-0 items-center gap-2">
                   <Globe2 size={15} />
                   <span className="truncate text-[13px] font-semibold">
-                    {continent}
+                    {continentLabel(continent)}
                   </span>
                 </span>
                 <span className="rounded-full bg-[#eef3f7] px-2 py-0.5 text-[10px] font-bold text-[#52657d]">
@@ -1449,7 +1467,7 @@ export function GeofenceWorkspace() {
                     <span className="truncate">{geofence.name}</span>
                   </span>
                   <span className="mt-1 block text-[10px] text-[#718096]">
-                    {geofence.shapeType} - {geofence.area}
+                    {geofenceShapeLabel(geofence.shapeType)} - {geofence.area}
                   </span>
                 </button>
                 <div className="mt-3 flex gap-2">
@@ -1496,7 +1514,7 @@ export function GeofenceWorkspace() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[16px] font-bold text-black">
-              {selectedContinent || "Pays"}
+              {selectedContinent ? continentLabel(selectedContinent) : "Pays"}
             </h2>
             <p className="mt-1 text-[12px] text-[#63758d]">
               Selectionnez un pays pour afficher ses geofences.
@@ -1689,3 +1707,4 @@ export function GeofenceWorkspace() {
     </div>
   );
 }
+

@@ -6,10 +6,10 @@ import { LoginForm } from "./login-form";
 import { ThemeToggle } from "./theme-toggle";
 
 const stats = [
-  { value: "5,200+", label: "Vehicles Connected" },
-  { value: "120K+", label: "Trips Tracked Monthly" },
-  { value: "98.7%", label: "Lock Security Success Rate" },
-  { value: "99.9%", label: "Platform Uptime" },
+  { value: "5,200+", label: "Vehicules connectes" },
+  { value: "120K+", label: "Trajets suivis par mois" },
+  { value: "98.7%", label: "Taux de securite PadLock" },
+  { value: "99.9%", label: "Disponibilite plateforme" },
 ];
 
 export default function Home() {
@@ -47,15 +47,15 @@ export default function Home() {
 
             <div className="mt-16 max-w-[660px] md:mt-14">
               <h1 className="text-[56px] font-bold leading-[1.18] tracking-normal text-[#1b1b22] sm:text-[64px] md:text-[66px] lg:text-[68px]">
-                Fleet
+                Gestion
                 <br />
-                Intelligence
+                intelligente
                 <br />
-                Platform
+                de flotte
               </h1>
               <p className="mt-5 max-w-[660px] text-[18px] font-normal leading-[1.18] tracking-normal text-[#24242b] md:text-[18px]">
-                Monitor, secure, and manage your trucks in real-time with smart
-                lock integration.
+                Surveillez, securisez et gerez vos camions en temps reel avec
+                l'integration des PadLock intelligents.
               </p>
             </div>
           </div>
@@ -83,7 +83,7 @@ export default function Home() {
 
           <div className="pt-0">
             <h2 className="text-[25px] font-bold leading-tight tracking-normal text-black">
-              Welcome back
+              Bon retour
             </h2>
 
             <LoginForm />
@@ -98,9 +98,13 @@ export default function Home() {
             height={21}
             className="h-[21px] w-auto"
           />
-          <span>&copy; 2026 Harmony Technology - All Rights Reserved</span>
+          <span>&copy; 2026 Harmony Technology - Tous droits reserves</span>
         </footer>
       </section>
     </main>
   );
 }
+
+
+
+

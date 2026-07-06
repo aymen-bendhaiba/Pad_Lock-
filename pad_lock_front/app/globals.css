@@ -140,22 +140,94 @@ body::-webkit-scrollbar,
   color-scheme: light;
 }
 
-
 html.dark {
-  --background: #07111f;
-  --foreground: #e5eef9;
+  --background: #070a0c;
+  --foreground: #eef6f2;
+  --dark-bg: #070a0c;
+  --dark-shell: #0b1114;
+  --dark-panel: #10181c;
+  --dark-panel-soft: #142024;
+  --dark-border: #22343a;
+  --dark-text: #eef6f2;
+  --dark-muted: #91a59f;
+  --dark-accent: #0284c7;
+  --dark-accent-2: #0f766e;
   color-scheme: dark;
 }
-
-
 
 .login-overlay {
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.64), rgba(255, 255, 255, 0.22));
 }
 
+html.dark,
+html.dark body,
+html.dark main,
+html.dark .dark-surface-root {
+  background-color: var(--dark-bg) !important;
+  color: var(--dark-text) !important;
+}
+
+html.dark .app-shell-root {
+  background:
+    radial-gradient(circle at 16% 8%, rgba(2, 132, 199, 0.13), transparent 30%),
+    radial-gradient(circle at 88% 18%, rgba(15, 118, 110, 0.12), transparent 28%),
+    linear-gradient(180deg, #070a0c 0%, #0a0f11 100%) !important;
+}
+
+html.dark .app-shell-sidebar {
+  background: linear-gradient(180deg, #081012 0%, #070a0c 100%) !important;
+  border-color: rgba(2, 132, 199, 0.18) !important;
+  box-shadow: inset -1px 0 0 rgba(15, 118, 110, 0.12);
+}
+
+html.dark .app-shell-brand {
+  border-color: rgba(2, 132, 199, 0.18) !important;
+  background: rgba(16, 24, 28, 0.58) !important;
+}
+
+html.dark .app-shell-brand p {
+  color: #f8fafc !important;
+}
+
+html.dark .app-shell-header {
+  background: rgba(11, 17, 20, 0.86) !important;
+  border-color: rgba(2, 132, 199, 0.18) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+html.dark .app-shell-nav {
+  background: transparent !important;
+}
+
+html.dark .app-shell-nav-item {
+  color: #91a59f !important;
+}
+
+html.dark .app-shell-nav-item:hover {
+  background: rgba(2, 132, 199, 0.12) !important;
+  color: #eef6f2 !important;
+}
+
+html.dark .app-shell-nav-item.is-active {
+  background: linear-gradient(90deg, rgba(2, 132, 199, 0.22), rgba(15, 118, 110, 0.12)) !important;
+  color: #f8fffb !important;
+  box-shadow: inset 3px 0 0 var(--dark-accent), 0 10px 24px rgba(0, 0, 0, 0.18) !important;
+}
+
+html.dark .app-shell-nav-item.is-active svg {
+  color: #bae6fd !important;
+}
+
+html.dark .app-shell-live-chip {
+  background: rgba(2, 132, 199, 0.18) !important;
+  color: #bae6fd !important;
+  border: 1px solid rgba(2, 132, 199, 0.22);
+}
+
 html.dark .login-page {
-  background-color: #08111f !important;
-  color: #f8fbff !important;
+  background-color: var(--dark-bg) !important;
+  color: var(--dark-text) !important;
 }
 
 html.dark .login-page img[alt=""] {
@@ -165,55 +237,19 @@ html.dark .login-page img[alt=""] {
 
 html.dark .login-page .login-overlay {
   background:
-    radial-gradient(circle at 18% 22%, rgba(42, 157, 144, 0.16), transparent 32%),
-    radial-gradient(circle at 78% 42%, rgba(30, 154, 218, 0.12), transparent 34%),
-    linear-gradient(135deg, #07111f 0%, #0b1626 48%, #08111f 100%);
+    radial-gradient(circle at 18% 18%, rgba(2, 132, 199, 0.18), transparent 32%),
+    radial-gradient(circle at 82% 42%, rgba(15, 118, 110, 0.14), transparent 32%),
+    linear-gradient(135deg, #070a0c 0%, #10181c 52%, #070a0c 100%) !important;
 }
 
 html.dark .login-page .login-card {
-  background-color: rgba(10, 22, 38, 0.88) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36) !important;
-  backdrop-filter: blur(18px);
+  background: linear-gradient(180deg, rgba(16, 24, 28, 0.96), rgba(11, 17, 20, 0.96)) !important;
+  border: 1px solid rgba(2, 132, 199, 0.22) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42) !important;
 }
 
-html.dark .login-page [class*="text-[#19191f]"],
-html.dark .login-page [class*="text-[#14141a]"],
-html.dark .login-page [class*="text-[#1b1b22]"],
-html.dark .login-page [class*="text-[#24242b]"],
-html.dark .login-page [class*="text-[#1f1f24]"],
-html.dark .login-page [class*="text-[#1d1d22]"],
-html.dark .login-page [class*="text-[#17171c]"],
-html.dark .login-page [class*="text-black"] {
-  color: #f8fbff !important;
-  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.28);
-}
-
-html.dark .login-page [class*="text-[#4b4b54]"],
-html.dark .login-page [class*="text-[#777781]"] {
-  color: #c8d5e7 !important;
-}
-
-html.dark .login-page input {
-  background-color: rgba(8, 18, 32, 0.72) !important;
-  border-color: rgba(148, 163, 184, 0.34) !important;
-  color: #f8fbff !important;
-}
-
-html.dark .login-page input::placeholder {
-  color: #8fa2bb !important;
-}
-html.dark body,
-html.dark main,
-html.dark .dark-surface-root {
-  background-color: #07111f !important;
-  color: #e5eef9 !important;
-}
-
-html.dark aside,
-html.dark header,
 html.dark section,
-html.dark nav,
+html.dark article,
 html.dark [class*="bg-white"],
 html.dark [class*="bg-[#ffffff]"],
 html.dark [class*="bg-[#f8fafc]"],
@@ -228,11 +264,51 @@ html.dark [class*="bg-[#e7f8f5]"],
 html.dark [class*="bg-[#d8eadf]"],
 html.dark [class*="bg-[#f3f6fa]"],
 html.dark [class*="bg-[#edf2f7]"] {
-  background-color: #0f1b2d !important;
+  background-color: var(--dark-panel) !important;
 }
 
 html.dark [class*="bg-white/"] {
-  background-color: rgba(15, 27, 45, 0.94) !important;
+  background-color: rgba(16, 24, 28, 0.94) !important;
+}
+
+html.dark article[class*="border"],
+html.dark div[class*="border"][class*="bg-white"],
+html.dark div[class*="border"][class*="bg-[#fbfdff]"],
+html.dark div[class*="border"][class*="bg-[#f8fafc]"] {
+  background: linear-gradient(180deg, #10181c, #0d1417) !important;
+  border-color: rgba(2, 132, 199, 0.18) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24) !important;
+}
+
+html.dark [class*="bg-[#ecfdf5]"],
+html.dark [class*="bg-[#dcfce7]"],
+html.dark [class*="bg-[#eaf8ef]"] {
+  background-color: rgba(2, 132, 199, 0.18) !important;
+}
+
+html.dark [class*="bg-[#eff6ff]"],
+html.dark [class*="bg-[#dbeafe]"] {
+  background-color: rgba(34, 211, 238, 0.12) !important;
+}
+
+html.dark [class*="bg-[#fff1f2]"],
+html.dark [class*="bg-[#fee2e2]"],
+html.dark [class*="bg-[#feecec]"] {
+  background-color: rgba(248, 113, 113, 0.13) !important;
+}
+
+html.dark [class*="bg-[#fff7ed]"],
+html.dark [class*="bg-[#fef3c7]"],
+html.dark [class*="bg-[#fff7d6]"] {
+  background-color: rgba(245, 158, 11, 0.13) !important;
+}
+
+html.dark [class*="bg-[#111827]"],
+html.dark [class*="bg-[#1c1c21]"],
+html.dark [class*="bg-black"] {
+  background: linear-gradient(135deg, var(--dark-accent), var(--dark-accent-2)) !important;
+  color: #04100d !important;
+  box-shadow: 0 14px 28px rgba(2, 132, 199, 0.16) !important;
 }
 
 html.dark [class*="border-[#dfe6ee]"],
@@ -243,7 +319,13 @@ html.dark [class*="border-[#e2e8f0]"],
 html.dark [class*="border-[#d8e2ec]"],
 html.dark [class*="border-[#cbd5e1]"],
 html.dark [class*="border-[#d5e0ea]"] {
-  border-color: #243449 !important;
+  border-color: var(--dark-border) !important;
+}
+
+html.dark [class*="ring-[#2A9D90]"],
+html.dark [class*="border-[#2A9D90]"] {
+  border-color: var(--dark-accent) !important;
+  --tw-ring-color: rgba(2, 132, 199, 0.24) !important;
 }
 
 html.dark [class*="text-black"],
@@ -251,7 +333,7 @@ html.dark [class*="text-[#0f172a]"],
 html.dark [class*="text-[#111827]"],
 html.dark [class*="text-[#172033]"],
 html.dark [class*="text-[#334155]"] {
-  color: #e5eef9 !important;
+  color: var(--dark-text) !important;
 }
 
 html.dark [class*="text-[#475569]"],
@@ -262,46 +344,211 @@ html.dark [class*="text-[#64748b]"],
 html.dark [class*="text-[#718096]"],
 html.dark [class*="text-[#8190a5]"],
 html.dark [class*="text-[#94a3b8]"] {
-  color: #9fb0c7 !important;
+  color: var(--dark-muted) !important;
+}
+
+html.dark [class*="text-[#2A9D90]"],
+html.dark [class*="text-[#059669]"],
+html.dark [class*="text-[#047857]"],
+html.dark [class*="text-[#16883f]"] {
+  color: #bae6fd !important;
 }
 
 html.dark input,
 html.dark select,
 html.dark textarea,
 html.dark button[class*="border"] {
-  background-color: #101d31 !important;
-  border-color: #2b3b52 !important;
-  color: #e5eef9 !important;
+  background-color: #0b1114 !important;
+  border-color: var(--dark-border) !important;
+  color: var(--dark-text) !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: var(--dark-accent) !important;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.22) !important;
 }
 
 html.dark input::placeholder,
 html.dark textarea::placeholder {
-  color: #73849d !important;
+  color: #6f8580 !important;
+}
+
+html.dark table,
+html.dark thead,
+html.dark tbody,
+html.dark tr,
+html.dark td,
+html.dark th {
+  border-color: var(--dark-border) !important;
+}
+
+html.dark thead,
+html.dark th {
+  background-color: #142024 !important;
+  color: var(--dark-text) !important;
+}
+
+html.dark tbody tr:hover,
+html.dark [class*="hover:bg-[#f3f7fa]"]:hover,
+html.dark [class*="hover:bg-[#f8fafc]"]:hover {
+  background-color: #142024 !important;
 }
 
 html.dark .leaflet-control,
 html.dark .leaflet-popup-content-wrapper,
 html.dark .leaflet-popup-tip {
-  background-color: #0f1b2d !important;
-  color: #e5eef9 !important;
-  border-color: #243449 !important;
+  background-color: var(--dark-panel) !important;
+  color: var(--dark-text) !important;
+  border-color: var(--dark-border) !important;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.32) !important;
 }
 
 html.dark .leaflet-container {
-  background: #07111f !important;
+  background: var(--dark-bg) !important;
 }
+
 html.dark [class*="bg-white/55"],
 html.dark [class*="bg-slate-950/45"] {
-  background-color: rgba(7, 17, 31, 0.72) !important;
+  background-color: rgba(7, 10, 12, 0.76) !important;
+  backdrop-filter: blur(10px);
 }
 
 html.dark [class*="shadow-xl"],
 html.dark [class*="shadow-2xl"],
 html.dark [class*="shadow-lg"] {
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.46) !important;
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.36) !important;
 }
 
 html.dark option {
-  background-color: #101d31;
-  color: #e5eef9;
+  background-color: #0b1114;
+  color: var(--dark-text);
+}
+
+html.dark ::selection {
+  background: rgba(2, 132, 199, 0.3);
+  color: #ffffff;
+}
+/* Dark login redesign */
+html.dark .login-page {
+  background: #020617 !important;
+  color: #f8fafc !important;
+}
+
+html.dark .login-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 18% 26%, rgba(56, 189, 248, 0.22), transparent 30%),
+    radial-gradient(circle at 42% 74%, rgba(20, 184, 166, 0.18), transparent 28%),
+    radial-gradient(circle at 84% 22%, rgba(99, 102, 241, 0.18), transparent 32%),
+    linear-gradient(135deg, #020617 0%, #07111f 48%, #030712 100%);
+}
+
+html.dark .login-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(90deg, black, transparent 78%);
+}
+
+html.dark .login-page img[alt=""] {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+html.dark .login-page .login-overlay {
+  background: linear-gradient(90deg, rgba(2, 6, 23, 0.2), rgba(2, 6, 23, 0.04)) !important;
+}
+
+html.dark .login-page [class*="text-[#14141a]"],
+html.dark .login-page [class*="text-[#1b1b22]"],
+html.dark .login-page [class*="text-[#19191f]"],
+html.dark .login-page [class*="text-[#24242b]"],
+html.dark .login-page [class*="text-[#1f1f24]"],
+html.dark .login-page [class*="text-black"] {
+  color: #f8fafc !important;
+}
+
+html.dark .login-page [class*="text-[#4b4b54]"],
+html.dark .login-page [class*="text-[#777781]"] {
+  color: #b8c7d9 !important;
+}
+
+html.dark .login-page h1 {
+  background: linear-gradient(135deg, #ffffff 0%, #bae6fd 48%, #99f6e4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  text-shadow: none !important;
+}
+
+html.dark .login-page dl dd {
+  background: linear-gradient(90deg, #38bdf8, #2dd4bf) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  color: transparent !important;
+}
+
+html.dark .login-card {
+  background: rgba(248, 250, 252, 0.94) !important;
+  border: 1px solid rgba(255, 255, 255, 0.74) !important;
+  box-shadow: 0 34px 90px rgba(2, 6, 23, 0.46) !important;
+  backdrop-filter: blur(20px);
+}
+
+html.dark .login-card,
+html.dark .login-card h2,
+html.dark .login-card h3,
+html.dark .login-card label,
+html.dark .login-card p,
+html.dark .login-card a {
+  color: #0f172a !important;
+  text-shadow: none !important;
+}
+
+html.dark .login-card p,
+html.dark .login-card a {
+  color: #475569 !important;
+}
+
+html.dark .login-card input {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04) !important;
+}
+
+html.dark .login-card input::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.dark .login-card input:focus {
+  border-color: #0ea5e9 !important;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.16) !important;
+}
+
+html.dark .login-card button[type="submit"] {
+  background: linear-gradient(135deg, #0284c7, #0f766e) !important;
+  color: #ffffff !important;
+  box-shadow: 0 14px 30px rgba(14, 165, 233, 0.26) !important;
+}
+
+html.dark .login-card button[type="submit"]:hover {
+  background: linear-gradient(135deg, #0369a1, #115e59) !important;
+}
+
+html.dark .login-card [class*="border-red"],
+html.dark .login-card [class*="bg-red"] {
+  background-color: #fef2f2 !important;
+  border-color: #fecaca !important;
+  color: #b91c1c !important;
 }
