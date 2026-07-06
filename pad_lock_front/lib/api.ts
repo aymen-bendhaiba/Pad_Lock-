@@ -1,4 +1,4 @@
-export const API_BASE_URL =
+﻿export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend-api";
 
 const AUTH_TOKEN_KEY = "pad_lock_access_token";
@@ -381,9 +381,8 @@ export async function warmAppCache() {
     "/dashboard/summary",
     "/devices",
     "/locks",
-    "/alerts",
-    "/geofences",
   ];
 
   await Promise.allSettled(endpoints.map((endpoint) => cachedApiJson(endpoint)));
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { cachedApiJson } from "../lib/api";
@@ -14,29 +14,57 @@ function rowsFromPayload(payload: unknown): unknown[] {
   return [];
 }
 
-export function LiveLocksBadge({ compact = false }: { compact?: boolean }) {
-  const [count, setCount] = useState<number | null>(null);
+let sharedCount: number | null = null;
+let sharedTimer: number | null = null;
+let sharedRequest: Promise<void> | null = null;
+const subscribers = new Set<(count: number | null) => void>();
 
-  useEffect(() => {
-    let isMounted = true;
+function notifySubscribers() {
+  subscribers.forEach((subscriber) => subscriber(sharedCount));
+}
 
-    async function loadLocks() {
-      try {
-        const payload = await cachedApiJson("/locks", true);
-        if (isMounted) setCount(rowsFromPayload(payload).length);
-      } catch {
-        if (isMounted) setCount(null);
-      }
+async function loadSharedLocksCount() {
+  if (sharedRequest) return sharedRequest;
+
+  sharedRequest = (async () => {
+    try {
+      const payload = await cachedApiJson("/locks", true);
+      sharedCount = rowsFromPayload(payload).length;
+    } catch {
+      sharedCount = null;
+    } finally {
+      notifySubscribers();
+      sharedRequest = null;
     }
+  })();
 
-    void loadLocks();
-    const timer = window.setInterval(loadLocks, 30000);
+  return sharedRequest;
+}
 
-    return () => {
-      isMounted = false;
-      window.clearInterval(timer);
-    };
-  }, []);
+function subscribeToLocksCount(subscriber: (count: number | null) => void) {
+  subscribers.add(subscriber);
+  subscriber(sharedCount);
+  void loadSharedLocksCount();
+
+  if (!sharedTimer) {
+    sharedTimer = window.setInterval(() => {
+      void loadSharedLocksCount();
+    }, 30000);
+  }
+
+  return () => {
+    subscribers.delete(subscriber);
+    if (!subscribers.size && sharedTimer) {
+      window.clearInterval(sharedTimer);
+      sharedTimer = null;
+    }
+  };
+}
+
+export function LiveLocksBadge({ compact = false }: { compact?: boolean }) {
+  const [count, setCount] = useState<number | null>(sharedCount);
+
+  useEffect(() => subscribeToLocksCount(setCount), []);
 
   if (compact) return <>{count === null ? "--" : count}</>;
 

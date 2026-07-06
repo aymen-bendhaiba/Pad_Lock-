@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { BellRing, X } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -152,7 +152,9 @@ export function AlertToastListener() {
               if (eventName !== "alert" || !data) continue;
 
               try {
-                const toast = toastFromAlert(JSON.parse(data));
+                const payload = JSON.parse(data);
+                window.dispatchEvent(new CustomEvent("pad-lock:alert-received", { detail: payload }));
+                const toast = toastFromAlert(payload);
 
                 if (toast) showToast(toast);
               } catch {

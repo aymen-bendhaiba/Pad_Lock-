@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { buildAlertStreamUrl, cachedApiJson, getStoredAccessToken } from "../lib/api";
+import { cachedApiJson } from "../lib/api";
 
 function rowsFromPayload(payload: unknown) {
   if (Array.isArray(payload)) return payload;
@@ -34,21 +34,17 @@ function alertIdFromPayload(payload: unknown) {
 
   const record = payload as Record<string, unknown>;
   const timestamp = textValue(record.timestamp, record.createdAt, record.occurredAt, record.time);
-
   const fallbackId = [
     textValue(record.terminalId, record.deviceId, record.lockId),
     textValue(record.type, record.eventType, record.alarmType, record.kind),
     timestamp,
-  ]
-    .filter(Boolean)
-    .join("-");
+  ].filter(Boolean).join("-");
 
-  const primaryId = textValue(record.id, record.uuid, record.eventId);
-
-  return primaryId ?? (fallbackId || undefined);
+  return textValue(record.id, record.uuid, record.eventId) ?? (fallbackId || undefined);
 }
 
 const ALARMS_VIEWED_AT_KEY = "pad_lock_alarms_viewed_at";
+const ALERT_RECEIVED_EVENT = "pad-lock:alert-received";
 
 function alarmTimestamp(row: unknown) {
   if (!row || typeof row !== "object") return 0;
@@ -82,21 +78,6 @@ function isUnreadNotification(row: unknown) {
   return true;
 }
 
-
-function parseStreamMessage(message: string) {
-  const lines = message.split(/\r?\n/);
-  const eventName = lines
-    .find((line) => line.startsWith("event: "))
-    ?.slice(7)
-    .trim();
-  const data = lines
-    .filter((line) => line.startsWith("data: "))
-    .map((line) => line.slice(6))
-    .join("\n");
-
-  return { eventName, data };
-}
-
 export function AlarmNotificationBadge() {
   const pathname = usePathname();
   const suppressNotifications = pathname === "/alarms";
@@ -105,8 +86,6 @@ export function AlarmNotificationBadge() {
 
   useEffect(() => {
     let isMounted = true;
-    let reconnectTimeout: number | null = null;
-    const abortController = new AbortController();
 
     async function loadInitialCount() {
       if (suppressNotifications) {
@@ -121,15 +100,11 @@ export function AlarmNotificationBadge() {
         if (isMounted) {
           const viewedAt = lastViewedAt();
           const rows = rowsFromPayload(payload).filter((row) => isUnreadNotification(row) && alarmTimestamp(row) > viewedAt);
-          seenAlertIds.current = new Set(
-            rows.map(alertIdFromPayload).filter((id): id is string => Boolean(id)),
-          );
+          seenAlertIds.current = new Set(rows.map(alertIdFromPayload).filter((id): id is string => Boolean(id)));
           setCount(rows.length);
         }
       } catch {
-        if (isMounted) {
-          setCount(0);
-        }
+        if (isMounted) setCount(0);
       }
     }
 
@@ -139,91 +114,27 @@ export function AlarmNotificationBadge() {
       setCount(0);
     }
 
-    function addLiveAlert(payload: unknown) {
+    function addLiveAlert(event: Event) {
+      const payload = event instanceof CustomEvent ? event.detail : undefined;
       if (suppressNotifications || !isUnreadNotification(payload)) return;
 
       const incomingId = alertIdFromPayload(payload);
-
       if (incomingId && seenAlertIds.current.has(incomingId)) return;
       if (incomingId) seenAlertIds.current.add(incomingId);
 
       setCount((currentCount) => currentCount + 1);
     }
 
-    async function waitBeforeReconnect() {
-      await new Promise<void>((resolve) => {
-        reconnectTimeout = window.setTimeout(resolve, 1500);
-      });
-    }
-
-    async function openStream() {
-      await Promise.resolve();
-
-      while (isMounted && !abortController.signal.aborted) {
-        const token = getStoredAccessToken();
-
-        if (!token) return;
-
-        try {
-          const response = await fetch(buildAlertStreamUrl(), {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            signal: abortController.signal,
-          });
-
-          if (!response.ok || !response.body) {
-            throw new Error("Impossible de recevoir les alertes en temps reel");
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (isMounted && !abortController.signal.aborted) {
-            const { done, value } = await reader.read();
-
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const messages = buffer.split(/\r?\n\r?\n/);
-            buffer = messages.pop() ?? "";
-
-            for (const message of messages) {
-              const { eventName, data } = parseStreamMessage(message);
-
-              if (eventName === "alert" && data) {
-                try {
-                  addLiveAlert(JSON.parse(data));
-                } catch {
-                  // Ignore malformed live events; the next valid alert will still update the badge.
-                }
-              }
-            }
-          }
-        } catch {
-          if (!isMounted || abortController.signal.aborted) return;
-        }
-
-        if (isMounted && !abortController.signal.aborted) {
-          await waitBeforeReconnect();
-        }
-      }
-    }
-
     window.addEventListener("pad-lock:alarms-viewed", resetNotifications);
-    loadInitialCount();
-    openStream();
+    window.addEventListener(ALERT_RECEIVED_EVENT, addLiveAlert);
+    void loadInitialCount();
 
     return () => {
       isMounted = false;
-      abortController.abort();
       window.removeEventListener("pad-lock:alarms-viewed", resetNotifications);
-
-      if (reconnectTimeout) {
-        window.clearTimeout(reconnectTimeout);
-      }
+      window.removeEventListener(ALERT_RECEIVED_EVENT, addLiveAlert);
     };
   }, [suppressNotifications]);
+
   return <>{count > 99 ? "99+" : count}</>;
 }

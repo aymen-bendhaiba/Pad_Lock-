@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   Bell,
@@ -747,20 +747,8 @@ export function AlarmsPanel() {
       setSourceLabel("Chargement des alertes...");
 
       try {
-        const [alertsPayload, locksPayload] = await Promise.all([
-          cachedApiJson(alertListPath, true),
-          cachedApiJson("/locks", true).catch(() => []),
-        ]);
-        const terminalIds = terminalIdsFromPayload(locksPayload);
-        const eventResults = await Promise.allSettled(
-          terminalIds.map((terminalId) =>
-            cachedApiJson("/locks/" + encodeURIComponent(terminalId) + "/events", true),
-          ),
-        );
-        const eventAlarms = eventResults.flatMap((result) =>
-          result.status === "fulfilled" ? normalizeAlarms(result.value) : [],
-        );
-        const normalized = mergeAlarmRows(normalizeAlarms(alertsPayload), eventAlarms);
+        const alertsPayload = await cachedApiJson(alertListPath, true);
+        const normalized = normalizeAlarms(alertsPayload);
 
         if (!isMounted) return;
 
@@ -1382,3 +1370,5 @@ export function AlarmsPanel() {
     </div>
   );
 }
+
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Pause, Play, RotateCcw, Search, X } from "lucide-react";
@@ -522,10 +522,10 @@ function normalizeStatus(record: ApiRecord, _activeAlert: boolean, telemetryAvai
   return "Online";
 }
 
-function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecord>, alerts: ApiRecord[]): LiveMapAsset {
+function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecord>): LiveMapAsset {
   const terminalId = getTerminalId(record);
   const lock = locksByTerminal.get(terminalId);
-  const activeAlert = hasActiveAlert(terminalId, alerts);
+  const activeAlert = false;
   const telemetryAvailable = isTelemetryAvailable(record, lock);
   const isCharging = normalizeCharging(record, lock, telemetryAvailable);
   const status = normalizeStatus(record, activeAlert, telemetryAvailable, isCharging);
@@ -554,19 +554,17 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
 }
 
 async function loadLiveAssets(force = false) {
-  const [devicesPayload, locksPayload, alertsPayload] = await Promise.all([
+  const [devicesPayload, locksPayload] = await Promise.all([
     cachedApiJson("/devices", force),
     cachedApiJson("/locks", force).catch(() => []),
-    cachedApiJson("/alerts", force).catch(() => []),
   ]);
 
   const devices = rowsFromPayload(devicesPayload);
   const locks = rowsFromPayload(locksPayload);
-  const alerts = rowsFromPayload(alertsPayload);
   const locksByTerminal = keyByTerminal(locks);
   const sourceRows = devices.length ? devices : locks;
 
-  const assets = sourceRows.map((row) => normalizeAsset(row, locksByTerminal, alerts));
+  const assets = sourceRows.map((row) => normalizeAsset(row, locksByTerminal));
 
   return assets;
 }

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import {
@@ -1079,6 +1079,8 @@ export function GeofenceWorkspace() {
   const [countryPresetGeofence, setCountryPresetGeofence] =
     useState<SavedGeofence | null>(null);
   const [customGeoIndex, setCustomGeoIndex] = useState<Map<string, CustomGeoFeature>>(new Map());
+  const [customGeoLoaded, setCustomGeoLoaded] = useState(false);
+  const [customGeoLoading, setCustomGeoLoading] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [message, setMessage] = useState("Chargement des geofences.");
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
@@ -1086,33 +1088,6 @@ export function GeofenceWorkspace() {
   const [savingGeofenceId, setSavingGeofenceId] = useState<string | null>(null);
   const [deletingGeofenceId, setDeletingGeofenceId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadCustomGeo() {
-      try {
-        const response = await fetch(customGeoPath, { cache: "force-cache" });
-        if (!response.ok) throw new Error("Custom geography file unavailable.");
-
-        const payload = await response.json();
-        const index = indexCustomGeoFeatures(payload);
-
-        if (isMounted) {
-          setCustomGeoIndex(index);
-        }
-      } catch {
-        if (isMounted) {
-          setCustomGeoIndex(new Map());
-        }
-      }
-    }
-
-    loadCustomGeo();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
   useEffect(() => {
     let isMounted = true;
 
@@ -1207,6 +1182,42 @@ export function GeofenceWorkspace() {
     };
   }, [selectedContinent]);
 
+  useEffect(() => {
+    if (!selectedCountryId || customGeoLoaded || customGeoLoading) {
+      return;
+    }
+
+    let isMounted = true;
+    setCustomGeoLoading(true);
+
+    async function loadCustomGeo() {
+      try {
+        const response = await fetch(customGeoPath, { cache: "force-cache" });
+        if (!response.ok) throw new Error("Custom geography file unavailable.");
+        const payload = await response.json();
+        const index = indexCustomGeoFeatures(payload);
+
+        if (isMounted) {
+          setCustomGeoIndex(index);
+          setCustomGeoLoaded(true);
+        }
+      } catch {
+        if (isMounted) {
+          setCustomGeoIndex(new Map());
+          setCustomGeoLoaded(true);
+        }
+      } finally {
+        if (isMounted) setCustomGeoLoading(false);
+      }
+    }
+
+    void loadCustomGeo();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [customGeoLoaded, customGeoLoading, selectedCountryId]);
+
   const selectedCountry = countries.find((country) => country.id === selectedCountryId);
   const geofenceSearchQuery = countrySearch.trim().toLowerCase();
   const selectedCountryMatchesSearch = selectedCountry
@@ -1287,6 +1298,13 @@ export function GeofenceWorkspace() {
         return;
       }
 
+      if (!customGeoLoaded) {
+        setCountryCenter(null);
+        setCountryRings([]);
+        setCountryPresetGeofence(null);
+        return;
+      }
+
       const feature = findCustomGeoFeature(selectedCountry, customGeoIndex);
       const geometryRings = ringsFromGeometry(feature?.geometry);
       const bboxRings = feature?.bbox
@@ -1309,13 +1327,13 @@ export function GeofenceWorkspace() {
           : null,
       );
 
-      if (rings.length === 0 && customGeoIndex.size > 0) {
+      if (customGeoLoaded && rings.length === 0 && customGeoIndex.size > 0) {
         setMessage(`Coordonnees locales introuvables pour ${selectedCountry.name}.`);
       }
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [customGeoIndex, selectedCountry, selectedCountryId]);
+  }, [customGeoIndex, customGeoLoaded, selectedCountry, selectedCountryId]);
 
   function selectContinent(continent: string) {
     setSelectedContinent(continent);
@@ -1707,4 +1725,8 @@ export function GeofenceWorkspace() {
     </div>
   );
 }
+
+
+
+
 

@@ -103,7 +103,8 @@ function saveCreatedReports(reports: ReportJob[]) {
 }
 function upsertCreatedReport(report: ReportJob) {
   const reports = loadCreatedReports().filter(item => item.id !== report.id);
-  saveCreatedReports([report, ...reports]);
+  const lightweightReport = { ...report, response: undefined };
+  saveCreatedReports([lightweightReport, ...reports]);
 }
 function removeCreatedReport(id: string) {
   saveCreatedReports(loadCreatedReports().filter(report => report.id !== id));
@@ -754,7 +755,7 @@ export function ReportsPanel() {
 
     return null;
   }
-  async function fetchLocationReport(filters: ReportFilters) { if (!filters.terminalId) throw new Error("Selectionnez un PadLock pour le rapport de localisation."); const [historyResult, positionsPayload] = await Promise.all([withTimeout(apiFetch(buildLocationHistoryPath(filters), { cache: "no-store" }), 12000, "Le chargement des localisations a pris trop de temps"), fetchLocationPositions(filters)]); const payload = await historyResult.json().catch(()=>null); if (!historyResult.ok) { const raw = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as ApiRecord).message : undefined; throw new Error(userFriendlyError(raw, "Impossible de charger les localisations.")); } return locationReportResponse(filters, payload, positionsPayload); }
+  async function fetchLocationReport(filters: ReportFilters) { if (!filters.terminalId) throw new Error("Selectionnez un PadLock pour le rapport de localisation."); const res = await withTimeout(apiFetch(buildLocationHistoryPath(filters), { cache: "no-store" }), 12000, "Le chargement des localisations a pris trop de temps"); const payload = await res.json().catch(()=>null); if (!res.ok) { const raw = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as ApiRecord).message : undefined; throw new Error(userFriendlyError(raw, "Impossible de charger les localisations.")); } return locationReportResponse(filters, payload); }
   async function fetchReport(filters: ReportFilters, includeAllPages = true, allowFallbacks = true) { if (filters.kind === "locations") return fetchLocationReport(filters); let emptyResponse: ReportResponse | undefined; let lastError: Error | undefined; for (const path of reportRequestPaths(filters, allowFallbacks)) { try { const firstPage = await fetchReportPath(path); const response = includeAllPages ? await fetchAllReportPages(path, firstPage) : firstPage; if (hasReportData(response)) return response; emptyResponse = emptyResponse ?? response; } catch (error) { lastError = error instanceof Error ? error : new Error("Impossible de charger le rapport."); } } if (emptyResponse) return emptyResponse; throw lastError ?? new Error("Impossible de charger le rapport."); }
   function jobFrom(definition: ReportDefinition, filters: ReportFilters, response?: ReportResponse, error?: string): ReportJob { const time = timestampParts(); return { id: definition.key + "-" + Date.now() + "-" + Math.random().toString(36).slice(2), name: definition.label, status: error ? "Error" : response ? "Ready" : "Processing", type: definition.type, date: time.date, time: time.time, size: response ? formatSize(response) : "--", definition, filters, response, error }; }
   async function loadDefaultReports(nextTerminalId = lockFilter === "All" ? "" : lockFilter) { setLoading(true); setMessageTone("info"); setMessage("Chargement de l'historique des rapports..."); const createdReports = loadCreatedReports(); const baseFilters = { ...defaultFilters(), terminalId: nextTerminalId }; const baseJobs = reportDefinitions.map(definition => jobFrom(definition, { ...baseFilters, kind: definition.key })); setReports([...createdReports, ...baseJobs]); try { const summaryPayload = await fetchReportsSummary(baseFilters); const jobs = reportDefinitions.map(definition => { const filters = { ...baseFilters, kind: definition.key }; const summary = summaryPayload.reports?.[definition.key] ?? {}; const response: ReportResponse = { range: summaryPayload.range, filters: summaryPayload.filters, summary, rows: [], timeline: [] }; return jobFrom(definition, filters, response); }); setReports([...loadCreatedReports(), ...jobs]); setMessage("Historique des rapports"); } catch (error) { setReports([...loadCreatedReports(), ...baseJobs.map(job => ({ ...job, status: "Error" as ReportStatut, error: userFriendlyError(error, "Echec"), size: "--" }))]); setMessage(userFriendlyError(error, "Impossible de charger l'historique des rapports.")); } finally { setLoading(false); } }
@@ -814,6 +815,8 @@ export function ReportsPanel() {
     </div>
   );
 }
+
+
 
 
 
