@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch, cachedApiJson } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
+import { translateBackendValue, translateFieldLabel } from "../../lib/translations";
 
 type ApiRecord = Record<string, unknown>;
 type ReportStatut = "Ready" | "Processing" | "Error";
@@ -115,7 +116,7 @@ function textValue(...values: unknown[]) { for (const v of values) { if (typeof 
 function terminalIdFromRecord(record: ApiRecord) { return textValue(record.terminalId, record.terminalID, record.deviceId, record.lockId, record.id, record.imei) ?? "unknown"; }
 function normalizeDevice(row: unknown, index: number): DeviceOption | null { const r = asRecord(row); if (!r) return null; const id = terminalIdFromRecord(r); if (id === "unknown") return null; return { id, name: textValue(r.name, r.assetName, r.deviceName, r.label) ?? "PadLock-" + index }; }
 function formatValue(value: unknown): string { if (value === null || value === undefined || value === "") return "--"; if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2); if (typeof value === "boolean") return value ? "Oui" : "Non"; if (typeof value === "string") return optionLabel(value); if (Array.isArray(value)) return value.length + " element" + (value.length === 1 ? "" : "s"); if (typeof value === "object") return JSON.stringify(value); return String(value); }
-function formatLabel(key: string) { const labels: Record<string, string> = { total: "Total", totalAlerts: "Total alarmes", totalOpenings: "Total ouvertures", totalOpened: "Total ouvertures", totalGeofences: "Total geofences", samples: "Echantillons", entries: "Entrees", exits: "Sorties", totalKilometers: "Kilometres totaux", affectedLocks: "PadLock concernes", unresolved: "Non resolues", critical: "Critiques", averagePercentage: "Batterie moyenne", lowSamples: "Batteries faibles", movingSamples: "Positions en mouvement", terminalId: "PadLock", type: "Type", severity: "Severite", status: "Statut", createdAt: "Date creation", timestamp: "Horodatage", receivedAt: "Recu le", latitude: "Latitude", longitude: "Longitude", method: "Methode", geofenceId: "Geofence", point: "Point", position: "Position", location: "Localisation", recordedAt: "Horodatage", dateTime: "Date et heure", coordinates: "Coordonnees", totalPositions: "Positions", firstPosition: "Premiere position", lastPosition: "Derniere position" }; return labels[key] ?? key.replace(/([A-Z])/g, " $1").replace(/[_-]+/g, " ").replace(/^./, c => c.toUpperCase()); }
+function formatLabel(key: string) { const labels: Record<string, string> = { total: "Total", totalAlerts: "Total alarmes", totalOpenings: "Total ouvertures", totalOpened: "Total ouvertures", totalGeofences: "Total geofences", samples: "Echantillons", entries: "Entrees", exits: "Sorties", totalKilometers: "Kilometres totaux", affectedLocks: "PadLock concernes", unresolved: "Non resolues", critical: "Critiques", averagePercentage: "Batterie moyenne", lowSamples: "Batteries faibles", movingSamples: "Positions en mouvement", terminalId: "PadLock", type: "Type", severity: "Severite", status: "Statut", createdAt: "Date creation", timestamp: "Horodatage", receivedAt: "Recu le", latitude: "Latitude", longitude: "Longitude", method: "Methode", geofenceId: "Geofence", point: "Point", position: "Position", location: "Localisation", recordedAt: "Horodatage", dateTime: "Date et heure", coordinates: "Coordonnees", totalPositions: "Positions", firstPosition: "Premiere position", lastPosition: "Derniere position" }; return labels[key] ?? translateFieldLabel(key); }
 function rowRecord(row: unknown): ApiRecord { return asRecord(row) ?? { value: row }; }
 function rowColumns(rows: unknown[]) { const keys = new Set<string>(); for (const row of rows.slice(0, 20)) Object.keys(rowRecord(row)).forEach(k => keys.add(k)); return Array.from(keys).filter(k => k !== "deletedAt"); }
 function reportTotal(response?: ReportResponse) { const summary = response?.summary; const total = Number(response?.pagination?.total ?? summary?.total ?? summary?.totalAlerts ?? summary?.totalOpenings ?? response?.rows?.length ?? 0); return Number.isFinite(total) ? total : 0; }
@@ -272,7 +273,8 @@ function buildReportPath(filters: ReportFilters) { if (filters.kind === "locatio
 function buildReportsSummaryPath(filters: Pick<ReportFilters, "from" | "to" | "terminalId" | "groupBy">) { const p = new URLSearchParams(); if (filters.from) p.set("from", filters.from); if (filters.to) p.set("to", filters.to); if (filters.terminalId) p.set("terminalId", filters.terminalId); if (filters.groupBy) p.set("groupBy", filters.groupBy); return "/reports?" + p.toString(); }
 function statusClass(status: ReportStatut) { if (status === "Ready") return "bg-[#eaf8ef] text-[#16883f]"; if (status === "Processing") return "bg-[#fff7d6] text-[#a16207]"; return "bg-[#feecec] text-[#ef4444]"; }
 function statusLabel(status: ReportStatut) { if (status === "Ready") return "Pret"; if (status === "Processing") return "En cours"; return "Erreur"; }
-function optionLabel(value: string) { const labels: Record<string, string> = { rfid: "RFID", static_password: "Mot de passe statique", dynamic_password: "Mot de passe dynamique", bluetooth: "Bluetooth", other: "Autre", locked: "Verrouille", unlock_rejected: "Deverrouillage refuse", tamper: "Sabotage", geofence: "Geofence", low_battery: "Batterie faible", offline: "Hors ligne", info: "Information", warning: "Avertissement", critical: "Critique", unresolved: "Non resolu", resolved: "Resolu", acknowledged: "Acquitte" }; return labels[value] ?? value; }
+function reportTypeLabel(type: string) { return translateBackendValue(type, type); }
+function optionLabel(value: string) { const labels: Record<string, string> = { rfid: "RFID", static_password: "Mot de passe statique", dynamic_password: "Mot de passe dynamique", bluetooth: "Bluetooth", other: "Autre", locked: "Verrouille", unlock_rejected: "Deverrouillage refuse", tamper: "Sabotage", geofence: "Geofence", low_battery: "Batterie faible", offline: "Hors ligne", info: "Information", warning: "Avertissement", critical: "Critique", unresolved: "Non resolu", resolved: "Resolu", acknowledged: "Acquitte" }; return labels[value] ?? translateBackendValue(value, value); }
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) { return Promise.race([promise, new Promise<T>((_, reject) => window.setTimeout(() => reject(new Error(message)), timeoutMs))]); }
 function reportRowTitle(kind: ReportKind, record: ApiRecord, index: number) {
   const terminal = textValue(record.terminalId, record.terminalID, record.lockId, record.deviceId, record.imei);
@@ -715,7 +717,7 @@ export function ReportsPanel() {
   const [reports, setReports] = useState<ReportJob[]>([]);
   const [devices, setDevices] = useState<DeviceOption[]>([]);
   const [query, setQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("All sources");
   const [reportTypeFilter, setReportTypeFilter] = useState("All");
   const [lockFilter, setLockFilter] = useState("All");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -733,7 +735,7 @@ export function ReportsPanel() {
   useEffect(() => { void loadDefaultReports(lockFilter === "All" ? "" : lockFilter); }, [lockFilter]);
   useEffect(() => setPage(1), [query, sourceFilter, reportTypeFilter, lockFilter, rowsPerPage]);
 
-  async function loadDevices() { const [d,l] = await Promise.all([cachedApiJson("/devices", true).catch(()=>[]), cachedApiJson("/locks", true).catch(()=>[])]); const rows = rowsFromPayload(d).length ? rowsFromPayload(d) : rowsFromPayload(l); setDevices(rows.map(normalizeDevice).filter((x): x is DeviceOption => Boolean(x))); }
+  async function loadDevices() { const [d,l] = await Promise.all([cachedApiJson("/devices").catch(()=>[]), cachedApiJson("/locks").catch(()=>[])]); const rows = rowsFromPayload(d).length ? rowsFromPayload(d) : rowsFromPayload(l); setDevices(rows.map(normalizeDevice).filter((x): x is DeviceOption => Boolean(x))); }
   async function fetchReportsSummary(filters: Pick<ReportFilters, "from" | "to" | "terminalId" | "groupBy">) { const res = await withTimeout(apiFetch(buildReportsSummaryPath(filters), { cache: "no-store" }), 9000, "Le resume des rapports a pris trop de temps"); const payload = await res.json().catch(()=>null) as ReportsSummaryResponse | { message?: string | string[]; error?: string } | null; if (!res.ok) { const raw = payload && "message" in payload ? payload.message : payload && "error" in payload ? payload.error : undefined; const detail = userFriendlyError(raw, "Impossible de charger le resume des rapports."); throw new Error(detail); } return payload as ReportsSummaryResponse; }
   async function fetchReportPath(path: string, timeoutMs = 9000) { const res = await withTimeout(apiFetch(path, { cache: "no-store" }), timeoutMs, "La demande de rapport a pris trop de temps"); const payload = await res.json().catch(()=>null) as ReportResponse | { message?: string | string[]; error?: string; statusCode?: number } | null; if (!res.ok) { const raw = payload && "message" in payload ? payload.message : payload && "error" in payload ? payload.error : undefined; const detail = userFriendlyError(raw, "Impossible de charger le rapport."); throw new Error(detail); } return payload as ReportResponse; }
   function relaxedReportFilters(filters: ReportFilters) { const retry = { ...filters, terminalId: "", type: "", severity: "", status: "", geofenceId: "", method: "", below: filters.kind === "battery" ? "" : filters.below, page: 1, limit: Math.min(Math.max(filters.limit, 100), 100) }; const from = new Date(); from.setDate(from.getDate() - (filters.kind === "unlocks" ? 180 : 90)); retry.from = from.toISOString().slice(0, 10); retry.to = defaultToDate(); return retry; }
@@ -785,11 +787,26 @@ export function ReportsPanel() {
     ].filter(Boolean).join(" ").toLowerCase();
   }
 
+  const sourceOptions = useMemo(() => {
+    const options = reports.flatMap((report) => [
+      report.name,
+      report.definition.label,
+      report.type,
+      report.filters.terminalId,
+      report.filters.type ? optionLabel(report.filters.type) : "",
+      report.filters.method ? optionLabel(report.filters.method) : "",
+      report.filters.severity ? optionLabel(report.filters.severity) : "",
+      report.filters.status ? optionLabel(report.filters.status) : "",
+    ]);
+
+    return ["All sources", ...Array.from(new Set(options.filter(Boolean))).sort((a, b) => a.localeCompare(b))];
+  }, [reports]);
+
   const filteredReports = useMemo(() => reports.filter(report => {
     const queryText = (report.name + " " + report.type + " " + report.status).toLowerCase();
     const sourceText = reportSourceText(report);
     const matchesQuery = queryText.includes(query.toLowerCase());
-    const matchesSource = !sourceFilter.trim() || sourceText.includes(sourceFilter.trim().toLowerCase());
+    const matchesSource = sourceFilter === "All sources" || sourceText.includes(sourceFilter.trim().toLowerCase());
     const matchesType = reportTypeFilter === "All" || report.definition.key === reportTypeFilter;
     const matchesLock = lockFilter === "All" || report.filters.terminalId === lockFilter;
     return matchesQuery && matchesSource && matchesType && matchesLock;
@@ -801,11 +818,45 @@ export function ReportsPanel() {
   return (
     <div className="w-full px-4 py-7 md:px-6">
       <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-start"><div><h1 className="text-[26px] font-bold tracking-normal text-black">Rapports et analyses</h1><p className="mt-2 text-[13px] text-[#64748b]">Consultez et telechargez les donnees historiques et les indicateurs de performance.</p></div><button type="button" onClick={() => setShowModal(true)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] bg-[#111111] px-3 text-[12px] font-semibold text-white"><FileText size={14} />Generer un rapport</button></div>
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div className="flex flex-col gap-3 md:flex-row md:flex-wrap"><label className="relative block w-full md:w-[270px]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} /><input value={query} onChange={e => setQuery(e.target.value)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Rechercher un rapport" /></label><label className="relative block w-full md:w-[250px]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} /><input value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15" placeholder="Filtrer par nom/source" /></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><SlidersHorizontal size={14} /><select value={reportTypeFilter} onChange={e => setReportTypeFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les types de rapports</option>{reportDefinitions.map(definition => <option key={definition.key} value={definition.key}>{definition.label}</option>)}</select></label><label className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold"><select value={lockFilter} onChange={e => setLockFilter(e.target.value)} className="bg-transparent outline-none"><option value="All">Tous les PadLock</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select></label></div><div className="flex gap-2"><button type="button" onClick={() => void loadDefaultReports(lockFilter === "All" ? "" : lockFilter)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">{loading ? <Loader2 size={14} className="animate-spin" /> : null}Actualiser</button><label className="flex h-9 w-fit items-center rounded-[6px] border border-[#dfe6ee] bg-white px-2 text-[12px] font-semibold"><select value={exportFormat} onChange={e => setExportFormat(e.target.value as ReportOutputFormat)} className="bg-transparent outline-none"><option value="pdf">PDF</option><option value="excel">Excel</option></select></label><button type="button" onClick={() => void exportSelectedReport(exportFormat)} aria-disabled={selectedIds.length === 0} className={("flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] px-3 text-[12px] font-semibold transition " + (selectedIds.length === 0 ? "bg-[#f8fafc] text-[#94a3b8]" : "bg-white text-[#111827] hover:bg-[#f8fafc]"))}><Upload size={14} />Exporter</button></div></div>
+      <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(220px,1fr)_220px_250px_180px_auto] lg:items-center">
+        <label className="relative block min-w-0">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} />
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            className="h-9 w-full rounded-[6px] border border-[#dfe6ee] bg-white pl-9 pr-3 text-[12px] outline-none placeholder:text-[#8190a5] focus:border-[#2A9D90] focus:ring-2 focus:ring-[#2A9D90]/15"
+            placeholder="Rechercher un rapport"
+          />
+        </label>
+        <label className="flex h-9 min-w-0 items-center rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">
+          <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="min-w-0 flex-1 bg-transparent outline-none">
+            <option value="All sources">Tous les noms/sources</option>
+            {sourceOptions.filter(option => option !== "All sources").map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        <label className="flex h-9 min-w-0 items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">
+          <SlidersHorizontal size={14} className="shrink-0" />
+          <select value={reportTypeFilter} onChange={e => setReportTypeFilter(e.target.value)} className="min-w-0 flex-1 bg-transparent outline-none">
+            <option value="All">Tous les types de rapports</option>
+            {reportDefinitions.map(definition => <option key={definition.key} value={definition.key}>{definition.label}</option>)}
+          </select>
+        </label>
+        <label className="flex h-9 min-w-0 items-center rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">
+          <select value={lockFilter} onChange={e => setLockFilter(e.target.value)} className="min-w-0 flex-1 bg-transparent outline-none">
+            <option value="All">Tous les PadLock</option>
+            {devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}
+          </select>
+        </label>
+        <div className="flex justify-start gap-2 lg:justify-end">
+          <button type="button" onClick={() => void loadDefaultReports(lockFilter === "All" ? "" : lockFilter)} className="flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] bg-white px-3 text-[12px] font-semibold">{loading ? <Loader2 size={14} className="animate-spin" /> : null}Actualiser</button>
+          <label className="flex h-9 w-fit items-center rounded-[6px] border border-[#dfe6ee] bg-white px-2 text-[12px] font-semibold"><select value={exportFormat} onChange={e => setExportFormat(e.target.value as ReportOutputFormat)} className="bg-transparent outline-none"><option value="pdf">PDF</option><option value="excel">Excel</option></select></label>
+          <button type="button" onClick={() => void exportSelectedReport(exportFormat)} aria-disabled={selectedIds.length === 0} className={("flex h-9 w-fit items-center gap-2 rounded-[6px] border border-[#dfe6ee] px-3 text-[12px] font-semibold transition " + (selectedIds.length === 0 ? "bg-[#f8fafc] text-[#94a3b8]" : "bg-white text-[#111827] hover:bg-[#f8fafc]"))}><Upload size={14} />Exporter</button>
+        </div>
+      </div>
       {message ? <p className={("mb-4 rounded-[7px] px-3 py-2 text-[12px] " + (messageTone === "error" ? "bg-red-50 text-red-700" : "bg-[#f8fafc] text-[#64748b]"))}>{message}</p> : null}
       <div className="overflow-visible rounded-[7px] border border-[#dfe6ee] bg-white"><div className="grid grid-cols-[48px_2fr_1fr_1fr_1.3fr_1fr_70px] border-b border-[#dfe6ee] px-4 py-3 text-[12px] font-medium text-[#496383]"><input checked={allSelected} onChange={toggleAll} type="checkbox" aria-label="Selectionner tous les rapports" /><span>Nom du rapport</span><span>Statut</span><span>Type</span><span>Date de generation</span><span>Taille</span><span>Actions</span></div>
         {loading && reports.length === 0 ? <div className="grid h-44 place-items-center text-[13px] font-medium text-[#64748b]"><span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Chargement des rapports...</span></div> : null}
-        {pagedReports.map((report, index) => <div key={report.id} className={("relative grid grid-cols-[48px_2fr_1fr_1fr_1.3fr_1fr_70px] items-center border-b border-[#dfe6ee] px-4 py-4 text-[12px] " + (index === 1 ? "bg-[#f1f1f2]" : "bg-white"))}><input checked={selectedIds.includes(report.id)} onChange={() => toggleSelected(report.id)} type="checkbox" aria-label={"Selectionner " + report.name} /><span><span className="font-medium">{report.name}</span>{report.error ? <span className="mt-1 block max-w-[320px] truncate text-[11px] text-[#ef4444]" title={report.error}>{report.error}</span> : null}</span><span><span className={"rounded-[5px] px-2 py-1 text-[11px] font-medium " + statusClass(report.status)}>{statusLabel(report.status)}</span></span><span>{report.type}</span><span>{report.date}<br /><span className="text-[#64748b]">{report.time}</span></span><span>{report.size}</span><button type="button" onClick={() => setOpenMenuId(openMenuId === report.id ? null : report.id)} className="grid size-7 place-items-center rounded-[5px] hover:bg-[#eef4fa]" aria-label={"Ouvrir les actions pour " + report.name}><Ellipsis size={16} /></button>{openMenuId === report.id ? <div className="absolute right-8 top-10 z-10 w-[132px] overflow-hidden rounded-[6px] border border-[#dfe6ee] bg-white py-1 text-[12px] shadow-lg"><button type="button" onClick={() => void openReport(report)} className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-[#eef4fa]"><Eye size={13} />Voir</button><button type="button" onClick={() => void downloadReport(report)} className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-[#eef4fa]"><Download size={13} />Telecharger</button><button type="button" onClick={() => deleteReport(report.id)} className="flex h-8 w-full items-center gap-2 px-3 text-left text-red-700 hover:bg-red-50"><Trash2 size={13} />Supprimer</button></div> : null}</div>)}
+          {pagedReports.map((report, index) => <div key={report.id} className={("relative grid grid-cols-[48px_2fr_1fr_1fr_1.3fr_1fr_70px] items-center border-b border-[#dfe6ee] px-4 py-4 text-[12px] " + (index === 1 ? "bg-[#f1f1f2]" : "bg-white"))}><input checked={selectedIds.includes(report.id)} onChange={() => toggleSelected(report.id)} type="checkbox" aria-label={"Selectionner " + report.name} /><span><span className="font-medium">{report.name}</span>{report.error ? <span className="mt-1 block max-w-[320px] truncate text-[11px] text-[#ef4444]" title={report.error}>{report.error}</span> : null}</span><span><span className={"rounded-[5px] px-2 py-1 text-[11px] font-medium " + statusClass(report.status)}>{statusLabel(report.status)}</span></span><span>{reportTypeLabel(report.type)}</span><span>{report.date}<br /><span className="text-[#64748b]">{report.time}</span></span><span>{report.size}</span><button type="button" onClick={() => setOpenMenuId(openMenuId === report.id ? null : report.id)} className="grid size-7 place-items-center rounded-[5px] hover:bg-[#eef4fa]" aria-label={"Ouvrir les actions pour " + report.name}><Ellipsis size={16} /></button>{openMenuId === report.id ? <div className="absolute right-8 top-10 z-10 w-[132px] overflow-hidden rounded-[6px] border border-[#dfe6ee] bg-white py-1 text-[12px] shadow-lg"><button type="button" onClick={() => void openReport(report)} className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-[#eef4fa]"><Eye size={13} />Voir</button><button type="button" onClick={() => void downloadReport(report)} className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-[#eef4fa]"><Download size={13} />Telecharger</button><button type="button" onClick={() => deleteReport(report.id)} className="flex h-8 w-full items-center gap-2 px-3 text-left text-red-700 hover:bg-red-50"><Trash2 size={13} />Supprimer</button></div> : null}</div>)}
         {!loading && pagedReports.length === 0 ? <div className="grid h-44 place-items-center text-[13px] font-medium text-[#64748b]">Aucun rapport ne correspond aux filtres.</div> : null}
       </div>
       <Pager selectedCount={selectedIds.length} page={page} pageCount={pageCount} rowsPerPage={rowsPerPage} onRowsPerPage={setRowsPerPage} onPage={setPage} />

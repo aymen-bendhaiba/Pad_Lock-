@@ -14,6 +14,68 @@ function rowsFromPayload(payload: unknown): unknown[] {
   return [];
 }
 
+function recordFrom(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function nestedRecord(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+  }
+
+  return null;
+}
+
+function textValue(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+
+  return undefined;
+}
+
+function booleanValue(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "online", "connected", "active"].includes(normalized)) return true;
+      if (["false", "offline", "disconnected", "inactive"].includes(normalized)) return false;
+    }
+  }
+
+  return undefined;
+}
+
+function isOnlinePadLock(value: unknown) {
+  const record = recordFrom(value);
+  if (!record) return false;
+
+  const status = textValue(record.status, record.connectionStatus, record.state)?.toLowerCase();
+  const nested = nestedRecord(record, ["position", "telemetry", "lock", "device"]);
+  const nestedStatus = nested ? textValue(nested.status, nested.connectionStatus, nested.state)?.toLowerCase() : undefined;
+  const online = booleanValue(
+    record.online,
+    record.connected,
+    record.telemetryAvailable,
+    record.isOnline,
+    nested?.online,
+    nested?.connected,
+    nested?.telemetryAvailable,
+    nested?.isOnline,
+  );
+
+  if (online !== undefined) return online;
+
+  return status === "online" || status === "connected" || nestedStatus === "online" || nestedStatus === "connected";
+}
+
 let sharedCount: number | null = null;
 let sharedTimer: number | null = null;
 let sharedRequest: Promise<void> | null = null;
@@ -28,8 +90,8 @@ async function loadSharedLocksCount() {
 
   sharedRequest = (async () => {
     try {
-      const payload = await cachedApiJson("/locks", true);
-      sharedCount = rowsFromPayload(payload).length;
+      const payload = await cachedApiJson("/devices", true);
+      sharedCount = rowsFromPayload(payload).filter(isOnlinePadLock).length;
     } catch {
       sharedCount = null;
     } finally {

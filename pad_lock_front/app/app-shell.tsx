@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   Bell,
@@ -116,9 +117,10 @@ export function AppShell({
             {navItems.map((item) => {
               const active = isActiveLink(activeHref, item.href);
               return (
-                <a
+                <Link
                   key={item.label}
                   href={item.href}
+                  prefetch
                   className={
                     "app-shell-nav-item flex h-10 items-center justify-between rounded-[7px] px-4 text-[13px] font-medium transition " +
                     (active
@@ -135,7 +137,7 @@ export function AppShell({
                       {item.badge}
                     </span>
                   ) : null}
-                </a>
+                </Link>
               );
             })}
           </nav>

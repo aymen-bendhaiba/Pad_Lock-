@@ -13,6 +13,7 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import type { LiveMapAsset, LiveMapPlaybackPoint } from "./live-map-data";
+import { translateBackendValue, translateFieldLabel } from "../../lib/translations";
 
 const GOOGLE_MAP_LAYER = {
   attribution: "Donnees cartographiques &copy; Google",
@@ -54,7 +55,7 @@ function detailLabel(label: string) {
     Speed: "Vitesse",
   };
 
-  return labels[label] ?? label;
+  return labels[label] ?? translateFieldLabel(label);
 }
 
 function detailValue(label: string, value: string) {
@@ -63,7 +64,7 @@ function detailValue(label: string, value: string) {
   if (label === "Status") return value === "Moving" ? "En mouvement" : value === "Charging" ? "En charge" : value === "Online" ? "En ligne" : value === "Idle" ? "A l'arret" : value === "Offline" ? "Hors ligne" : value === "Alarm" ? "Alarme" : value;
   if (label === "Locked") return value === "Locked" ? "Verrouille" : value === "Unlocked" ? "Deverrouille" : value;
   if (label === "Charging") return value === "true" || value === "Yes" ? "En charge" : value === "false" || value === "No" ? "Non" : value;
-  return value;
+  return translateBackendValue(value, value);
 }
 
 function reverseGeocodeKey(position: [number, number]) {

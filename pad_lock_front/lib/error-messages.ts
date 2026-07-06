@@ -1,3 +1,5 @@
+import { translateSentence } from "./translations";
+
 type BackendLikeError = { message?: unknown; error?: unknown; statusCode?: unknown; status?: unknown };
 
 function textFromUnknown(value: unknown): string {
@@ -46,6 +48,12 @@ export function userFriendlyError(error: unknown, fallback = "Une erreur est sur
   if (lower.includes("409") || lower.includes("conflict") || lower.includes("duplicate") || lower.includes("already exists")) {
     return "Cet element existe deja ou entre en conflit avec une donnee existante.";
   }
+  if (lower.includes("rejected") || lower.includes("refused")) {
+    return "La demande a ete refusee par le PadLock. Verifiez les parametres puis reessayez.";
+  }
+  if (lower.includes("lock did not answer") || lower.includes("command") || lower.includes("device")) {
+    return "Le PadLock n'a pas confirme la commande. Verifiez sa connexion puis reessayez.";
+  }
   if (lower.includes("400") || lower.includes("bad request") || lower.includes("must be") || lower.includes("should not exist") || lower.includes("property") || lower.includes("valid iso") || lower.includes("greater than") || lower.includes("validation")) {
     return "Certaines informations sont invalides. Verifiez les champs puis reessayez.";
   }
@@ -57,5 +65,5 @@ export function userFriendlyError(error: unknown, fallback = "Une erreur est sur
     return fallback;
   }
 
-  return raw.length > 180 ? fallback : raw;
+  return raw.length > 180 ? fallback : translateSentence(raw, fallback);
 }

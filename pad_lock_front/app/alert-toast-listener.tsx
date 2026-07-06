@@ -4,6 +4,7 @@ import { BellRing, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { buildAlertStreamUrl, getStoredAccessToken } from "../lib/api";
+import { translateBackendValue, translateSentence } from "../lib/translations";
 
 type AlertToast = {
   id: string;
@@ -59,8 +60,8 @@ function toastFromAlert(payload: unknown): AlertToast | null {
   const record = payload as Record<string, unknown>;
   const lock = record.lock && typeof record.lock === "object" ? record.lock as Record<string, unknown> : undefined;
   const device = record.device && typeof record.device === "object" ? record.device as Record<string, unknown> : undefined;
-  const type = textValue(record.type, record.eventType, record.alarmType, record.kind) ?? "New alert";
-  const severity = textValue(record.severity, record.level, record.priority) ?? "Alert";
+  const type = translateBackendValue(textValue(record.type, record.eventType, record.alarmType, record.kind), "Nouvelle alerte");
+  const severity = translateBackendValue(textValue(record.severity, record.level, record.priority), "Alerte");
   const terminalId = textValue(
     record.terminalId,
     record.deviceId,
@@ -69,13 +70,14 @@ function toastFromAlert(payload: unknown): AlertToast | null {
     device?.id,
     lock?.terminalId,
     lock?.id,
-  ) ?? "Unknown device";
+  ) ?? "Equipement inconnu";
   const message = textValue(record.description, record.message, record.reason)
-    ?? `${type} received from ${terminalId}`;
+    ? translateSentence(textValue(record.description, record.message, record.reason))
+    : `${type} recue depuis ${terminalId}`;
 
   return {
     id: alertIdFromPayload(payload) || `${terminalId}-${type}-${Date.now()}`,
-    title: `${severity}: ${type}`,
+    title: `${severity} : ${type}`,
     message,
     severity,
     device: terminalId,

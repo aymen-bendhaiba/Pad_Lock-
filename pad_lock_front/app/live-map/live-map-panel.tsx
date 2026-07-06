@@ -7,6 +7,7 @@ import { LIVE_MAP_COLORS, type LiveMapAsset, type LiveMapLockState, type LiveMap
 import { LiveMapShell } from "./live-map-shell";
 import { apiFetch, cachedApiJson } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
+import { translateBackendValue, translateFieldLabel } from "../../lib/translations";
 
 type ApiRecord = Record<string, unknown>;
 type AssetFilter = "all" | "online" | "moving" | "charging" | "idle" | "alarm" | "offline" | "locked" | "unlocked";
@@ -271,7 +272,8 @@ function formatDeviceValue(value: unknown) {
   }
 
   if (typeof value === "string") {
-    return value.trim() || undefined;
+    const text = value.trim();
+    return text ? translateBackendValue(text, text) : undefined;
   }
 
   return undefined;
@@ -310,25 +312,25 @@ function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
   const locationName = extractPlaceName(record) ?? (lock ? extractPlaceName(lock) : undefined);
 
   if (locationName) {
-    details.push({ label: "Location", value: locationName });
+    details.push({ label: "Localisation", value: locationName });
   }
 
   if (!telemetryAvailable) {
     details.push({ label: "Connexion", value: "Hors ligne" });
   }
   const preferredFields: { label: string; keys: string[] }[] = [
-    { label: "Terminal ID", keys: ["terminalId", "terminalID", "deviceId", "lockId", "id"] },
-    { label: "Device", keys: ["name", "assetName", "deviceName", "label"] },
-    { label: "Status", keys: ["status", "state", "movementStatus", "motion"] },
-    { label: "Battery", keys: ["battery", "batteryLevel", "power", "batteryPercent"] },
-    { label: "Charging", keys: ["isCharging", "charging", "charge", "chargingState", "chargerConnected"] },
-    { label: "Locked", keys: ["locked", "isLocked", "lockState", "statusLock"] },
-    { label: "Online", keys: ["online", "isOnline", "connected"] },
-    { label: "Speed", keys: ["speed", "speedKph", "velocity"] },
+    { label: "PadLock", keys: ["terminalId", "terminalID", "deviceId", "lockId", "id"] },
+    { label: "Equipement", keys: ["name", "assetName", "deviceName", "label"] },
+    { label: "Statut", keys: ["status", "state", "movementStatus", "motion"] },
+    { label: "Batterie", keys: ["battery", "batteryLevel", "power", "batteryPercent"] },
+    { label: "Charge", keys: ["isCharging", "charging", "charge", "chargingState", "chargerConnected"] },
+    { label: "Verrouillage", keys: ["locked", "isLocked", "lockState", "statusLock"] },
+    { label: "Connexion", keys: ["online", "isOnline", "connected"] },
+    { label: "Vitesse", keys: ["speed", "speedKph", "velocity"] },
   ];
 
   for (const field of preferredFields) {
-    if (!telemetryAvailable && ["Status", "Battery", "Charging", "Locked", "Speed"].includes(field.label)) {
+    if (!telemetryAvailable && ["Statut", "Batterie", "Charge", "Verrouillage", "Vitesse"].includes(field.label)) {
       field.keys.forEach((fieldKey) => usedKeys.add(fieldKey));
       continue;
     }
@@ -352,7 +354,7 @@ function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
 
     if (value) {
       details.push({
-        label: key.replace(/([A-Z])/g, " $1").replace(/^./, (char) => char.toUpperCase()),
+        label: translateFieldLabel(key),
         value,
       });
     }
@@ -534,7 +536,7 @@ function normalizeAsset(record: ApiRecord, locksByTerminal: Map<string, ApiRecor
     ?? `PadLock-${terminalId}`;
 
   const deviceDetails = buildDeviceDetails(record, lock, telemetryAvailable);
-  const batteryFromDevice = deviceDetails.find((detail) => detail.label === "Battery")?.value;
+  const batteryFromDevice = deviceDetails.find((detail) => detail.label === "Batterie")?.value;
 
   return {
     id: terminalId,

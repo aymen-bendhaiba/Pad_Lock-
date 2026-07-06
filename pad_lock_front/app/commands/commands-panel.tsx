@@ -455,8 +455,8 @@ export function CommandsPanel() {
 
       try {
         const [devicesPayload, locksPayload] = await Promise.all([
-          cachedApiJson("/devices", true).catch(() => []),
-          cachedApiJson("/locks", true).catch(() => []),
+          cachedApiJson("/devices").catch(() => []),
+          cachedApiJson("/locks").catch(() => []),
         ]);
         const locks = rowsFromPayload(locksPayload);
         const locksByTerminal = keyByTerminal(locks);

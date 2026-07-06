@@ -228,7 +228,7 @@ export async function loginWithCredentials(email: string, password: string) {
     const message =
       payload && "message" in payload && payload.message
         ? payload.message
-        : "Login failed. Please check your email and password.";
+        : "Connexion refusee. Verifiez votre email et votre mot de passe.";
 
     throw new Error(message);
   }

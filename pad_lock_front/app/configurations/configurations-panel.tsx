@@ -373,8 +373,8 @@ export function ConfigurationsPanel() {
       setDeviceState("loading");
       try {
         const [devicesPayload, locksPayload] = await Promise.all([
-          cachedApiJson("/devices", true).catch(() => []),
-          cachedApiJson("/locks", true).catch(() => []),
+          cachedApiJson("/devices").catch(() => []),
+          cachedApiJson("/locks").catch(() => []),
         ]);
         const lockRows = rowsFromPayload(locksPayload);
         const locksByTerminal = new Map(lockRows.map((row) => [terminalIdFromRecord(row), row]));
@@ -421,9 +421,12 @@ export function ConfigurationsPanel() {
     configReadInFlightRef.current = terminalIdValue;
     setConfigState("loading");
     setActiveAction(action);
-    setMessage("Chargement de la configuration enregistree...");
+    setMessage(force ? "Lecture de la configuration depuis le PadLock..." : "Chargement de la configuration enregistree...");
     try {
-      const response = await apiFetch("/locks/" + encodeURIComponent(terminalIdValue) + "/configuration", { cache: "no-store" });
+      const response = await apiFetch(
+        "/locks/" + encodeURIComponent(terminalIdValue) + "/configuration" + (force ? "/refresh" : ""),
+        force ? { method: "POST", cache: "no-store" } : { cache: "no-store" },
+      );
       const payload = await response.json().catch(() => null) as ConfigResponse | { message?: string } | null;
       if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de lire la configuration."));
       const nextConfig = payload as ConfigResponse;
@@ -433,7 +436,7 @@ export function ConfigurationsPanel() {
       setSaveState("idle");
       lastAutoReadTerminalRef.current = terminalIdValue;
       void readPhones(terminalIdValue);
-      setMessage(nextConfig.configured ? "Configuration chargee depuis le serveur." : "Aucune configuration enregistree pour ce PadLock. Remplissez les champs puis ecrivez la section voulue.");
+      setMessage(nextConfig.configured ? (force ? "Configuration lue depuis le PadLock." : "Configuration chargee depuis le serveur.") : "Aucune configuration enregistree pour ce PadLock. Remplissez les champs puis ecrivez la section voulue.");
     } catch (error) {
       setConfigState("error");
       setSaveState("error");
