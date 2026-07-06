@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { loginWithCredentials } from "../lib/api";
 import { userFriendlyError } from "../lib/error-messages";
 
@@ -12,9 +12,16 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    setIsReady(true);
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!isReady || isSubmitting) return;
+
     setError("");
     setIsSubmitting(true);
 
@@ -29,7 +36,7 @@ export function LoginForm() {
   }
 
   return (
-    <form className="mt-8" aria-label="Formulaire de connexion" onSubmit={handleSubmit}>
+    <form className="mt-8" aria-label="Formulaire de connexion" method="post" onSubmit={handleSubmit}>
       <div>
         <h3 className="text-[16px] font-semibold leading-none text-[#17171c] dark:text-[#e5eef9]">
           Connexion
@@ -98,7 +105,7 @@ export function LoginForm() {
       <div className="mt-5">
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={!isReady || isSubmitting}
           className="h-9 w-full rounded-[4px] bg-[#1c1c21] text-[12px] font-medium text-white transition hover:bg-[#0C4E71] focus:outline-none focus:ring-2 focus:ring-[#1E9ADA]/35 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-[#1E9ADA] dark:hover:bg-[#167db4]"
         >
           {isSubmitting ? "Connexion..." : "Se connecter"}
