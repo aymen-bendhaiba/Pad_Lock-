@@ -28,6 +28,15 @@ type HistoryPoint = {
   timestamp: string;
 };
 
+type PositionStatusAttributes = {
+  backCoverOpen: boolean | null;
+  backCover: 'ouvert' | 'ferme' | null;
+  capotArriere: 'ouvert' | 'ferme' | null;
+  lockMotorBlocked: boolean | null;
+  lockMotor: 'bloque' | 'non_bloque' | null;
+  moteurVerrouillage: 'bloque' | 'non_bloque' | null;
+};
+
 @Injectable()
 export class PositionsService {
   constructor(
@@ -84,6 +93,7 @@ export class PositionsService {
         'position.isLocked',
         'position.isPositioned',
         'position.mileage',
+        'position.rawPayload',
         'position.recordedAt',
         'position.receivedAt',
         'lockDevice.id',
@@ -116,6 +126,9 @@ export class PositionsService {
         ? LockDeviceStatus.Online
         : LockDeviceStatus.Offline;
       const telemetryAvailable = isConnected;
+      const attributes = telemetryAvailable
+        ? positionStatusAttributes(position.rawPayload)
+        : emptyPositionStatusAttributes();
 
       return {
         id: position.terminalId,
@@ -143,6 +156,12 @@ export class PositionsService {
               : null,
           isCharging: telemetryAvailable ? position.isCharging : null,
           isLocked: telemetryAvailable ? position.isLocked : null,
+          backCoverOpen: attributes.backCoverOpen,
+          backCover: attributes.backCover,
+          capotArriere: attributes.capotArriere,
+          lockMotorBlocked: attributes.lockMotorBlocked,
+          lockMotor: attributes.lockMotor,
+          moteurVerrouillage: attributes.moteurVerrouillage,
           is_positioned: position.isPositioned,
           mileage: telemetryAvailable ? position.mileage : null,
           telemetryAvailable,
@@ -230,6 +249,73 @@ export class PositionsService {
       order: { recordedAt: 'DESC' },
     });
   }
+}
+
+function emptyPositionStatusAttributes(): PositionStatusAttributes {
+  return {
+    backCoverOpen: null,
+    backCover: null,
+    capotArriere: null,
+    lockMotorBlocked: null,
+    lockMotor: null,
+    moteurVerrouillage: null,
+  };
+}
+
+function positionStatusAttributes(
+  rawPayload: Record<string, unknown> | null,
+): PositionStatusAttributes {
+  const empty = emptyPositionStatusAttributes();
+  const status =
+    rawPayload?.status &&
+    typeof rawPayload.status === 'object' &&
+    !Array.isArray(rawPayload.status)
+      ? (rawPayload.status as Record<string, unknown>)
+      : null;
+
+  if (!status) {
+    return empty;
+  }
+
+  const isBackCoverOpen = booleanValue(status.isBackCoverOpenAlarm);
+  const isBackCoverClosed = booleanValue(status.isBackCoverClosed);
+  const backCover =
+    isBackCoverOpen === true
+      ? 'ouvert'
+      : isBackCoverClosed === true
+        ? 'ferme'
+        : null;
+  const lockMotorBlocked = booleanValue(status.isMotorStuck);
+  const lockMotor =
+    lockMotorBlocked === null
+      ? null
+      : lockMotorBlocked
+        ? 'bloque'
+        : 'non_bloque';
+
+  return {
+    backCoverOpen: backCover === null ? null : backCover === 'ouvert',
+    backCover,
+    capotArriere: backCover,
+    lockMotorBlocked,
+    lockMotor,
+    moteurVerrouillage: lockMotor,
+  };
+}
+
+function booleanValue(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'oui'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'non'].includes(normalized)) return false;
+  }
+
+  return null;
 }
 
 function startOfUtcToday(): Date {
