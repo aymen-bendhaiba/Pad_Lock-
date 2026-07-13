@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   Bell,
@@ -16,7 +16,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, buildAlertStreamUrl, cachedApiJson, getStoredAccessToken } from "../../lib/api";
 import { translateBackendValue, translateSentence } from "../../lib/translations";
 import { AlarmPositionMapShell } from "./alarm-position-map-shell";
@@ -123,14 +123,19 @@ function splitTimestamp(value: unknown) {
   };
 }
 
-function terminalIdsFromPayload(payload: unknown) {
-  return Array.from(new Set(rowsFromPayload(payload).map((row) => {
-    if (!row || typeof row !== "object") return undefined;
+function deviceNamesFromPayload(payload: unknown) {
+  const names = new Map<string, string>();
+
+  for (const row of rowsFromPayload(payload)) {
+    if (!row || typeof row !== "object") continue;
     const record = row as Record<string, unknown>;
-    const lock = record.lock && typeof record.lock === "object" ? record.lock as Record<string, unknown> : undefined;
-    const device = record.device && typeof record.device === "object" ? record.device as Record<string, unknown> : undefined;
-    return textValue(record.terminalId, record.deviceId, record.lockId, record.id, device?.terminalId, device?.id, lock?.terminalId, lock?.id);
-  }).filter((id): id is string => Boolean(id))));
+    const terminalId = textValue(record.terminalId, record.deviceId, record.lockId, record.id);
+    const name = textValue(record.name, record.deviceName, record.assetName, record.label);
+
+    if (terminalId && name) names.set(terminalId, name);
+  }
+
+  return names;
 }
 
 function mergeAlarmRows(...groups: AlarmRow[][]) {
@@ -143,7 +148,7 @@ function mergeAlarmRows(...groups: AlarmRow[][]) {
   return Array.from(byId.values()).sort((a, b) => (b.timestampMs ?? 0) - (a.timestampMs ?? 0));
 }
 
-function normalizeAlarms(payload: unknown): AlarmRow[] {
+function normalizeAlarms(payload: unknown, deviceNames = new Map<string, string>()): AlarmRow[] {
   return rowsFromPayload(payload).reduce<AlarmRow[]>((alarms, row, index) => {
     if (!row || typeof row !== "object") return alarms;
 
@@ -155,6 +160,10 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
     const device =
       record.device && typeof record.device === "object"
         ? (record.device as Record<string, unknown>)
+        : undefined;
+    const lockDevice =
+      record.lockDevice && typeof record.lockDevice === "object"
+        ? (record.lockDevice as Record<string, unknown>)
         : undefined;
     const timestamp = splitTimestamp(
       record.timestamp ?? record.createdAt ?? record.occurredAt ?? record.time,
@@ -177,7 +186,7 @@ function normalizeAlarms(payload: unknown): AlarmRow[] {
       textValue(record.type, record.eventType, record.alarmType, record.kind) ??
       "Alerte";
     const sourceName =
-      textValue(record.source, record.name, record.sourceName, record.origin, record.sender, device?.name, lock?.name) ??
+      textValue(deviceNames.get(deviceLabel), device?.name, lock?.name, lockDevice?.name, record.name, record.sourceName, record.source, record.origin, record.sender) ??
       "Source inconnue";
 
     const rawDescription = textValue(record.description, record.message, record.reason, record.payload);
@@ -257,6 +266,10 @@ const backendLabelMap: Record<string, string> = {
   geofence_exit: "Sortie de geofence",
   low_battery: "Batterie faible",
   battery_low: "Batterie faible",
+  back_cover_opened: "Capot d’arrière ouvert",
+  back_cover_open: "Capot d’arrière ouvert",
+  back_cover_open_alarm: "Capot d’arrière ouvert",
+  capot_arriere_ouvert: "Capot d’arrière ouvert",
   offline: "Hors ligne",
   online: "En ligne",
   movement: "Mouvement",
@@ -731,6 +744,7 @@ export function AlarmsPanel() {
   const [actionLabel, setActionLabel] = useState("");
   const [streamState, setStreamState] = useState<StreamState>("connecting");
   const [streamLabel, setStreamLabel] = useState("Connexion au flux des alertes...");
+  const deviceNamesRef = useRef(new Map<string, string>());
   const range = useMemo(
     () => (rangeMode === "custom" ? customAlarmRange(customFrom, customTo) : alarmDateRange(rangeFilter)),
     [customFrom, customTo, rangeFilter, rangeMode],
@@ -753,8 +767,13 @@ export function AlarmsPanel() {
       setSourceLabel("Chargement des alertes...");
 
       try {
-        const alertsPayload = await cachedApiJson(alertListPath);
-        const normalized = normalizeAlarms(alertsPayload);
+        const [alertsPayload, devicesPayload] = await Promise.all([
+          cachedApiJson(alertListPath),
+          cachedApiJson("/devices").catch(() => []),
+        ]);
+        const deviceNames = deviceNamesFromPayload(devicesPayload);
+        deviceNamesRef.current = deviceNames;
+        const normalized = normalizeAlarms(alertsPayload, deviceNames);
 
         if (!isMounted) return;
 
@@ -790,7 +809,7 @@ export function AlarmsPanel() {
     const abortController = new AbortController();
 
     function addStreamAlert(payload: unknown) {
-      const [incomingAlert] = normalizeAlarms([payload]);
+      const [incomingAlert] = normalizeAlarms([payload], deviceNamesRef.current);
 
       if (!incomingAlert || !isMounted) return;
 
@@ -906,7 +925,12 @@ export function AlarmsPanel() {
   }, []);
 
   const alarmTypes = useMemo(
-    () => ["All types", ...Array.from(new Set(alarms.map((alarm) => alarm.type)))],
+    () => [
+      "All types",
+      ...Array.from(
+        new Set(["back_cover_opened", ...alarms.map((alarm) => alarm.type)]),
+      ).sort((a, b) => alarmTypeLabel(a).localeCompare(alarmTypeLabel(b))),
+    ],
     [alarms],
   );
   const alarmSources = useMemo(

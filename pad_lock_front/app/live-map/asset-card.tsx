@@ -7,7 +7,7 @@ function statusLabel(status: LiveMapAsset["status"]) {
   return status === "Moving"
     ? "En mouvement"
     : status === "Charging"
-      ? "En charge"
+      ? "En chargement"
       : status === "Online"
         ? "En ligne"
       : status === "Idle"

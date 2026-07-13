@@ -6,7 +6,6 @@ import {
   Clock3,
   Loader2,
   RefreshCw,
-  Phone,
   Router,
   Save,
   Search,
@@ -23,10 +22,6 @@ type ApiRecord = Record<string, unknown>;
 type LoadState = "idle" | "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type SimKey = "sim1" | "sim2";
-
-type PhoneForm = {
-  phoneNumber: string;
-};
 
 type DeviceOption = {
   terminalId: string;
@@ -49,7 +44,6 @@ type ConfigurationForm = {
   trackingUploadIntervalSeconds: string;
   wakeUpIntervalMinutes: string;
   vibrationLevelMg: string;
-  vipPhones: PhoneForm[];
 };
 
 type SyncInfo = {
@@ -66,27 +60,17 @@ type ConfigResponse = {
   trackingUploadIntervalSeconds?: number | null;
   wakeUpIntervalMinutes?: number | null;
   vibrationLevelMg?: number | null;
-  vipPhones?: unknown;
-  vipPhoneNumbers?: unknown;
-  phones?: unknown;
-  phoneNumbers?: unknown;
   sync?: {
     sim1?: SyncInfo;
     sim2?: SyncInfo;
     reporting?: SyncInfo;
     vibration?: SyncInfo;
-    phones?: SyncInfo;
-    vipPhones?: SyncInfo;
   };
   updatedAt?: string;
 };
 
 function emptySim(): SimForm {
   return { ipAddress: "", port: "", apn: "", apnUser: "", apnPassword: "", apnPasswordConfigured: false };
-}
-
-function emptyPhones(): PhoneForm[] {
-  return Array.from({ length: 5 }, () => ({ phoneNumber: "" }));
 }
 
 function defaultForm(): ConfigurationForm {
@@ -96,7 +80,6 @@ function defaultForm(): ConfigurationForm {
     trackingUploadIntervalSeconds: "30",
     wakeUpIntervalMinutes: "30",
     vibrationLevelMg: "126",
-    vipPhones: emptyPhones(),
   };
 }
 
@@ -137,34 +120,6 @@ function normalizeDevice(record: ApiRecord, fallback?: ApiRecord): DeviceOption 
   };
 }
 
-function normalizePhoneItem(value: unknown): PhoneForm {
-  if (typeof value === "string" || typeof value === "number") {
-    return { phoneNumber: String(value) };
-  }
-
-  const record = asRecord(value);
-  return {
-    phoneNumber: textValue(record?.phoneNumber, record?.number, record?.value, record?.phone, record?.msisdn) ?? "",
-  };
-}
-
-function phonesFromConfig(config: ConfigResponse | null): PhoneForm[] {
-  const source = config?.vipPhones ?? config?.vipPhoneNumbers ?? config?.phones ?? config?.phoneNumbers;
-  const phones = emptyPhones();
-
-  if (Array.isArray(source)) {
-    source.slice(0, 5).forEach((item, index) => {
-      phones[index] = normalizePhoneItem(item);
-    });
-  } else if (source && typeof source === "object") {
-    Object.values(source as Record<string, unknown>).slice(0, 5).forEach((item, index) => {
-      phones[index] = normalizePhoneItem(item);
-    });
-  }
-
-  return phones;
-}
-
 function simFromResponse(value: unknown): SimForm {
   const sim = asRecord(value);
   return {
@@ -184,7 +139,6 @@ function formFromConfig(config: ConfigResponse | null): ConfigurationForm {
     trackingUploadIntervalSeconds: textValue(config?.trackingUploadIntervalSeconds) ?? "30",
     wakeUpIntervalMinutes: textValue(config?.wakeUpIntervalMinutes) ?? "30",
     vibrationLevelMg: textValue(config?.vibrationLevelMg) ?? "126",
-    vipPhones: phonesFromConfig(config),
   };
 }
 
@@ -324,34 +278,6 @@ function SimCard({ simKey, title, form, sync, onChange, onRead, onSave, saving, 
   );
 }
 
-function PhoneCard({ phones, sync, onChange, onRead, onSave, saving, reading }: {
-  phones: PhoneForm[];
-  sync?: SyncInfo;
-  onChange: (index: number, next: PhoneForm) => void;
-  onRead: () => void;
-  onSave: () => void;
-  saving?: boolean;
-  reading?: boolean;
-}) {
-  return (
-    <section className="overflow-hidden rounded-[8px] border border-[#dfe6ee] bg-white shadow-sm">
-      <SectionHeader icon={Phone} title="Numeros de telephone VIP" description="Renseignez les numeros autorises a recevoir les notifications d'alarme du PadLock." sync={sync} />
-      <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-5">
-        {phones.map((phone, index) => (
-          <div key={index} className="rounded-[8px] border border-[#e6edf5] bg-[#fbfdff] p-3">
-            <Field label={"Telephone " + (index + 1)} value={phone.phoneNumber} onChange={(value) => onChange(index, { ...phone, phoneNumber: value })} placeholder="Ex: +212600000000" type="tel" />
-            <p className="mt-3 rounded-[7px] bg-white px-3 py-2 text-[11px] font-semibold text-[#64748b]">Alarmes envoyees par defaut</p>
-          </div>
-        ))}
-      </div>
-      <div className="flex flex-col gap-3 border-t border-[#e6edf5] bg-white px-5 py-3 md:flex-row md:items-center md:justify-between">
-        <p className="text-[11px] text-[#64748b]">Les champs vides sont ignores. Les alarmes sont envoyees par defaut aux numeros enregistres.</p>
-        <div className="flex gap-2"><ActionButton variant="light" onClick={onRead} loading={reading}>Lire</ActionButton><ActionButton onClick={onSave} loading={saving}>Ecrire</ActionButton></div>
-      </div>
-    </section>
-  );
-}
-
 export function ConfigurationsPanel() {
   const [devices, setDevices] = useState<DeviceOption[]>([]);
   const [deviceQuery, setDeviceQuery] = useState("");
@@ -363,7 +289,6 @@ export function ConfigurationsPanel() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [message, setMessage] = useState("");
   const [activeAction, setActiveAction] = useState<string | null>(null);
-  const [savedPhoneNumbers, setSavedPhoneNumbers] = useState<string[]>(() => Array.from({ length: 5 }, () => ""));
   const configReadInFlightRef = useRef<string | null>(null);
   const lastAutoReadTerminalRef = useRef<string | null>(null);
 
@@ -444,7 +369,6 @@ export function ConfigurationsPanel() {
       setConfigState("ready");
       setSaveState("idle");
       lastAutoReadTerminalRef.current = terminalIdValue;
-      void readPhones(terminalIdValue);
       setMessage(
         nextConfig.configured
           ? usedSavedFallback
@@ -462,51 +386,8 @@ export function ConfigurationsPanel() {
     }
   }
 
-  async function readPhones(terminalIdValue = selectedTerminalId, showLoading = false) {
-    if (!terminalIdValue) return;
-
-    if (showLoading) {
-      setActiveAction("phones-read");
-      setMessage("Chargement des numeros de telephone...");
-    }
-
-    try {
-      const response = await apiFetch("/vip/phone?terminalId=" + encodeURIComponent(terminalIdValue), { cache: "no-store" });
-      const payload = await response.json().catch(() => null) as { phones?: unknown } | null;
-      if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de charger les numeros de telephone."));
-
-      const nextPhones = emptyPhones();
-      const nextSaved = Array.from({ length: 5 }, () => "");
-      const rows = Array.isArray(payload?.phones) ? payload.phones : [];
-
-      rows.slice(0, 5).forEach((row, fallbackIndex) => {
-        const record = asRecord(row);
-        const indexValue = Number(record?.index);
-        const index = Number.isInteger(indexValue) && indexValue >= 1 && indexValue <= 5 ? indexValue - 1 : fallbackIndex;
-        const phoneNumber = textValue(record?.phoneNumber, record?.number, record?.value, record?.phone) ?? "";
-        nextPhones[index] = { phoneNumber };
-        nextSaved[index] = phoneNumber;
-      });
-
-      setSavedPhoneNumbers(nextSaved);
-      setForm((current) => ({ ...current, vipPhones: nextPhones }));
-    } catch (error) {
-      setMessage(userFriendlyError(error, "Impossible de charger les numeros de telephone."));
-    } finally {
-      if (showLoading) setActiveAction(null);
-    }
-  }
-
   function updateSim(simKey: SimKey, next: SimForm) {
     setForm((current) => ({ ...current, [simKey]: next }));
-  }
-
-  function updatePhone(index: number, next: PhoneForm) {
-    setForm((current) => {
-      const vipPhones = [...current.vipPhones];
-      vipPhones[index] = next;
-      return { ...current, vipPhones };
-    });
   }
 
   async function patchConfiguration(action: string, body: Record<string, unknown>) {
@@ -574,54 +455,6 @@ export function ConfigurationsPanel() {
     patchConfiguration("vibration", { vibrationLevelMg: Number(form.vibrationLevelMg) });
   }
 
-  async function savePhones() {
-    if (!selectedTerminalId) return;
-
-    setActiveAction("phones");
-    setSaveState("saving");
-    setMessage("Enregistrement des numeros de telephone...");
-
-    try {
-      const operations = form.vipPhones.map(async (phone, index) => {
-        const phoneNumber = phone.phoneNumber.trim();
-        const hadSavedNumber = Boolean(savedPhoneNumbers[index]?.trim());
-
-        if (!phoneNumber && !hadSavedNumber) return;
-
-        if (!phoneNumber) {
-          const response = await apiFetch("/vip/phone?terminalId=" + encodeURIComponent(selectedTerminalId) + "&index=" + String(index + 1), { method: "DELETE" });
-          const payload = await response.json().catch(() => null) as { message?: string | string[]; error?: string } | null;
-          if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible de supprimer un numero de telephone."));
-          return;
-        }
-
-        const response = await apiFetch("/vip/phone/set", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            terminalId: selectedTerminalId,
-            index: index + 1,
-            phoneNumber,
-          }),
-        });
-        const payload = await response.json().catch(() => null) as { message?: string | string[]; error?: string } | null;
-        if (!response.ok) throw new Error(userFriendlyError(payload, "Impossible d'enregistrer un numero de telephone."));
-      });
-
-      await Promise.all(operations);
-
-      clearAppCache();
-      setSaveState("saved");
-      setMessage("Numeros de telephone enregistres.");
-      void readPhones(selectedTerminalId);
-    } catch (error) {
-      setSaveState("error");
-      setMessage(userFriendlyError(error, "Impossible d'enregistrer les numeros de telephone."));
-    } finally {
-      setActiveAction(null);
-    }
-  }
-
   return (
     <div className="grid min-h-[calc(100vh-56px)] grid-cols-1 bg-[#f6f8fb] xl:grid-cols-[310px_minmax(0,1fr)]">
       <aside className="border-r border-[#dfe6ee] bg-white px-4 py-5">
@@ -681,7 +514,6 @@ export function ConfigurationsPanel() {
           <div className="grid gap-4">
             <SimCard simKey="sim1" title="Canal donnees SIM1" form={form.sim1} sync={config?.sync?.sim1} onChange={updateSim} onRead={() => readConfiguration("sim1-read", selectedTerminalId, true)} onSave={() => saveSim("sim1")} reading={activeAction === "sim1-read"} saving={activeAction === "sim1"} />
             <SimCard simKey="sim2" title="Canal secours SIM2" form={form.sim2} sync={config?.sync?.sim2} onChange={updateSim} onRead={() => readConfiguration("sim2-read", selectedTerminalId, true)} onSave={() => saveSim("sim2")} reading={activeAction === "sim2-read"} saving={activeAction === "sim2"} />
-            <PhoneCard phones={form.vipPhones} sync={config?.sync?.phones ?? config?.sync?.vipPhones} onChange={updatePhone} onRead={() => readPhones(selectedTerminalId, true)} onSave={savePhones} reading={activeAction === "phones-read"} saving={activeAction === "phones"} />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">

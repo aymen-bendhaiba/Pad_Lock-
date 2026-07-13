@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Pause, Play, RotateCcw, Search, X } from "lucide-react";
@@ -306,6 +306,65 @@ function formatBatteryDetail(value: string) {
   return `${Math.max(0, Math.min(100, Math.round(Number(value))))}%`;
 }
 
+function normalizeBackCoverDetail(
+  record: ApiRecord,
+  lock?: ApiRecord,
+  telemetryAvailable = isTelemetryAvailable(record, lock),
+) {
+  if (!telemetryAvailable) {
+    return "Indisponible";
+  }
+
+  const open = readNestedBoolean(record, ["backCoverOpen"])
+    ?? readNestedBoolean(lock, ["backCoverOpen"]);
+
+  if (open !== undefined) {
+    return open ? "Ouvert" : "Fermé";
+  }
+
+  const raw = (readNestedString(record, ["backCover", "capotArriere"])
+    ?? readNestedString(lock, ["backCover", "capotArriere"]))?.toLowerCase();
+
+  if (raw?.includes("ouvert") || raw?.includes("open")) {
+    return "Ouvert";
+  }
+
+  if (raw?.includes("ferm") || raw?.includes("closed")) {
+    return "Fermé";
+  }
+
+  return "Inconnu";
+}
+
+function normalizeLockMotorDetail(
+  record: ApiRecord,
+  lock?: ApiRecord,
+  telemetryAvailable = isTelemetryAvailable(record, lock),
+) {
+  if (!telemetryAvailable) {
+    return "Indisponible";
+  }
+
+  const blocked = readNestedBoolean(record, ["lockMotorBlocked"])
+    ?? readNestedBoolean(lock, ["lockMotorBlocked"]);
+
+  if (blocked !== undefined) {
+    return blocked ? "Bloqué" : "Non bloqué";
+  }
+
+  const raw = (readNestedString(record, ["lockMotor", "moteurVerrouillage"])
+    ?? readNestedString(lock, ["lockMotor", "moteurVerrouillage"]))?.toLowerCase();
+
+  if (raw?.includes("non_blo") || raw?.includes("non blo") || raw?.includes("unblocked")) {
+    return "Non bloqué";
+  }
+
+  if (raw?.includes("bloqu") || raw?.includes("blocked")) {
+    return "Bloqué";
+  }
+
+  return "Inconnu";
+}
 function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvailable = isTelemetryAvailable(record, lock)) {
   const details: { label: string; value: string }[] = [];
   const usedKeys = new Set<string>(["lat", "latitude", "lng", "lon", "long", "longitude", "gpsLat", "gpsLatitude", "gpsLng", "gpsLon", "gpsLongitude", "x", "y", "coordinates", "coords"]);
@@ -323,14 +382,14 @@ function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
     { label: "Equipement", keys: ["name", "assetName", "deviceName", "label"] },
     { label: "Statut", keys: ["status", "state", "movementStatus", "motion"] },
     { label: "Batterie", keys: ["battery", "batteryLevel", "power", "batteryPercent"] },
-    { label: "Charge", keys: ["isCharging", "charging", "charge", "chargingState", "chargerConnected"] },
+    { label: "Chargement", keys: ["isCharging", "charging", "charge", "chargingState", "chargerConnected"] },
     { label: "Verrouillage", keys: ["locked", "isLocked", "lockState", "statusLock"] },
     { label: "Connexion", keys: ["online", "isOnline", "connected"] },
     { label: "Vitesse", keys: ["speed", "speedKph", "velocity"] },
   ];
 
   for (const field of preferredFields) {
-    if (!telemetryAvailable && ["Statut", "Batterie", "Charge", "Verrouillage", "Vitesse"].includes(field.label)) {
+    if (!telemetryAvailable && ["Statut", "Batterie", "Chargement", "Verrouillage", "Vitesse"].includes(field.label)) {
       field.keys.forEach((fieldKey) => usedKeys.add(fieldKey));
       continue;
     }
@@ -345,6 +404,21 @@ function buildDeviceDetails(record: ApiRecord, lock?: ApiRecord, telemetryAvaila
     }
   }
 
+  const backCoverKeys = ["backCoverOpen", "backCover", "capotArriere"];
+  const lockMotorKeys = ["lockMotorBlocked", "lockMotor", "moteurVerrouillage"];
+
+  details.push(
+    {
+      label: "Capot d'arriere",
+      value: normalizeBackCoverDetail(record, lock, telemetryAvailable),
+    },
+    {
+      label: "Moteur de verrouillage",
+      value: normalizeLockMotorDetail(record, lock, telemetryAvailable),
+    },
+  );
+  backCoverKeys.forEach((key) => usedKeys.add(key));
+  lockMotorKeys.forEach((key) => usedKeys.add(key));
   for (const [key, rawValue] of Object.entries(record)) {
     if (details.length >= 12 || usedKeys.has(key)) {
       continue;
@@ -975,7 +1049,7 @@ export function LiveMapPanel() {
               ["Tous", stats.all, "bg-[#34C759]"],
               ["En ligne", stats.online, "bg-[#22c55e]"],
               ["Mouvement", stats.moving, "bg-[#3b82f6]"],
-              ["En charge", stats.charging, "bg-[#8b5cf6]"],
+              ["En chargement", stats.charging, "bg-[#8b5cf6]"],
               ["Arret", stats.idle, "bg-[#f97316]"],
               ["Hors ligne", stats.offline, "bg-[#94a3b8]"],
               ["Alarme", stats.alarm, "bg-[#ef4444]"],
@@ -1024,7 +1098,7 @@ export function LiveMapPanel() {
             <option value="all">Tous</option>
             <option value="online">En ligne</option>
             <option value="moving">En mouvement</option>
-            <option value="charging">En charge</option>
+            <option value="charging">En chargement</option>
             <option value="idle">A l&apos;arret</option>
             <option value="alarm">Alarme</option>
             <option value="offline">Hors ligne</option>

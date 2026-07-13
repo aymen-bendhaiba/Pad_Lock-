@@ -32,7 +32,7 @@ function statusLabel(status: LiveMapAsset["status"]) {
   return status === "Moving"
     ? "En mouvement"
     : status === "Charging"
-      ? "En charge"
+      ? "En chargement"
       : status === "Online"
         ? "En ligne"
       : status === "Idle"
@@ -49,7 +49,7 @@ function detailLabel(label: string) {
     Device: "PadLock",
     Status: "Statut",
     Battery: "Batterie",
-    Charging: "Recharge",
+    Charging: "Chargement",
     Locked: "Verrouillage",
     Online: "En ligne",
     Speed: "Vitesse",
@@ -61,9 +61,9 @@ function detailLabel(label: string) {
 function detailValue(label: string, value: string) {
   if (value === "Yes") return "Oui";
   if (value === "No") return "Non";
-  if (label === "Status") return value === "Moving" ? "En mouvement" : value === "Charging" ? "En charge" : value === "Online" ? "En ligne" : value === "Idle" ? "A l'arret" : value === "Offline" ? "Hors ligne" : value === "Alarm" ? "Alarme" : value;
+  if (label === "Status") return value === "Moving" ? "En mouvement" : value === "Charging" ? "En chargement" : value === "Online" ? "En ligne" : value === "Idle" ? "A l'arret" : value === "Offline" ? "Hors ligne" : value === "Alarm" ? "Alarme" : value;
   if (label === "Locked") return value === "Locked" ? "Verrouille" : value === "Unlocked" ? "Deverrouille" : value;
-  if (label === "Charging") return value === "true" || value === "Yes" ? "En charge" : value === "false" || value === "No" ? "Non" : value;
+  if (["Charging", "Charge", "Chargement"].includes(label)) return ["true", "Yes", "Oui"].includes(value) ? "En chargement" : ["false", "No", "Non"].includes(value) ? "Non" : value;
   return translateBackendValue(value, value);
 }
 
@@ -404,8 +404,8 @@ function AssetPopupContent({ asset, shouldResolveLocation }: { asset: LiveMapAss
         </div>
         <span className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white" style={{ backgroundColor: asset.color }}>{statusLabel(asset.status)}</span>
       </div>
-      <div className="max-h-[180px] space-y-1 overflow-y-auto bg-white px-3 py-3 text-[11px]">
-        {details.slice(0, 8).map((detail) => (
+      <div className="max-h-[260px] space-y-1 overflow-y-auto bg-white px-3 py-3 text-[11px]">
+        {details.slice(0, 12).map((detail) => (
           <div key={asset.id + "-" + detail.label} className="flex items-center justify-between gap-3 rounded-[6px] bg-[#f8fafc] px-2.5 py-2">
             <span className="min-w-0 truncate font-semibold text-[#64748b]">{detailLabel(detail.label)}</span>
             <span className="max-w-[150px] truncate text-right font-bold text-[#111827]" title={detailValue(detail.label, detail.value)}>{detailValue(detail.label, detail.value)}</span>

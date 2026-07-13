@@ -9,9 +9,7 @@ import {
   Plus,
   Route,
   Search,
-  ShieldCheck,
   Trash2,
-  TriangleAlert,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -21,6 +19,7 @@ import {
   getGeoBoundaries,
 } from "../../lib/api";
 import { userFriendlyError } from "../../lib/error-messages";
+import { formatGeofenceMeasurement } from "./geofence-measurements";
 import { GeofenceMapShell } from "./geofence-map-shell";
 import type { BoundarySummary, GeofenceAccessMode, LatLngTuple, LockMapAsset, SavedGeofence } from "./geofence-types";
 
@@ -904,6 +903,14 @@ function normalizeGeofences(payload: unknown): SavedGeofence[] {
       relationId(record.boundaryId) ??
       relationId(record.boundary) ??
       relationId(record.geoBoundary);
+    const normalizedShapeType = bboxRings.length > 0 ? "polygon" : shapeType;
+    const radiusMeters = Number(record.radiusMeters ?? 25000);
+    const measurementPoints = normalizedShapeType === "polygon" && (rings[0]?.length ?? 0) >= 3
+      ? rings[0]
+      : points;
+    const area = geoBoundaryId
+      ? String(record.area ?? record.type ?? "Limite du pays")
+      : formatGeofenceMeasurement(normalizedShapeType, measurementPoints, radiusMeters);
     const accessMode = geofenceAccessMode(record);
     const lockAccessAllowed = lockAccessAllowedFromRecord(record);
 
@@ -912,11 +919,11 @@ function normalizeGeofences(payload: unknown): SavedGeofence[] {
       name: String(record.name ?? "Geofence enregistree"),
       number: String(record.number ?? record.code ?? `GF-${String(index + 1).padStart(3, "0")}`),
       description: String(record.description ?? "Regle de geofence"),
-      area: String(record.area ?? record.type ?? "Live"),
-      shapeType: bboxRings.length > 0 ? "polygon" : shapeType,
+      area,
+      shapeType: normalizedShapeType,
       points,
       rings,
-      radiusMeters: Number(record.radiusMeters ?? 25000),
+      radiusMeters,
       accessMode,
       lockAccessAllowed,
       source: geoBoundaryId ? "boundary" : "custom",
@@ -1194,9 +1201,11 @@ export function GeofenceWorkspace() {
 
       void (async () => {
         try {
-          const response = await apiFetch(`/geo-boundaries/${encodeURIComponent(selectedCountry.id)}`, {
-            cache: "force-cache",
-          });
+          const response = selectedCountry.countryCode === "MAR"
+            ? await fetch("/custom-geo/MAR", { cache: "no-store" })
+            : await apiFetch(`/geo-boundaries/${encodeURIComponent(selectedCountry.id)}`, {
+                cache: "no-store",
+              });
       if (!response.ok) throw new Error("Coordonnees du pays indisponibles.");
           const boundary = (await response.json()) as ApiRecord;
           const geometryRings = ringsFromGeometry(boundary.geometry ?? geometryFromRecord(boundary));
@@ -1414,21 +1423,21 @@ export function GeofenceWorkspace() {
                     <Trash2 size={12} /> {deletingGeofenceId === geofence.id ? "Suppression..." : "Supprimer"}
                   </button>
                 </div>
+                {selectedGeofenceId === geofence.id ? (
+                  <UnlockPermissionStatus
+                    geofence={geofence}
+                    editable
+                    isEditing={editingGeofenceId === geofence.id}
+                    isSaving={savingGeofenceId === geofence.id}
+                    draftAllowed={draftLockAccessAllowed}
+                    onEdit={() => startEditGeofence(geofence)}
+                    onCancel={cancelEditGeofence}
+                    onDraftChange={setDraftLockAccessAllowed}
+                    onSave={() => updateGeofencePermission(geofence)}
+                  />
+                ) : null}
               </div>
             ))}
-            {selectedCustomGeofence ? (
-              <UnlockPermissionStatus
-                geofence={selectedCustomGeofence}
-                editable
-                isEditing={editingGeofenceId === selectedCustomGeofence.id}
-                isSaving={savingGeofenceId === selectedCustomGeofence.id}
-                draftAllowed={draftLockAccessAllowed}
-                onEdit={() => startEditGeofence(selectedCustomGeofence)}
-                onCancel={cancelEditGeofence}
-                onDraftChange={setDraftLockAccessAllowed}
-                onSave={() => updateGeofencePermission(selectedCustomGeofence)}
-              />
-            ) : null}
             {customGeofences.length === 0 ? (
               <p className="rounded-[7px] border border-dashed border-[#cbd5e1] bg-[#fbfdff] px-3 py-3 text-[12px] leading-snug text-[#63758d]">
                 {geofenceSearchQuery ? "Aucune geofence personnalisee ne correspond a la recherche." : "Aucune geofence personnalisee pour le moment."}
@@ -1590,15 +1599,6 @@ export function GeofenceWorkspace() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-[7px] border border-[#dfe6ee] bg-[#f8fafc] px-3 py-2 text-[12px] font-semibold text-[#52657d]">
-              {countryGeofences.length > 0 ? (
-                <ShieldCheck size={15} className="text-[#2A9D90]" />
-              ) : (
-                <TriangleAlert size={15} className="text-[#f97316]" />
-              )}
-              {mapGeofences.length} geofence
-              {mapGeofences.length === 1 ? "" : "s"}
-            </div>
             <Link
               href="/geofence/create"
               className="flex h-9 items-center gap-2 rounded-[7px] bg-[#111827] px-3 text-[12px] font-semibold text-white shadow-sm transition hover:bg-black"

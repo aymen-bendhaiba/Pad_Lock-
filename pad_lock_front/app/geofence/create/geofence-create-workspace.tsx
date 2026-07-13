@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch, cachedApiJson, clearAppCache } from "../../../lib/api";
 import { GeofenceCreateMapShell } from "./geofence-create-map-shell";
 import type { LatLngTuple } from "../geofence-types";
+import { formatGeofenceMeasurement } from "../geofence-measurements";
 
 type FormeMode = "circle" | "polygon" | "route";
 type EnregistrerState = "idle" | "saving" | "saved" | "error";
@@ -173,13 +174,10 @@ export function GeofenceCreateWorkspace() {
   const [saveState, setEnregistrerState] = useState<EnregistrerState>("idle");
   const [saveMessage, setEnregistrerMessage] = useState("");
 
-  const areaText = useMemo(() => {
-    if (draftPoints.length < 2) {
-      return "000 km";
-    }
-
-    return `${String(Math.max(1, draftPoints.length * 24)).padStart(3, "0")} km`;
-  }, [draftPoints.length]);
+  const areaText = useMemo(
+    () => formatGeofenceMeasurement(shapeMode, draftPoints, cercleRayonMeters),
+    [cercleRayonMeters, draftPoints, shapeMode],
+  );
 
   useEffect(() => {
     let active = true;
@@ -529,7 +527,7 @@ export function GeofenceCreateWorkspace() {
             <span className="size-2 rounded-full bg-[#3b82f6]" /> Mouvement (172)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-[#f97316]" /> A l'arret (56)
+            <span className="size-2 rounded-full bg-[#f97316]" /> A l&apos;arret (56)
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-[#94a3b8]" /> Hors ligne (32)

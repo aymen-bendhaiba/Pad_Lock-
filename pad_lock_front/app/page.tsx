@@ -55,7 +55,7 @@ export default function Home() {
               </h1>
               <p className="mt-5 max-w-[660px] text-[18px] font-normal leading-[1.18] tracking-normal text-[#24242b] md:text-[18px]">
                 Surveillez, securisez et gerez vos camions en temps reel avec
-                l'integration des PadLock intelligents.
+                l&apos;integration des PadLock intelligents.
               </p>
             </div>
           </div>

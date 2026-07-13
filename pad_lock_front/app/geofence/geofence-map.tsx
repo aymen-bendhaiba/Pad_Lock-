@@ -89,17 +89,28 @@ function SelectedGeofenceFocus({
   useEffect(() => {
     const selectedGeofence = selectedGeofenceId
       ? savedGeofences.find((item) => item.id === selectedGeofenceId)
-      : savedGeofences.find((item) => item.source === "boundary") ?? savedGeofences[0];
-    const positions = selectedGeofence ? geofencePositions(selectedGeofence) : [];
+      : undefined;
+    const positions = selectedGeofence
+      ? geofencePositions(selectedGeofence)
+      : countryRings.flat();
 
     if (positions.length > 1) {
-      map.fitBounds(new LatLngBounds(positions), {
-        animate: true,
-        duration: 0.8,
-        padding: [90, 90],
-        maxZoom: selectedGeofence?.shapeType === "circle" ? 13 : 11,
+      const frame = window.requestAnimationFrame(() => {
+        map.invalidateSize();
+        map.fitBounds(new LatLngBounds(positions), {
+          animate: true,
+          duration: 0.8,
+          padding: [50, 50],
+          maxZoom:
+            selectedGeofence?.shapeType === "circle"
+              ? 13
+              : selectedGeofence
+                ? 11
+                : 7,
+        });
       });
-      return;
+
+      return () => window.cancelAnimationFrame(frame);
     }
 
     const target = positions[0] ?? countryCenter ?? countryRings[0]?.[0];
@@ -197,7 +208,7 @@ export function GeofenceMap({
             className: "geofence-country-halo",
             color: "#2A9D90",
             fillColor: "#2A9D90",
-            fillOpacity: 0.14,
+            fillOpacity: 0.18,
             opacity: 0.38,
             weight: 7,
           }}
@@ -212,7 +223,7 @@ export function GeofenceMap({
             className: "geofence-country-wave",
             color: "#0f766e",
             fillColor: "#2A9D90",
-            fillOpacity: 0.08,
+            fillOpacity: 0.24,
             opacity: 0.95,
             weight: 3,
           }}
